@@ -25,7 +25,7 @@ export async function GET() {
     })
     .from(schema.todos)
     .innerJoin(schema.users, eq(schema.todos.userId, schema.users.id))
-    .orderBy(asc(schema.todos.sortOrder), desc(schema.todos.createdAt));
+    .orderBy(desc(schema.todos.createdAt));
 
   return NextResponse.json(
     todoList.map((t) => ({
