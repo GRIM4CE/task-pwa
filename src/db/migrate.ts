@@ -4,7 +4,10 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { existsSync, mkdirSync } from "fs";
 import path from "path";
 
-const DB_PATH = path.join(process.cwd(), "data", "app.db");
+// In production (Fly.io), use /data (persistent volume). Locally, use ./data.
+const DB_PATH = process.env.NODE_ENV === "production"
+  ? "/data/app.db"
+  : path.join(process.cwd(), "data", "app.db");
 
 const dataDir = path.dirname(DB_PATH);
 if (!existsSync(dataDir)) {
