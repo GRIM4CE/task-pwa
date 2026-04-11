@@ -12,9 +12,9 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@libsql/client": "^0.17.2",
     "@oslojs/crypto": "^1.0.1",
     "@oslojs/encoding": "^1.1.0",
-    "better-sqlite3": "^12.8.0",
     "drizzle-orm": "^0.45.2",
     "hi-base32": "^0.5.1",
     "next": "16.2.3",
@@ -26,7 +26,6 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
