@@ -11,10 +11,20 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // All users see all todos (shared household list)
   const todoList = await db
-    .select()
+    .select({
+      id: schema.todos.id,
+      title: schema.todos.title,
+      description: schema.todos.description,
+      completed: schema.todos.completed,
+      sortOrder: schema.todos.sortOrder,
+      createdAt: schema.todos.createdAt,
+      updatedAt: schema.todos.updatedAt,
+      createdBy: schema.users.username,
+    })
     .from(schema.todos)
-    .where(eq(schema.todos.userId, session.user.id))
+    .innerJoin(schema.users, eq(schema.todos.userId, schema.users.id))
     .orderBy(asc(schema.todos.sortOrder), desc(schema.todos.createdAt));
 
   return NextResponse.json(
@@ -26,6 +36,7 @@ export async function GET() {
       sortOrder: t.sortOrder,
       createdAt: t.createdAt.getTime(),
       updatedAt: t.updatedAt.getTime(),
+      createdBy: t.createdBy,
     }))
   );
 }
@@ -47,8 +58,7 @@ export async function POST(request: NextRequest) {
   // Get the next sort order
   const maxOrder = await db
     .select({ max: sql<number>`coalesce(max(sort_order), -1)` })
-    .from(schema.todos)
-    .where(eq(schema.todos.userId, session.user.id));
+    .from(schema.todos);
 
   const [todo] = await db
     .insert(schema.todos)
@@ -69,6 +79,7 @@ export async function POST(request: NextRequest) {
       sortOrder: todo.sortOrder,
       createdAt: todo.createdAt.getTime(),
       updatedAt: todo.updatedAt.getTime(),
+      createdBy: session.user.username,
     },
     { status: 201 }
   );

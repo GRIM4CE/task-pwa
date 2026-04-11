@@ -11,6 +11,7 @@ interface Todo {
   sortOrder: number;
   createdAt: number;
   updatedAt: number;
+  createdBy: string;
 }
 
 export default function TodosPage() {
@@ -129,27 +130,30 @@ export default function TodosPage() {
               aria-label="Complete task"
             />
 
-            {editingId === todo.id ? (
-              <input
-                type="text"
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                onBlur={() => handleEditSubmit(todo.id)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleEditSubmit(todo.id);
-                  if (e.key === "Escape") setEditingId(null);
-                }}
-                className="flex-1 rounded border border-primary bg-background px-2 py-1 text-text focus:outline-none"
-                autoFocus
-              />
-            ) : (
-              <span
-                className="flex-1 text-text cursor-pointer"
-                onClick={() => startEdit(todo)}
-              >
-                {todo.title}
-              </span>
-            )}
+            <div className="flex-1 min-w-0">
+              {editingId === todo.id ? (
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  onBlur={() => handleEditSubmit(todo.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleEditSubmit(todo.id);
+                    if (e.key === "Escape") setEditingId(null);
+                  }}
+                  className="w-full rounded border border-primary bg-background px-2 py-1 text-text focus:outline-none"
+                  autoFocus
+                />
+              ) : (
+                <span
+                  className="block text-text cursor-pointer"
+                  onClick={() => startEdit(todo)}
+                >
+                  {todo.title}
+                </span>
+              )}
+              <span className="text-xs text-text-muted">{todo.createdBy}</span>
+            </div>
 
             <button
               onClick={() => handleDelete(todo.id)}
@@ -183,9 +187,12 @@ export default function TodosPage() {
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
                 </button>
-                <span className="flex-1 text-text-muted line-through">
-                  {todo.title}
-                </span>
+                <div className="flex-1 min-w-0">
+                  <span className="block text-text-muted line-through">
+                    {todo.title}
+                  </span>
+                  <span className="text-xs text-text-muted/60">{todo.createdBy}</span>
+                </div>
                 <button
                   onClick={() => handleDelete(todo.id)}
                   className="shrink-0 rounded p-1 text-text-muted opacity-0 hover:text-danger group-hover:opacity-100 focus:opacity-100 focus:outline-none"

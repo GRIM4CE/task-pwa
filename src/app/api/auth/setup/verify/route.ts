@@ -11,6 +11,7 @@ import { z } from "zod";
 
 const verifySetupSchema = z.object({
   totpCode: z.string().regex(/^\d{6}$/, "Code must be 6 digits"),
+  selectedUsername: z.string().min(1),
   encryptedSecret: z.string().min(1),
   encryptionIv: z.string().min(1),
 });
@@ -28,7 +29,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Check if user already exists
+  // Check if users already exist
   const userCount = await db
     .select({ count: sql<number>`count(*)` })
     .from(schema.users);
@@ -52,6 +53,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Validate selected username is in the allowed list
+  if (!env.appUsernames.includes(body.selectedUsername)) {
+    return NextResponse.json(
+      { error: "Invalid username" },
+      { status: 400 }
+    );
+  }
+
   // Verify the TOTP code against the encrypted secret
   const { valid } = verifyTotp(body.encryptedSecret, body.encryptionIv, body.totpCode);
   if (!valid) {
@@ -61,40 +70,47 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Create the user
-  const username = env.appUsername;
-  const [user] = await db.insert(schema.users).values({ username }).returning();
+  // Create all configured users
+  const createdUsers: Array<{ id: string; username: string }> = [];
+  for (const username of env.appUsernames) {
+    const [user] = await db.insert(schema.users).values({ username }).returning();
+    createdUsers.push({ id: user.id, username: user.username });
+  }
 
-  // Store the TOTP secret
-  await db.insert(schema.totpSecrets).values({
-    userId: user.id,
-    encryptedSecret: body.encryptedSecret,
-    encryptionIv: body.encryptionIv,
-  });
+  // Store the shared TOTP secret on every user
+  for (const user of createdUsers) {
+    await db.insert(schema.totpSecrets).values({
+      userId: user.id,
+      encryptedSecret: body.encryptedSecret,
+      encryptionIv: body.encryptionIv,
+    });
+  }
 
-  // Generate recovery codes
+  // Generate recovery codes (shared, stored on first user)
+  const primaryUser = createdUsers[0];
   const recoveryCodes: string[] = [];
   for (let i = 0; i < 8; i++) {
     const code = generateRecoveryCode();
     recoveryCodes.push(code);
     await db.insert(schema.recoveryCodes).values({
-      userId: user.id,
+      userId: primaryUser.id,
       codeHash: hashRecoveryCode(code),
     });
   }
 
-  // Create session
-  await createSession(user.id, ip, userAgent);
+  // Create session for the user who performed setup
+  const sessionUser = createdUsers.find((u) => u.username === body.selectedUsername) ?? primaryUser;
+  await createSession(sessionUser.id, ip, userAgent);
 
   // Audit log
-  await logAudit("totp_setup", { userId: user.id, ipAddress: ip, userAgent });
+  await logAudit("totp_setup", { userId: sessionUser.id, ipAddress: ip, userAgent });
 
   return NextResponse.json({
     success: true,
     recoveryCodes,
     user: {
-      id: user.id,
-      username: user.username,
+      id: sessionUser.id,
+      username: sessionUser.username,
     },
   });
 }

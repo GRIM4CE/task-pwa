@@ -53,14 +53,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: GENERIC_ERROR }, { status: 401 });
   }
 
-  // Check recovery code
+  // Check recovery code (codes are shared, stored on primary user)
   const codeHash = hashRecoveryCode(body.recoveryCode);
   const recoveryRecord = await db
     .select()
     .from(schema.recoveryCodes)
     .where(
       and(
-        eq(schema.recoveryCodes.userId, user[0].id),
         eq(schema.recoveryCodes.codeHash, codeHash),
         isNull(schema.recoveryCodes.usedAt)
       )
@@ -94,16 +93,11 @@ export async function POST(request: NextRequest) {
     userAgent,
   });
 
-  // Count remaining recovery codes
+  // Count remaining recovery codes (shared across all users)
   const remaining = await db
     .select()
     .from(schema.recoveryCodes)
-    .where(
-      and(
-        eq(schema.recoveryCodes.userId, user[0].id),
-        isNull(schema.recoveryCodes.usedAt)
-      )
-    );
+    .where(isNull(schema.recoveryCodes.usedAt));
 
   return NextResponse.json({
     success: true,

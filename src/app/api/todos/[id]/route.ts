@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { validateSession } from "@/lib/session";
 import { updateTodoSchema } from "@/lib/validation";
 
@@ -23,10 +23,11 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 
+  // Any authenticated user can edit any todo (shared household list)
   const existing = await db
     .select()
     .from(schema.todos)
-    .where(and(eq(schema.todos.id, id), eq(schema.todos.userId, session.user.id)))
+    .where(eq(schema.todos.id, id))
     .limit(1);
 
   if (existing.length === 0) {
@@ -42,8 +43,15 @@ export async function PATCH(
   const [updated] = await db
     .update(schema.todos)
     .set(updateData)
-    .where(and(eq(schema.todos.id, id), eq(schema.todos.userId, session.user.id)))
+    .where(eq(schema.todos.id, id))
     .returning();
+
+  // Get creator username
+  const creator = await db
+    .select({ username: schema.users.username })
+    .from(schema.users)
+    .where(eq(schema.users.id, updated.userId))
+    .limit(1);
 
   return NextResponse.json({
     id: updated.id,
@@ -53,6 +61,7 @@ export async function PATCH(
     sortOrder: updated.sortOrder,
     createdAt: updated.createdAt.getTime(),
     updatedAt: updated.updatedAt.getTime(),
+    createdBy: creator[0]?.username ?? "unknown",
   });
 }
 
@@ -67,19 +76,18 @@ export async function DELETE(
 
   const { id } = await params;
 
+  // Any authenticated user can delete any todo
   const existing = await db
     .select()
     .from(schema.todos)
-    .where(and(eq(schema.todos.id, id), eq(schema.todos.userId, session.user.id)))
+    .where(eq(schema.todos.id, id))
     .limit(1);
 
   if (existing.length === 0) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  await db
-    .delete(schema.todos)
-    .where(and(eq(schema.todos.id, id), eq(schema.todos.userId, session.user.id)));
+  await db.delete(schema.todos).where(eq(schema.todos.id, id));
 
   return NextResponse.json({ success: true });
 }

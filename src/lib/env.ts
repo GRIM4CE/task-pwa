@@ -10,8 +10,11 @@ export const env = {
   get appSecret() {
     return getEnv("APP_SECRET");
   },
-  get appUsername() {
-    return getEnv("APP_USERNAME", "admin");
+  get appUsernames(): string[] {
+    return getEnv("APP_USERNAME", "admin")
+      .split(",")
+      .map((u) => u.trim())
+      .filter(Boolean);
   },
   get nodeEnv() {
     return getEnv("NODE_ENV", "development");

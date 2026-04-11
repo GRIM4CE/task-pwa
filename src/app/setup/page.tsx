@@ -13,6 +13,8 @@ export default function SetupPage() {
   const [manualKey, setManualKey] = useState("");
   const [encryptedSecret, setEncryptedSecret] = useState("");
   const [encryptionIv, setEncryptionIv] = useState("");
+  const [usernames, setUsernames] = useState<string[]>([]);
+  const [selectedUsername, setSelectedUsername] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [error, setError] = useState("");
@@ -46,6 +48,8 @@ export default function SetupPage() {
       setManualKey(data.manualEntryKey);
       setEncryptedSecret(data.encryptedSecret);
       setEncryptionIv(data.encryptionIv);
+      setUsernames(data.usernames);
+      setSelectedUsername(data.usernames[0] ?? "");
       setStep("scan");
     }
   }
@@ -57,6 +61,7 @@ export default function SetupPage() {
 
     const { data, error } = await api.auth.verifySetup({
       totpCode,
+      selectedUsername,
       encryptedSecret,
       encryptionIv,
     });
@@ -91,7 +96,7 @@ export default function SetupPage() {
           <p className="mt-2 text-sm text-text-muted">
             {step === "init" && "Let's set up your account security."}
             {step === "scan" && "Scan this QR code with your authenticator app."}
-            {step === "verify" && "Enter the code from your authenticator app."}
+            {step === "verify" && "Select who you are and verify the code."}
             {step === "recovery" && "Save your recovery codes in a safe place."}
           </p>
         </div>
@@ -137,6 +142,12 @@ export default function SetupPage() {
               />
             </div>
 
+            {usernames.length > 1 && (
+              <div className="rounded-lg border border-border bg-surface p-3 text-center text-sm text-text-muted">
+                This code will be shared by: <span className="text-text font-medium">{usernames.join(", ")}</span>
+              </div>
+            )}
+
             <button
               type="button"
               onClick={() => setShowManualKey(!showManualKey)}
@@ -162,6 +173,30 @@ export default function SetupPage() {
 
         {step === "verify" && (
           <form onSubmit={handleVerify} className="space-y-4">
+            {usernames.length > 1 && (
+              <div>
+                <label className="block text-sm font-medium text-text-muted mb-2">
+                  Who are you?
+                </label>
+                <div className="flex gap-2">
+                  {usernames.map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => setSelectedUsername(name)}
+                      className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                        selectedUsername === name
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border bg-surface text-text-muted hover:bg-surface-hover"
+                      }`}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div>
               <label htmlFor="verify-code" className="block text-sm font-medium text-text-muted">
                 Enter the 6-digit code from your authenticator app
@@ -190,7 +225,7 @@ export default function SetupPage() {
 
             <button
               type="submit"
-              disabled={loading || totpCode.length !== 6}
+              disabled={loading || totpCode.length !== 6 || !selectedUsername}
               className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? "Verifying..." : "Verify Code"}
