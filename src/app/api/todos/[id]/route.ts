@@ -23,7 +23,6 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  // Any authenticated user can edit any todo (shared household list)
   const existing = await db
     .select()
     .from(schema.todos)
@@ -46,7 +45,6 @@ export async function PATCH(
     .where(eq(schema.todos.id, id))
     .returning();
 
-  // Get creator username
   const creator = await db
     .select({ username: schema.users.username })
     .from(schema.users)
@@ -76,7 +74,6 @@ export async function DELETE(
 
   const { id } = await params;
 
-  // Any authenticated user can delete any todo
   const existing = await db
     .select()
     .from(schema.todos)

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { eq, asc, desc } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { validateSession } from "@/lib/session";
 import { createTodoSchema } from "@/lib/validation";
 import { sql } from "drizzle-orm";

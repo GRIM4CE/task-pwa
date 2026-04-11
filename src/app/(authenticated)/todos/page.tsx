@@ -54,6 +54,17 @@ export default function TodosPage() {
     loadTodos();
   }, [loadTodos]);
 
+  // Refresh when the app comes back into focus (e.g. switching apps on iPhone)
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        loadTodos();
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [loadTodos]);
+
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     if (!newTitle.trim()) return;
