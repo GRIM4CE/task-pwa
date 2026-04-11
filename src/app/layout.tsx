@@ -3,13 +3,13 @@ import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Home Control",
-  description: "Personal home hardware management",
+  title: "Todo",
+  description: "Shared household todo list",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "HomeCtl",
+    title: "Todo",
   },
 };
 

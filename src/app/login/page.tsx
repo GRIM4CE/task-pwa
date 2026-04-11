@@ -66,7 +66,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-text">Home Control</h1>
+          <h1 className="text-2xl font-bold text-text">Todo</h1>
           <p className="mt-2 text-sm text-text-muted">
             Enter your credentials to continue
           </p>

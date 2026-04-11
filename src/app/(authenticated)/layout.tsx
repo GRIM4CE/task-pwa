@@ -43,7 +43,7 @@ export default function AuthenticatedLayout({
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-border bg-surface">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
-          <h1 className="text-lg font-semibold text-text">Home Control</h1>
+          <h1 className="text-lg font-semibold text-text">Todo</h1>
           <div className="flex items-center gap-3">
             <span className="text-sm text-text-muted">{username}</span>
             <button

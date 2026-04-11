@@ -2,7 +2,7 @@ import * as OTPAuth from "otpauth";
 import { encrypt, decrypt } from "./crypto";
 import { env } from "./env";
 
-const ISSUER = "HomeControl";
+const ISSUER = "Todo";
 
 export function generateTotpSecret(username: string): {
   secret: string;

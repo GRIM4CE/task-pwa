@@ -20,6 +20,7 @@ const publicPaths = [
   "/api/auth/setup/verify",
   "/api/auth/recovery",
   "/api/health",
+  "/api/cron/cleanup",
 ];
 
 function isPublicPath(pathname: string): boolean {

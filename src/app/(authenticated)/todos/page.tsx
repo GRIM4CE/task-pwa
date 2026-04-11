@@ -14,6 +14,26 @@ interface Todo {
   createdBy: string;
 }
 
+function formatRelativeDate(timestamp: number): string {
+  const now = new Date();
+  const date = new Date(timestamp);
+
+  // Compare dates ignoring time
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dateStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.floor((todayStart.getTime() - dateStart.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays === 2) return "2 days ago";
+  if (diffDays === 3) return "3 days ago";
+
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const yy = String(date.getFullYear()).slice(-2);
+  return `${dd}/${mm}/${yy}`;
+}
+
 export default function TodosPage() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [newTitle, setNewTitle] = useState("");
@@ -94,7 +114,7 @@ export default function TodosPage() {
       <div className="mb-6">
         <h2 className="text-xl font-semibold text-text">Tasks</h2>
         <p className="text-sm text-text-muted">
-          {activeTodos.length} remaining{completedTodos.length > 0 ? `, ${completedTodos.length} completed` : ""}
+          {activeTodos.length} remaining{completedTodos.length > 0 ? `, ${completedTodos.length} done` : ""}
         </p>
       </div>
 
@@ -152,7 +172,9 @@ export default function TodosPage() {
                   {todo.title}
                 </span>
               )}
-              <span className="text-xs text-text-muted">{todo.createdBy}</span>
+              <span className="text-xs text-text-muted">
+                {todo.createdBy} &middot; {formatRelativeDate(todo.createdAt)}
+              </span>
             </div>
 
             <button
@@ -168,10 +190,10 @@ export default function TodosPage() {
         ))}
       </div>
 
-      {/* Completed todos */}
+      {/* Completed todos (done list) */}
       {completedTodos.length > 0 && (
         <div className="mt-8">
-          <h3 className="mb-3 text-sm font-medium text-text-muted">Completed</h3>
+          <h3 className="mb-3 text-sm font-medium text-text-muted">Done</h3>
           <div className="space-y-2">
             {completedTodos.map((todo) => (
               <div
@@ -191,7 +213,9 @@ export default function TodosPage() {
                   <span className="block text-text-muted line-through">
                     {todo.title}
                   </span>
-                  <span className="text-xs text-text-muted/60">{todo.createdBy}</span>
+                  <span className="text-xs text-text-muted/60">
+                    {todo.createdBy} &middot; {formatRelativeDate(todo.createdAt)}
+                  </span>
                 </div>
                 <button
                   onClick={() => handleDelete(todo.id)}

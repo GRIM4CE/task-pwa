@@ -1,7 +1,7 @@
 {
-  "name": "Home Control",
-  "short_name": "HomeCtl",
-  "description": "Personal home hardware management",
+  "name": "Todo",
+  "short_name": "Todo",
+  "description": "Shared household todo list",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

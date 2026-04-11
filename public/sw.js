@@ -1,4 +1,4 @@
-const CACHE_NAME = "home-control-v1";
+const CACHE_NAME = "todo-v1";
 const STATIC_ASSETS = ["/", "/login", "/todos", "/manifest.json"];
 
 // Install: cache static assets

@@ -92,7 +92,7 @@ export default function SetupPage() {
     <div className="flex min-h-screen items-center justify-center p-4">
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-text">Welcome to Home Control</h1>
+          <h1 className="text-2xl font-bold text-text">Welcome to Todo</h1>
           <p className="mt-2 text-sm text-text-muted">
             {step === "init" && "Let's set up your account security."}
             {step === "scan" && "Scan this QR code with your authenticator app."}
