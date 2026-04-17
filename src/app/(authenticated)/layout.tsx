@@ -47,7 +47,7 @@ export default function AuthenticatedLayout({
           <nav className="flex items-center gap-1" aria-label="Primary">
             <Link
               href="/archive"
-              aria-label="Completed tasks archive"
+              aria-label="Completed todos archive"
               aria-current={archiveActive ? "page" : undefined}
               className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
                 archiveActive
