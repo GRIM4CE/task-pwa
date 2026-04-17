@@ -6,6 +6,9 @@ import { isRecurringResetDue } from "@/lib/recurrence";
 
 type Todo = TodoDTO;
 
+const LONG_PRESS_MS = 400;
+const MOVE_CANCEL_PX = 10;
+
 function sortTodos(list: Todo[]): Todo[] {
   return [...list].sort((a, b) => {
     if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
@@ -42,7 +45,6 @@ export default function TodosPage() {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Todo | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("joined");
-  const [reorderMode, setReorderMode] = useState(false);
   const resettingRef = useRef<Set<string>>(new Set());
 
   // Compare lastCompletedAt against now and uncomplete any recurring todos
@@ -137,13 +139,7 @@ export default function TodosPage() {
     }
   }
 
-  async function handleMove(sectionIds: string[], index: number, direction: -1 | 1) {
-    const target = index + direction;
-    if (target < 0 || target >= sectionIds.length) return;
-
-    const newIds = [...sectionIds];
-    [newIds[index], newIds[target]] = [newIds[target], newIds[index]];
-
+  async function handleReorder(newIds: string[]) {
     // Mirror the server's reassignment so the local order updates immediately
     // without a refetch. The server sorts the existing sortOrder values of
     // these ids ascending and reassigns them in payload order.
@@ -212,10 +208,7 @@ export default function TodosPage() {
               key={tab}
               role="tab"
               aria-selected={isActive}
-              onClick={() => {
-                setActiveTab(tab);
-                setReorderMode(false);
-              }}
+              onClick={() => setActiveTab(tab)}
               className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
                 isActive
                   ? "bg-primary text-white"
@@ -228,37 +221,18 @@ export default function TodosPage() {
         })}
       </div>
 
-      <div className="mb-6 flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold text-text">
-            {activeTab === "joined" ? "Joined Todos" : "Personal Todos"}
-          </h2>
-          <p className="text-sm text-text-muted">
-            {regularActive.length} remaining
-            {regularDone.length > 0 ? `, ${regularDone.length} done` : ""}
-          </p>
-        </div>
-        {(reorderMode || visibleTodos.length > 1) && (
-          <button
-            type="button"
-            onClick={() => setReorderMode((v) => !v)}
-            aria-pressed={reorderMode}
-            className={`shrink-0 rounded-lg border px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary ${
-              reorderMode
-                ? "border-primary bg-primary text-white hover:bg-primary-hover"
-                : "border-border bg-surface text-text-muted hover:bg-surface-hover hover:text-text"
-            }`}
-          >
-            {reorderMode ? "Done" : "Reorder"}
-          </button>
-        )}
+      <div className="mb-6">
+        <h2 className="text-xl font-semibold text-text">
+          {activeTab === "joined" ? "Joined Todos" : "Personal Todos"}
+        </h2>
+        <p className="text-sm text-text-muted">
+          {regularActive.length} remaining
+          {regularDone.length > 0 ? `, ${regularDone.length} done` : ""}
+        </p>
       </div>
 
       {/* Add todo form */}
-      <form
-        onSubmit={handleAdd}
-        className={`mb-6 flex gap-2 ${reorderMode ? "hidden" : ""}`}
-      >
+      <form onSubmit={handleAdd} className="mb-6 flex gap-2">
         <input
           type="text"
           value={newTitle}
@@ -278,90 +252,54 @@ export default function TodosPage() {
 
       {/* Daily section */}
       {dailyTodos.length > 0 && (
-        <Section
-          title="Daily"
-          hint={reorderMode ? undefined : "Resets 24 hours after completion"}
-        >
-          {dailyTodos.map((todo, index) => {
-            const ids = dailyTodos.map((t) => t.id);
-            return (
-              <TodoRow
-                key={todo.id}
-                todo={todo}
-                done={todo.completed}
-                reorderMode={reorderMode}
-                canMoveUp={index > 0}
-                canMoveDown={index < dailyTodos.length - 1}
-                onMoveUp={() => handleMove(ids, index, -1)}
-                onMoveDown={() => handleMove(ids, index, 1)}
-                onToggle={() => handleToggle(todo)}
-                onOpen={() => setEditing(todo)}
-              />
-            );
-          })}
+        <Section title="Daily" hint="Resets 24 hours after completion">
+          <DraggableTodoList
+            todos={dailyTodos}
+            onReorder={handleReorder}
+            onToggle={handleToggle}
+            onOpen={(t) => setEditing(t)}
+          />
         </Section>
       )}
 
       {/* Weekly section */}
       {weeklyTodos.length > 0 && (
-        <Section
-          title="Weekly"
-          hint={reorderMode ? undefined : "Resets 7 days after completion"}
-        >
-          {weeklyTodos.map((todo, index) => {
-            const ids = weeklyTodos.map((t) => t.id);
-            return (
-              <TodoRow
-                key={todo.id}
-                todo={todo}
-                done={todo.completed}
-                reorderMode={reorderMode}
-                canMoveUp={index > 0}
-                canMoveDown={index < weeklyTodos.length - 1}
-                onMoveUp={() => handleMove(ids, index, -1)}
-                onMoveDown={() => handleMove(ids, index, 1)}
-                onToggle={() => handleToggle(todo)}
-                onOpen={() => setEditing(todo)}
-              />
-            );
-          })}
+        <Section title="Weekly" hint="Resets 7 days after completion">
+          <DraggableTodoList
+            todos={weeklyTodos}
+            onReorder={handleReorder}
+            onToggle={handleToggle}
+            onOpen={(t) => setEditing(t)}
+          />
         </Section>
       )}
 
       {/* General (active regular) todos */}
       {regularActive.length > 0 && (
         <Section title="General">
-          {regularActive.map((todo, index) => {
-            const ids = regularActive.map((t) => t.id);
-            return (
-              <TodoRow
-                key={todo.id}
-                todo={todo}
-                reorderMode={reorderMode}
-                canMoveUp={index > 0}
-                canMoveDown={index < regularActive.length - 1}
-                onMoveUp={() => handleMove(ids, index, -1)}
-                onMoveDown={() => handleMove(ids, index, 1)}
-                onToggle={() => handleToggle(todo)}
-                onOpen={() => setEditing(todo)}
-              />
-            );
-          })}
+          <DraggableTodoList
+            todos={regularActive}
+            onReorder={handleReorder}
+            onToggle={handleToggle}
+            onOpen={(t) => setEditing(t)}
+          />
         </Section>
       )}
 
       {/* Complete (regular done) todos */}
-      {regularDone.length > 0 && !reorderMode && (
+      {regularDone.length > 0 && (
         <Section title="Complete">
-          {regularDone.map((todo) => (
-            <TodoRow
-              key={todo.id}
-              todo={todo}
-              done
-              onToggle={() => handleToggle(todo)}
-              onOpen={() => setEditing(todo)}
-            />
-          ))}
+          <div className="space-y-2">
+            {regularDone.map((todo) => (
+              <TodoRow
+                key={todo.id}
+                todo={todo}
+                done
+                onToggle={() => handleToggle(todo)}
+                onOpen={() => setEditing(todo)}
+              />
+            ))}
+          </div>
         </Section>
       )}
 
@@ -403,7 +341,253 @@ function Section({
         <h3 className="text-sm font-medium text-text-muted">{title}</h3>
         {hint && <span className="text-xs text-text-muted/70">{hint}</span>}
       </div>
-      <div className="space-y-2">{children}</div>
+      {children}
+    </div>
+  );
+}
+
+type DragState = {
+  id: string;
+  pointerId: number;
+  startIndex: number;
+  currentIndex: number;
+  deltaY: number;
+  startPointerY: number;
+  heights: number[];
+  tops: number[];
+};
+
+function DraggableTodoList({
+  todos,
+  onReorder,
+  onToggle,
+  onOpen,
+}: {
+  todos: Todo[];
+  onReorder: (ids: string[]) => void | Promise<void>;
+  onToggle: (todo: Todo) => void;
+  onOpen: (todo: Todo) => void;
+}) {
+  const [drag, setDrag] = useState<DragState | null>(null);
+  const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const pendingRef = useRef<{
+    id: string;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    timer: number;
+    element: HTMLElement;
+  } | null>(null);
+  const suppressNextClickRef = useRef(false);
+
+  const cancelPending = useCallback(() => {
+    const p = pendingRef.current;
+    if (!p) return;
+    clearTimeout(p.timer);
+    pendingRef.current = null;
+  }, []);
+
+  const beginDrag = useCallback(
+    (id: string, pointerId: number, startPointerY: number, element: HTMLElement) => {
+      const startIndex = todos.findIndex((t) => t.id === id);
+      if (startIndex < 0) return;
+      const heights: number[] = [];
+      const tops: number[] = [];
+      for (const t of todos) {
+        const el = itemRefs.current.get(t.id);
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        heights.push(rect.height);
+        tops.push(rect.top);
+      }
+      try {
+        element.setPointerCapture(pointerId);
+      } catch {
+        // ignore
+      }
+      if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+        navigator.vibrate?.(10);
+      }
+      setDrag({
+        id,
+        pointerId,
+        startIndex,
+        currentIndex: startIndex,
+        deltaY: 0,
+        startPointerY,
+        heights,
+        tops,
+      });
+    },
+    [todos]
+  );
+
+  // Pending long-press: cancel on movement or early release.
+  useEffect(() => {
+    function onMove(e: PointerEvent) {
+      const p = pendingRef.current;
+      if (!p || p.pointerId !== e.pointerId) return;
+      if (Math.hypot(e.clientX - p.startX, e.clientY - p.startY) > MOVE_CANCEL_PX) {
+        cancelPending();
+      }
+    }
+    function onEnd(e: PointerEvent) {
+      const p = pendingRef.current;
+      if (!p || p.pointerId !== e.pointerId) return;
+      cancelPending();
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onEnd);
+    window.addEventListener("pointercancel", onEnd);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onEnd);
+      window.removeEventListener("pointercancel", onEnd);
+    };
+  }, [cancelPending]);
+
+  // Active drag: track pointer, compute target index, commit on release.
+  useEffect(() => {
+    if (!drag) return;
+    const current = drag;
+
+    function computeIndex(pointerY: number): number {
+      const draggedCenter =
+        current.tops[current.startIndex] +
+        current.heights[current.startIndex] / 2 +
+        (pointerY - current.startPointerY);
+      let next = current.startIndex;
+      for (let i = 0; i < current.tops.length; i++) {
+        if (i === current.startIndex) continue;
+        const center = current.tops[i] + current.heights[i] / 2;
+        if (i < current.startIndex && draggedCenter < center) {
+          next = Math.min(next, i);
+        } else if (i > current.startIndex && draggedCenter > center) {
+          next = Math.max(next, i);
+        }
+      }
+      return next;
+    }
+
+    function onMove(e: PointerEvent) {
+      if (e.pointerId !== current.pointerId) return;
+      e.preventDefault();
+      const deltaY = e.clientY - current.startPointerY;
+      const nextIndex = computeIndex(e.clientY);
+      setDrag((prev) =>
+        prev ? { ...prev, deltaY, currentIndex: nextIndex } : prev
+      );
+    }
+
+    function onEnd(e: PointerEvent) {
+      if (e.pointerId !== current.pointerId) return;
+      setDrag((prev) => {
+        if (!prev) return prev;
+        if (prev.startIndex !== prev.currentIndex) {
+          const ids = todos.map((t) => t.id);
+          const [moved] = ids.splice(prev.startIndex, 1);
+          ids.splice(prev.currentIndex, 0, moved);
+          onReorder(ids);
+        }
+        return null;
+      });
+      // Suppress the synthetic click that follows a touch/mouse release.
+      suppressNextClickRef.current = true;
+      window.setTimeout(() => {
+        suppressNextClickRef.current = false;
+      }, 350);
+    }
+
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onEnd);
+    window.addEventListener("pointercancel", onEnd);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onEnd);
+      window.removeEventListener("pointercancel", onEnd);
+    };
+  }, [drag, todos, onReorder]);
+
+  function handlePointerDown(e: React.PointerEvent<HTMLDivElement>, id: string) {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    if (drag) return;
+    cancelPending();
+    const pointerId = e.pointerId;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const element = e.currentTarget;
+    const timer = window.setTimeout(() => {
+      const p = pendingRef.current;
+      if (!p || p.pointerId !== pointerId) return;
+      pendingRef.current = null;
+      beginDrag(id, pointerId, startY, element);
+    }, LONG_PRESS_MS);
+    pendingRef.current = { id, pointerId, startX, startY, timer, element };
+  }
+
+  function handleClickCapture(e: React.MouseEvent) {
+    if (suppressNextClickRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      suppressNextClickRef.current = false;
+    }
+  }
+
+  function transformFor(index: number): string | undefined {
+    if (!drag) return undefined;
+    if (index === drag.startIndex) {
+      return `translate3d(0, ${drag.deltaY}px, 0)`;
+    }
+    if (drag.currentIndex > drag.startIndex) {
+      if (index > drag.startIndex && index <= drag.currentIndex) {
+        return `translate3d(0, ${-drag.heights[drag.startIndex] - 8}px, 0)`;
+      }
+    } else if (drag.currentIndex < drag.startIndex) {
+      if (index >= drag.currentIndex && index < drag.startIndex) {
+        return `translate3d(0, ${drag.heights[drag.startIndex] + 8}px, 0)`;
+      }
+    }
+    return undefined;
+  }
+
+  return (
+    <div
+      className={`space-y-2 ${drag ? "select-none touch-none" : ""}`}
+      onClickCapture={handleClickCapture}
+    >
+      {todos.map((todo, index) => {
+        const isDragging = drag?.id === todo.id;
+        const transform = transformFor(index);
+        return (
+          <div
+            key={todo.id}
+            ref={(el) => {
+              if (el) itemRefs.current.set(todo.id, el);
+              else itemRefs.current.delete(todo.id);
+            }}
+            onPointerDown={(e) => handlePointerDown(e, todo.id)}
+            style={{
+              transform,
+              transition: drag && !isDragging ? "transform 150ms ease" : undefined,
+              zIndex: isDragging ? 20 : undefined,
+              position: "relative",
+              touchAction: "pan-y",
+              WebkitTouchCallout: "none",
+              WebkitUserSelect: "none",
+              userSelect: "none",
+            }}
+            className={isDragging ? "shadow-lg shadow-black/40" : ""}
+          >
+            <TodoRow
+              todo={todo}
+              done={todo.completed}
+              lifted={isDragging}
+              onToggle={() => onToggle(todo)}
+              onOpen={() => onOpen(todo)}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -411,37 +595,32 @@ function Section({
 function TodoRow({
   todo,
   done,
-  reorderMode,
-  canMoveUp,
-  canMoveDown,
-  onMoveUp,
-  onMoveDown,
+  lifted,
   onToggle,
   onOpen,
 }: {
   todo: Todo;
   done?: boolean;
-  reorderMode?: boolean;
-  canMoveUp?: boolean;
-  canMoveDown?: boolean;
-  onMoveUp?: () => void;
-  onMoveDown?: () => void;
+  lifted?: boolean;
   onToggle: () => void;
   onOpen: () => void;
 }) {
   return (
     <div
-      className={`flex items-center gap-3 rounded-lg border border-border px-4 py-3 ${
-        done ? "bg-surface/50" : "bg-surface"
+      className={`flex items-center gap-3 rounded-lg border px-4 py-3 ${
+        lifted
+          ? "border-primary bg-surface-hover ring-2 ring-primary/40"
+          : done
+            ? "border-border bg-surface/50"
+            : "border-border bg-surface"
       }`}
     >
       <button
         onClick={onToggle}
-        disabled={reorderMode}
         className={
           done
-            ? "flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 border-success bg-success/20 hover:bg-success/10 focus:outline-none focus:ring-2 focus:ring-success disabled:opacity-50"
-            : "h-5 w-5 shrink-0 rounded border-2 border-border hover:border-primary focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+            ? "flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 border-success bg-success/20 hover:bg-success/10 focus:outline-none focus:ring-2 focus:ring-success"
+            : "h-5 w-5 shrink-0 rounded border-2 border-border hover:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
         }
         aria-label={done ? "Uncomplete todo" : "Complete todo"}
       >
@@ -455,8 +634,7 @@ function TodoRow({
       <button
         type="button"
         onClick={onOpen}
-        disabled={reorderMode}
-        className="flex-1 min-w-0 text-left disabled:cursor-default"
+        className="flex-1 min-w-0 text-left"
       >
         <span className={`block truncate ${done ? "text-text-muted line-through" : "text-text"}`}>
           {todo.title}
@@ -471,42 +649,15 @@ function TodoRow({
         </span>
       </button>
 
-      {reorderMode ? (
-        <div className="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            onClick={onMoveUp}
-            disabled={!canMoveUp}
-            aria-label="Move todo up"
-            className="rounded p-1 text-text-muted hover:text-text focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-30 disabled:hover:text-text-muted"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={onMoveDown}
-            disabled={!canMoveDown}
-            aria-label="Move todo down"
-            className="rounded p-1 text-text-muted hover:text-text focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-30 disabled:hover:text-text-muted"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </button>
-        </div>
-      ) : (
-        <button
-          onClick={onOpen}
-          className="shrink-0 rounded p-1 text-text-muted hover:text-text focus:outline-none focus:ring-2 focus:ring-primary"
-          aria-label="Todo settings"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
-          </svg>
-        </button>
-      )}
+      <button
+        onClick={onOpen}
+        className="shrink-0 rounded p-1 text-text-muted hover:text-text focus:outline-none focus:ring-2 focus:ring-primary"
+        aria-label="Todo settings"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+        </svg>
+      </button>
     </div>
   );
 }
