@@ -9,16 +9,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Delete completed todos where the day is over (completed before today midnight)
-  const todayMidnight = new Date();
-  todayMidnight.setHours(0, 0, 0, 0);
+  // Delete completed todos that were completed more than 24 hours ago
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
   const deleted = await db
     .delete(schema.todos)
     .where(
       and(
         eq(schema.todos.completed, true),
-        lt(schema.todos.updatedAt, todayMidnight)
+        lt(schema.todos.updatedAt, cutoff)
       )
     )
     .returning({ id: schema.todos.id });

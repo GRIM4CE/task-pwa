@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { eq, desc } from "drizzle-orm";
+import { and, eq, desc, lt } from "drizzle-orm";
 import { validateSession } from "@/lib/session";
 import { createTodoSchema } from "@/lib/validation";
 import { sql } from "drizzle-orm";
@@ -10,6 +10,15 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // Lazily evict completed todos older than 24h so they disappear even
+  // between cron runs.
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  await db
+    .delete(schema.todos)
+    .where(
+      and(eq(schema.todos.completed, true), lt(schema.todos.updatedAt, cutoff))
+    );
 
   // All users see all todos (shared household list)
   const todoList = await db
