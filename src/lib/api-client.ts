@@ -25,6 +25,22 @@ async function apiRequest<T>(
   }
 }
 
+export type Recurrence = "daily" | "weekly" | null;
+
+export interface TodoDTO {
+  id: string;
+  title: string;
+  description: string | null;
+  completed: boolean;
+  isPersonal: boolean;
+  sortOrder: number;
+  recurrence: Recurrence;
+  lastCompletedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+  createdBy: string;
+}
+
 export const api = {
   auth: {
     status: () => apiRequest<{ isAuthenticated: boolean; user: unknown; needsSetup: boolean; usernames?: string[] }>("/api/auth/status"),
@@ -38,11 +54,11 @@ export const api = {
       apiRequest<{ success: boolean; remainingRecoveryCodes: number; user: unknown }>("/api/auth/recovery", { method: "POST", body: JSON.stringify(body) }),
   },
   todos: {
-    list: () => apiRequest<Array<{ id: string; title: string; description: string | null; completed: boolean; isPersonal: boolean; sortOrder: number; createdAt: number; updatedAt: number; createdBy: string }>>("/api/todos"),
-    create: (body: { title: string; description?: string; isPersonal?: boolean }) =>
-      apiRequest<{ id: string; title: string; description: string | null; completed: boolean; isPersonal: boolean; sortOrder: number; createdAt: number; updatedAt: number; createdBy: string }>("/api/todos", { method: "POST", body: JSON.stringify(body) }),
-    update: (id: string, body: { title?: string; description?: string | null; completed?: boolean; sortOrder?: number }) =>
-      apiRequest<{ id: string; title: string; description: string | null; completed: boolean; isPersonal: boolean; sortOrder: number; createdAt: number; updatedAt: number; createdBy: string }>(`/api/todos/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    list: () => apiRequest<TodoDTO[]>("/api/todos"),
+    create: (body: { title: string; description?: string; isPersonal?: boolean; recurrence?: Recurrence }) =>
+      apiRequest<TodoDTO>("/api/todos", { method: "POST", body: JSON.stringify(body) }),
+    update: (id: string, body: { title?: string; description?: string | null; completed?: boolean; sortOrder?: number; recurrence?: Recurrence }) =>
+      apiRequest<TodoDTO>(`/api/todos/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     delete: (id: string) => apiRequest<{ success: boolean }>(`/api/todos/${id}`, { method: "DELETE" }),
   },
 };
