@@ -29,6 +29,8 @@ export async function GET() {
       completed: schema.todos.completed,
       isPersonal: schema.todos.isPersonal,
       sortOrder: schema.todos.sortOrder,
+      recurrence: schema.todos.recurrence,
+      lastCompletedAt: schema.todos.lastCompletedAt,
       createdAt: schema.todos.createdAt,
       updatedAt: schema.todos.updatedAt,
       createdBy: schema.users.username,
@@ -51,6 +53,8 @@ export async function GET() {
       completed: t.completed,
       isPersonal: t.isPersonal,
       sortOrder: t.sortOrder,
+      recurrence: t.recurrence,
+      lastCompletedAt: t.lastCompletedAt ? t.lastCompletedAt.getTime() : null,
       createdAt: t.createdAt.getTime(),
       updatedAt: t.updatedAt.getTime(),
       createdBy: t.createdBy,
@@ -64,7 +68,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { title: string; description?: string; isPersonal?: boolean };
+  let body: {
+    title: string;
+    description?: string;
+    isPersonal?: boolean;
+    recurrence?: "daily" | "weekly" | null;
+  };
   try {
     const raw = await request.json();
     body = createTodoSchema.parse(raw);
@@ -84,6 +93,7 @@ export async function POST(request: NextRequest) {
       title: body.title,
       description: body.description ?? null,
       isPersonal: body.isPersonal ?? false,
+      recurrence: body.recurrence ?? null,
       sortOrder: (maxOrder[0]?.max ?? -1) + 1,
     })
     .returning();
@@ -96,6 +106,8 @@ export async function POST(request: NextRequest) {
       completed: todo.completed,
       isPersonal: todo.isPersonal,
       sortOrder: todo.sortOrder,
+      recurrence: todo.recurrence,
+      lastCompletedAt: todo.lastCompletedAt ? todo.lastCompletedAt.getTime() : null,
       createdAt: todo.createdAt.getTime(),
       updatedAt: todo.updatedAt.getTime(),
       createdBy: session.user.username,

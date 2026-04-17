@@ -143,6 +143,8 @@ export const todos = sqliteTable(
     completed: integer("completed", { mode: "boolean" }).notNull().default(false),
     isPersonal: integer("is_personal", { mode: "boolean" }).notNull().default(false),
     sortOrder: integer("sort_order").notNull().default(0),
+    recurrence: text("recurrence", { enum: ["daily", "weekly"] }),
+    lastCompletedAt: integer("last_completed_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),
