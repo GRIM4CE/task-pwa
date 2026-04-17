@@ -38,11 +38,11 @@ export const api = {
       apiRequest<{ success: boolean; remainingRecoveryCodes: number; user: unknown }>("/api/auth/recovery", { method: "POST", body: JSON.stringify(body) }),
   },
   todos: {
-    list: () => apiRequest<Array<{ id: string; title: string; description: string | null; completed: boolean; sortOrder: number; createdAt: number; updatedAt: number; createdBy: string }>>("/api/todos"),
-    create: (body: { title: string; description?: string }) =>
-      apiRequest<{ id: string; title: string; description: string | null; completed: boolean; sortOrder: number; createdAt: number; updatedAt: number; createdBy: string }>("/api/todos", { method: "POST", body: JSON.stringify(body) }),
+    list: () => apiRequest<Array<{ id: string; title: string; description: string | null; completed: boolean; isPersonal: boolean; sortOrder: number; createdAt: number; updatedAt: number; createdBy: string }>>("/api/todos"),
+    create: (body: { title: string; description?: string; isPersonal?: boolean }) =>
+      apiRequest<{ id: string; title: string; description: string | null; completed: boolean; isPersonal: boolean; sortOrder: number; createdAt: number; updatedAt: number; createdBy: string }>("/api/todos", { method: "POST", body: JSON.stringify(body) }),
     update: (id: string, body: { title?: string; description?: string | null; completed?: boolean; sortOrder?: number }) =>
-      apiRequest<{ id: string; title: string; description: string | null; completed: boolean; sortOrder: number; createdAt: number; updatedAt: number; createdBy: string }>(`/api/todos/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+      apiRequest<{ id: string; title: string; description: string | null; completed: boolean; isPersonal: boolean; sortOrder: number; createdAt: number; updatedAt: number; createdBy: string }>(`/api/todos/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     delete: (id: string) => apiRequest<{ success: boolean }>(`/api/todos/${id}`, { method: "DELETE" }),
   },
 };

@@ -141,6 +141,7 @@ export const todos = sqliteTable(
     title: text("title").notNull(),
     description: text("description"),
     completed: integer("completed", { mode: "boolean" }).notNull().default(false),
+    isPersonal: integer("is_personal", { mode: "boolean" }).notNull().default(false),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()

@@ -8,6 +8,7 @@ interface Todo {
   title: string;
   description: string | null;
   completed: boolean;
+  isPersonal: boolean;
   sortOrder: number;
   createdAt: number;
   updatedAt: number;
@@ -34,6 +35,8 @@ function formatRelativeDate(timestamp: number): string {
   return `${dd}/${mm}/${yy}`;
 }
 
+type TabKey = "joined" | "personal";
+
 export default function TodosPage() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [newTitle, setNewTitle] = useState("");
@@ -41,6 +44,7 @@ export default function TodosPage() {
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
+  const [activeTab, setActiveTab] = useState<TabKey>("joined");
 
   const loadTodos = useCallback(async () => {
     const { data } = await api.todos.list();
@@ -70,7 +74,10 @@ export default function TodosPage() {
     if (!newTitle.trim()) return;
     setAdding(true);
 
-    const { data } = await api.todos.create({ title: newTitle.trim() });
+    const { data } = await api.todos.create({
+      title: newTitle.trim(),
+      isPersonal: activeTab === "personal",
+    });
     if (data) {
       setTodos((prev) => [...prev, data]);
       setNewTitle("");
@@ -109,8 +116,11 @@ export default function TodosPage() {
     setEditTitle("");
   }
 
-  const activeTodos = todos.filter((t) => !t.completed);
-  const completedTodos = todos.filter((t) => t.completed);
+  const visibleTodos = todos.filter((t) =>
+    activeTab === "personal" ? t.isPersonal : !t.isPersonal
+  );
+  const activeTodos = visibleTodos.filter((t) => !t.completed);
+  const completedTodos = visibleTodos.filter((t) => t.completed);
 
   if (loading) {
     return (
@@ -122,8 +132,35 @@ export default function TodosPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
+      <div
+        role="tablist"
+        aria-label="Task lists"
+        className="mb-4 flex gap-1 rounded-lg border border-border bg-surface p-1"
+      >
+        {(["joined", "personal"] as const).map((tab) => {
+          const isActive = activeTab === tab;
+          return (
+            <button
+              key={tab}
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => setActiveTab(tab)}
+              className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
+                isActive
+                  ? "bg-primary text-white"
+                  : "text-text-muted hover:bg-surface-hover hover:text-text"
+              }`}
+            >
+              {tab === "joined" ? "Joined" : "Personal"}
+            </button>
+          );
+        })}
+      </div>
+
       <div className="mb-6">
-        <h2 className="text-xl font-semibold text-text">Tasks</h2>
+        <h2 className="text-xl font-semibold text-text">
+          {activeTab === "joined" ? "Joined Tasks" : "Personal Tasks"}
+        </h2>
         <p className="text-sm text-text-muted">
           {activeTodos.length} remaining{completedTodos.length > 0 ? `, ${completedTodos.length} done` : ""}
         </p>
@@ -244,9 +281,13 @@ export default function TodosPage() {
       )}
 
       {/* Empty state */}
-      {todos.length === 0 && (
+      {visibleTodos.length === 0 && (
         <div className="py-12 text-center">
-          <p className="text-text-muted">No tasks yet. Add one above to get started.</p>
+          <p className="text-text-muted">
+            {activeTab === "personal"
+              ? "No personal tasks yet. Add one above to get started."
+              : "No tasks yet. Add one above to get started."}
+          </p>
         </div>
       )}
     </div>

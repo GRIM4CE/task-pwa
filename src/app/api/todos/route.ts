@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { and, eq, desc, lt } from "drizzle-orm";
+import { and, eq, desc, lt, or } from "drizzle-orm";
 import { validateSession } from "@/lib/session";
 import { createTodoSchema } from "@/lib/validation";
 import { sql } from "drizzle-orm";
@@ -20,13 +20,14 @@ export async function GET() {
       and(eq(schema.todos.completed, true), lt(schema.todos.updatedAt, cutoff))
     );
 
-  // All users see all todos (shared household list)
+  // Joined todos are visible to everyone; personal todos are visible only to their owner.
   const todoList = await db
     .select({
       id: schema.todos.id,
       title: schema.todos.title,
       description: schema.todos.description,
       completed: schema.todos.completed,
+      isPersonal: schema.todos.isPersonal,
       sortOrder: schema.todos.sortOrder,
       createdAt: schema.todos.createdAt,
       updatedAt: schema.todos.updatedAt,
@@ -34,6 +35,12 @@ export async function GET() {
     })
     .from(schema.todos)
     .innerJoin(schema.users, eq(schema.todos.userId, schema.users.id))
+    .where(
+      or(
+        eq(schema.todos.isPersonal, false),
+        and(eq(schema.todos.isPersonal, true), eq(schema.todos.userId, session.user.id))
+      )
+    )
     .orderBy(desc(schema.todos.createdAt));
 
   return NextResponse.json(
@@ -42,6 +49,7 @@ export async function GET() {
       title: t.title,
       description: t.description,
       completed: t.completed,
+      isPersonal: t.isPersonal,
       sortOrder: t.sortOrder,
       createdAt: t.createdAt.getTime(),
       updatedAt: t.updatedAt.getTime(),
@@ -56,7 +64,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { title: string; description?: string };
+  let body: { title: string; description?: string; isPersonal?: boolean };
   try {
     const raw = await request.json();
     body = createTodoSchema.parse(raw);
@@ -75,6 +83,7 @@ export async function POST(request: NextRequest) {
       userId: session.user.id,
       title: body.title,
       description: body.description ?? null,
+      isPersonal: body.isPersonal ?? false,
       sortOrder: (maxOrder[0]?.max ?? -1) + 1,
     })
     .returning();
@@ -85,6 +94,7 @@ export async function POST(request: NextRequest) {
       title: todo.title,
       description: todo.description,
       completed: todo.completed,
+      isPersonal: todo.isPersonal,
       sortOrder: todo.sortOrder,
       createdAt: todo.createdAt.getTime(),
       updatedAt: todo.updatedAt.getTime(),
