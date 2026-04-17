@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useRouter, usePathname } from "next/navigation";
 import { api } from "@/lib/api-client";
 
 export default function AuthenticatedLayout({
@@ -10,8 +11,8 @@ export default function AuthenticatedLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [checked, setChecked] = useState(false);
-  const [username, setUsername] = useState("");
 
   useEffect(() => {
     api.auth.status().then(({ data }) => {
@@ -20,16 +21,10 @@ export default function AuthenticatedLayout({
       } else if (!data?.isAuthenticated) {
         router.replace("/login");
       } else {
-        setUsername((data.user as { username: string })?.username ?? "");
         setChecked(true);
       }
     });
   }, [router]);
-
-  async function handleLogout() {
-    await api.auth.logout();
-    router.push("/login");
-  }
 
   if (!checked) {
     return (
@@ -39,20 +34,65 @@ export default function AuthenticatedLayout({
     );
   }
 
+  const archiveActive = pathname?.startsWith("/archive");
+  const settingsActive = pathname?.startsWith("/settings");
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-border bg-surface">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
-          <h1 className="text-lg font-semibold text-text">Todo</h1>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-text-muted">{username}</span>
-            <button
-              onClick={handleLogout}
-              className="rounded-lg px-3 py-1.5 text-sm text-text-muted hover:bg-surface-hover hover:text-text"
+          <Link href="/todos" className="text-lg font-semibold text-text hover:text-primary">
+            Todo
+          </Link>
+          <nav className="flex items-center gap-1" aria-label="Primary">
+            <Link
+              href="/archive"
+              aria-label="Completed tasks archive"
+              aria-current={archiveActive ? "page" : undefined}
+              className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
+                archiveActive
+                  ? "bg-surface-hover text-text"
+                  : "text-text-muted hover:bg-surface-hover hover:text-text"
+              }`}
             >
-              Sign Out
-            </button>
-          </div>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path d="M2.5 4.75A1.75 1.75 0 014.25 3h11.5a1.75 1.75 0 011.75 1.75v1.5A1.75 1.75 0 0115.75 8H4.25A1.75 1.75 0 012.5 6.25v-1.5z" />
+                <path
+                  fillRule="evenodd"
+                  d="M3.5 9.5h13v5.75A1.75 1.75 0 0114.75 17h-9.5A1.75 1.75 0 013.5 15.25V9.5zm4 2.25a.75.75 0 01.75-.75h3.5a.75.75 0 010 1.5h-3.5a.75.75 0 01-.75-.75z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </Link>
+            <Link
+              href="/settings"
+              aria-label="Settings"
+              aria-current={settingsActive ? "page" : undefined}
+              className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
+                settingsActive
+                  ? "bg-surface-hover text-text"
+                  : "text-text-muted hover:bg-surface-hover hover:text-text"
+              }`}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </Link>
+          </nav>
         </div>
       </header>
       <main className="flex-1">{children}</main>
