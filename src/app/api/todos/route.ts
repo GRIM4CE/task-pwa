@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { and, eq, desc, gte, or, isNull, isNotNull, not } from "drizzle-orm";
+import { and, asc, eq, desc, gte, or, isNull, isNotNull, not } from "drizzle-orm";
 import { validateSession } from "@/lib/session";
 import { createTodoSchema } from "@/lib/validation";
 import { sql } from "drizzle-orm";
@@ -48,7 +48,7 @@ export async function GET() {
         )
       )
     )
-    .orderBy(desc(schema.todos.createdAt));
+    .orderBy(asc(schema.todos.sortOrder), desc(schema.todos.createdAt));
 
   return NextResponse.json(
     todoList.map((t) => ({
