@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { eq, and, lt } from "drizzle-orm";
+import { eq, and, lt, isNull } from "drizzle-orm";
 
 export async function GET(request: NextRequest) {
   // Verify this is called by Vercel Cron (or with the correct secret)
@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
     .where(
       and(
         eq(schema.todos.completed, true),
+        isNull(schema.todos.recurrence),
         lt(schema.todos.updatedAt, cutoff)
       )
     )
