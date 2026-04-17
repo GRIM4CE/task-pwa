@@ -6,6 +6,13 @@ import { isRecurringResetDue } from "@/lib/recurrence";
 
 type Todo = TodoDTO;
 
+function sortTodos(list: Todo[]): Todo[] {
+  return [...list].sort((a, b) => {
+    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+    return b.createdAt - a.createdAt;
+  });
+}
+
 function formatRelativeDate(timestamp: number): string {
   const now = new Date();
   const date = new Date(timestamp);
@@ -35,6 +42,7 @@ export default function TodosPage() {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Todo | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("joined");
+  const [reorderMode, setReorderMode] = useState(false);
   const resettingRef = useRef<Set<string>>(new Set());
 
   // Compare lastCompletedAt against now and uncomplete any recurring todos
@@ -129,6 +137,40 @@ export default function TodosPage() {
     }
   }
 
+  async function handleMove(sectionIds: string[], index: number, direction: -1 | 1) {
+    const target = index + direction;
+    if (target < 0 || target >= sectionIds.length) return;
+
+    const newIds = [...sectionIds];
+    [newIds[index], newIds[target]] = [newIds[target], newIds[index]];
+
+    // Mirror the server's reassignment so the local order updates immediately
+    // without a refetch. The server sorts the existing sortOrder values of
+    // these ids ascending and reassigns them in payload order.
+    const prev = todos;
+    setTodos((current) => {
+      const inSet = new Set(newIds);
+      const values = current
+        .filter((t) => inSet.has(t.id))
+        .map((t) => t.sortOrder)
+        .sort((a, b) => a - b);
+      const assigned: Record<string, number> = {};
+      newIds.forEach((id, i) => {
+        assigned[id] = values[i];
+      });
+      return sortTodos(
+        current.map((t) =>
+          assigned[t.id] !== undefined ? { ...t, sortOrder: assigned[t.id] } : t
+        )
+      );
+    });
+
+    const { error } = await api.todos.reorder(newIds);
+    if (error) {
+      setTodos(prev);
+    }
+  }
+
   async function handleEditSave(
     id: string,
     patch: { title: string; description: string | null; recurrence: Recurrence }
@@ -170,7 +212,10 @@ export default function TodosPage() {
               key={tab}
               role="tab"
               aria-selected={isActive}
-              onClick={() => setActiveTab(tab)}
+              onClick={() => {
+                setActiveTab(tab);
+                setReorderMode(false);
+              }}
               className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
                 isActive
                   ? "bg-primary text-white"
@@ -183,18 +228,37 @@ export default function TodosPage() {
         })}
       </div>
 
-      <div className="mb-6">
-        <h2 className="text-xl font-semibold text-text">
-          {activeTab === "joined" ? "Joined Tasks" : "Personal Tasks"}
-        </h2>
-        <p className="text-sm text-text-muted">
-          {regularActive.length} remaining
-          {regularDone.length > 0 ? `, ${regularDone.length} done` : ""}
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold text-text">
+            {activeTab === "joined" ? "Joined Tasks" : "Personal Tasks"}
+          </h2>
+          <p className="text-sm text-text-muted">
+            {regularActive.length} remaining
+            {regularDone.length > 0 ? `, ${regularDone.length} done` : ""}
+          </p>
+        </div>
+        {(reorderMode || visibleTodos.length > 1) && (
+          <button
+            type="button"
+            onClick={() => setReorderMode((v) => !v)}
+            aria-pressed={reorderMode}
+            className={`shrink-0 rounded-lg border px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary ${
+              reorderMode
+                ? "border-primary bg-primary text-white hover:bg-primary-hover"
+                : "border-border bg-surface text-text-muted hover:bg-surface-hover hover:text-text"
+            }`}
+          >
+            {reorderMode ? "Done" : "Reorder"}
+          </button>
+        )}
       </div>
 
       {/* Add todo form */}
-      <form onSubmit={handleAdd} className="mb-6 flex gap-2">
+      <form
+        onSubmit={handleAdd}
+        className={`mb-6 flex gap-2 ${reorderMode ? "hidden" : ""}`}
+      >
         <input
           type="text"
           value={newTitle}
@@ -214,50 +278,80 @@ export default function TodosPage() {
 
       {/* Daily section */}
       {dailyTodos.length > 0 && (
-        <Section title="Daily" hint="Resets 24 hours after completion">
-          {dailyTodos.map((todo) => (
-            <TodoRow
-              key={todo.id}
-              todo={todo}
-              done={todo.completed}
-              onToggle={() => handleToggle(todo)}
-              onOpen={() => setEditing(todo)}
-            />
-          ))}
+        <Section
+          title="Daily"
+          hint={reorderMode ? undefined : "Resets 24 hours after completion"}
+        >
+          {dailyTodos.map((todo, index) => {
+            const ids = dailyTodos.map((t) => t.id);
+            return (
+              <TodoRow
+                key={todo.id}
+                todo={todo}
+                done={todo.completed}
+                reorderMode={reorderMode}
+                canMoveUp={index > 0}
+                canMoveDown={index < dailyTodos.length - 1}
+                onMoveUp={() => handleMove(ids, index, -1)}
+                onMoveDown={() => handleMove(ids, index, 1)}
+                onToggle={() => handleToggle(todo)}
+                onOpen={() => setEditing(todo)}
+              />
+            );
+          })}
         </Section>
       )}
 
       {/* Weekly section */}
       {weeklyTodos.length > 0 && (
-        <Section title="Weekly" hint="Resets 7 days after completion">
-          {weeklyTodos.map((todo) => (
-            <TodoRow
-              key={todo.id}
-              todo={todo}
-              done={todo.completed}
-              onToggle={() => handleToggle(todo)}
-              onOpen={() => setEditing(todo)}
-            />
-          ))}
+        <Section
+          title="Weekly"
+          hint={reorderMode ? undefined : "Resets 7 days after completion"}
+        >
+          {weeklyTodos.map((todo, index) => {
+            const ids = weeklyTodos.map((t) => t.id);
+            return (
+              <TodoRow
+                key={todo.id}
+                todo={todo}
+                done={todo.completed}
+                reorderMode={reorderMode}
+                canMoveUp={index > 0}
+                canMoveDown={index < weeklyTodos.length - 1}
+                onMoveUp={() => handleMove(ids, index, -1)}
+                onMoveDown={() => handleMove(ids, index, 1)}
+                onToggle={() => handleToggle(todo)}
+                onOpen={() => setEditing(todo)}
+              />
+            );
+          })}
         </Section>
       )}
 
       {/* General (active regular) todos */}
       {regularActive.length > 0 && (
         <Section title="General">
-          {regularActive.map((todo) => (
-            <TodoRow
-              key={todo.id}
-              todo={todo}
-              onToggle={() => handleToggle(todo)}
-              onOpen={() => setEditing(todo)}
-            />
-          ))}
+          {regularActive.map((todo, index) => {
+            const ids = regularActive.map((t) => t.id);
+            return (
+              <TodoRow
+                key={todo.id}
+                todo={todo}
+                reorderMode={reorderMode}
+                canMoveUp={index > 0}
+                canMoveDown={index < regularActive.length - 1}
+                onMoveUp={() => handleMove(ids, index, -1)}
+                onMoveDown={() => handleMove(ids, index, 1)}
+                onToggle={() => handleToggle(todo)}
+                onOpen={() => setEditing(todo)}
+              />
+            );
+          })}
         </Section>
       )}
 
       {/* Complete (regular done) todos */}
-      {regularDone.length > 0 && (
+      {regularDone.length > 0 && !reorderMode && (
         <Section title="Complete">
           {regularDone.map((todo) => (
             <TodoRow
@@ -317,11 +411,21 @@ function Section({
 function TodoRow({
   todo,
   done,
+  reorderMode,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
   onToggle,
   onOpen,
 }: {
   todo: Todo;
   done?: boolean;
+  reorderMode?: boolean;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
   onToggle: () => void;
   onOpen: () => void;
 }) {
@@ -333,10 +437,11 @@ function TodoRow({
     >
       <button
         onClick={onToggle}
+        disabled={reorderMode}
         className={
           done
-            ? "flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 border-success bg-success/20 hover:bg-success/10 focus:outline-none focus:ring-2 focus:ring-success"
-            : "h-5 w-5 shrink-0 rounded border-2 border-border hover:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
+            ? "flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 border-success bg-success/20 hover:bg-success/10 focus:outline-none focus:ring-2 focus:ring-success disabled:opacity-50"
+            : "h-5 w-5 shrink-0 rounded border-2 border-border hover:border-primary focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
         }
         aria-label={done ? "Uncomplete task" : "Complete task"}
       >
@@ -350,7 +455,8 @@ function TodoRow({
       <button
         type="button"
         onClick={onOpen}
-        className="flex-1 min-w-0 text-left"
+        disabled={reorderMode}
+        className="flex-1 min-w-0 text-left disabled:cursor-default"
       >
         <span className={`block truncate ${done ? "text-text-muted line-through" : "text-text"}`}>
           {todo.title}
@@ -365,16 +471,42 @@ function TodoRow({
         </span>
       </button>
 
-      <button
-        onClick={onOpen}
-        className="shrink-0 rounded p-1 text-text-muted hover:text-text focus:outline-none focus:ring-2 focus:ring-primary"
-        aria-label="Task settings"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-          <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
-        </svg>
-      </button>
-
+      {reorderMode ? (
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={onMoveUp}
+            disabled={!canMoveUp}
+            aria-label="Move task up"
+            className="rounded p-1 text-text-muted hover:text-text focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-30 disabled:hover:text-text-muted"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={onMoveDown}
+            disabled={!canMoveDown}
+            aria-label="Move task down"
+            className="rounded p-1 text-text-muted hover:text-text focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-30 disabled:hover:text-text-muted"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={onOpen}
+          className="shrink-0 rounded p-1 text-text-muted hover:text-text focus:outline-none focus:ring-2 focus:ring-primary"
+          aria-label="Task settings"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }

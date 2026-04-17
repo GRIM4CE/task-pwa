@@ -60,6 +60,8 @@ export const api = {
       apiRequest<TodoDTO>("/api/todos", { method: "POST", body: JSON.stringify(body) }),
     update: (id: string, body: { title?: string; description?: string | null; completed?: boolean; sortOrder?: number; recurrence?: Recurrence }) =>
       apiRequest<TodoDTO>(`/api/todos/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    reorder: (ids: string[]) =>
+      apiRequest<{ success: boolean }>("/api/todos/reorder", { method: "POST", body: JSON.stringify({ ids }) }),
     delete: (id: string) => apiRequest<{ success: boolean }>(`/api/todos/${id}`, { method: "DELETE" }),
   },
 };
