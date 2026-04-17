@@ -31,10 +31,10 @@ type TabKey = "joined" | "personal";
 export default function TodosPage() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [newTitle, setNewTitle] = useState("");
-  const [newRecurrence, setNewRecurrence] = useState<Recurrence>(null);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Todo | null>(null);
+  const [frequencyFor, setFrequencyFor] = useState<Todo | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("joined");
   const resettingRef = useRef<Set<string>>(new Set());
 
@@ -104,14 +104,21 @@ export default function TodosPage() {
     const { data } = await api.todos.create({
       title: newTitle.trim(),
       isPersonal: activeTab === "personal",
-      recurrence: newRecurrence,
+      recurrence: null,
     });
     if (data) {
       setTodos((prev) => [...prev, data]);
       setNewTitle("");
-      setNewRecurrence(null);
     }
     setAdding(false);
+  }
+
+  async function handleSetRecurrence(id: string, recurrence: Recurrence) {
+    const { data } = await api.todos.update(id, { recurrence });
+    if (data) {
+      setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
+      setFrequencyFor(null);
+    }
   }
 
   async function handleToggle(todo: Todo) {
@@ -196,7 +203,7 @@ export default function TodosPage() {
       </div>
 
       {/* Add todo form */}
-      <form onSubmit={handleAdd} className="mb-6 flex flex-col gap-2 sm:flex-row">
+      <form onSubmit={handleAdd} className="mb-6 flex gap-2">
         <input
           type="text"
           value={newTitle}
@@ -205,16 +212,6 @@ export default function TodosPage() {
           className="flex-1 rounded-lg border border-border bg-surface px-3 py-2 text-text placeholder-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           maxLength={500}
         />
-        <select
-          value={newRecurrence ?? ""}
-          onChange={(e) => setNewRecurrence((e.target.value || null) as Recurrence)}
-          className="rounded-lg border border-border bg-surface px-3 py-2 text-text focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-          aria-label="Repeats"
-        >
-          <option value="">No repeat</option>
-          <option value="daily">Daily</option>
-          <option value="weekly">Weekly</option>
-        </select>
         <button
           type="submit"
           disabled={adding || !newTitle.trim()}
@@ -223,19 +220,6 @@ export default function TodosPage() {
           {adding ? "..." : "Add"}
         </button>
       </form>
-
-      {/* Active regular todos */}
-      <div className="space-y-2">
-        {regularActive.map((todo) => (
-          <TodoRow
-            key={todo.id}
-            todo={todo}
-            onToggle={() => handleToggle(todo)}
-            onEdit={() => setEditing(todo)}
-            onDelete={() => handleDelete(todo.id)}
-          />
-        ))}
-      </div>
 
       {/* Daily section */}
       {dailyTodos.length > 0 && (
@@ -247,6 +231,7 @@ export default function TodosPage() {
               done={todo.completed}
               onToggle={() => handleToggle(todo)}
               onEdit={() => setEditing(todo)}
+              onSettings={() => setFrequencyFor(todo)}
               onDelete={() => handleDelete(todo.id)}
             />
           ))}
@@ -263,15 +248,32 @@ export default function TodosPage() {
               done={todo.completed}
               onToggle={() => handleToggle(todo)}
               onEdit={() => setEditing(todo)}
+              onSettings={() => setFrequencyFor(todo)}
               onDelete={() => handleDelete(todo.id)}
             />
           ))}
         </Section>
       )}
 
-      {/* Completed regular todos */}
+      {/* General (active regular) todos */}
+      {regularActive.length > 0 && (
+        <Section title="General">
+          {regularActive.map((todo) => (
+            <TodoRow
+              key={todo.id}
+              todo={todo}
+              onToggle={() => handleToggle(todo)}
+              onEdit={() => setEditing(todo)}
+              onSettings={() => setFrequencyFor(todo)}
+              onDelete={() => handleDelete(todo.id)}
+            />
+          ))}
+        </Section>
+      )}
+
+      {/* Complete (regular done) todos */}
       {regularDone.length > 0 && (
-        <Section title="Done">
+        <Section title="Complete">
           {regularDone.map((todo) => (
             <TodoRow
               key={todo.id}
@@ -279,6 +281,7 @@ export default function TodosPage() {
               done
               onToggle={() => handleToggle(todo)}
               onEdit={() => setEditing(todo)}
+              onSettings={() => setFrequencyFor(todo)}
               onDelete={() => handleDelete(todo.id)}
             />
           ))}
@@ -302,6 +305,14 @@ export default function TodosPage() {
           onCancel={() => setEditing(null)}
           onDelete={() => handleDelete(editing.id)}
           onSave={(patch) => handleEditSave(editing.id, patch)}
+        />
+      )}
+
+      {frequencyFor && (
+        <FrequencyModal
+          todo={frequencyFor}
+          onCancel={() => setFrequencyFor(null)}
+          onSelect={(recurrence) => handleSetRecurrence(frequencyFor.id, recurrence)}
         />
       )}
     </div>
@@ -333,12 +344,14 @@ function TodoRow({
   done,
   onToggle,
   onEdit,
+  onSettings,
   onDelete,
 }: {
   todo: Todo;
   done?: boolean;
   onToggle: () => void;
   onEdit: () => void;
+  onSettings: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -382,6 +395,16 @@ function TodoRow({
       </button>
 
       <button
+        onClick={onSettings}
+        className="shrink-0 rounded p-1 text-text-muted hover:text-text focus:outline-none focus:ring-2 focus:ring-primary"
+        aria-label="Task frequency settings"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+        </svg>
+      </button>
+
+      <button
         onClick={onDelete}
         className="shrink-0 rounded p-1 text-text-muted opacity-0 hover:text-danger group-hover:opacity-100 focus:opacity-100 focus:outline-none"
         aria-label="Delete task"
@@ -390,6 +413,68 @@ function TodoRow({
           <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
         </svg>
       </button>
+    </div>
+  );
+}
+
+function FrequencyModal({
+  todo,
+  onCancel,
+  onSelect,
+}: {
+  todo: Todo;
+  onCancel: () => void;
+  onSelect: (recurrence: Recurrence) => void;
+}) {
+  const options: { value: Recurrence; label: string; hint: string }[] = [
+    { value: null, label: "No repeat", hint: "One-time task" },
+    { value: "daily", label: "Daily", hint: "Resets 24 hours after completion" },
+    { value: "weekly", label: "Weekly", hint: "Resets 7 days after completion" },
+  ];
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md rounded-lg border border-border bg-surface p-5 shadow-lg"
+      >
+        <h3 className="mb-1 text-lg font-semibold text-text">Frequency</h3>
+        <p className="mb-4 truncate text-sm text-text-muted">{todo.title}</p>
+
+        <div className="flex flex-col gap-2">
+          {options.map((opt) => {
+            const isActive = todo.recurrence === opt.value;
+            return (
+              <button
+                key={opt.label}
+                type="button"
+                onClick={() => onSelect(opt.value)}
+                className={`flex flex-col items-start rounded-lg border px-3 py-2 text-left focus:outline-none focus:ring-2 focus:ring-primary ${
+                  isActive
+                    ? "border-primary bg-primary/10"
+                    : "border-border bg-background hover:bg-surface-hover"
+                }`}
+              >
+                <span className="text-sm font-medium text-text">{opt.label}</span>
+                <span className="text-xs text-text-muted">{opt.hint}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-5 flex justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-lg px-3 py-2 text-sm text-text-muted hover:bg-surface-hover hover:text-text"
+          >
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
