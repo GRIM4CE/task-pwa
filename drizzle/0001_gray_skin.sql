@@ -1,0 +1,1 @@
+ALTER TABLE `todos` ADD `is_personal` integer DEFAULT false NOT NULL;

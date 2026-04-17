@@ -17,6 +17,7 @@ export const recoveryLoginSchema = z.object({
 export const createTodoSchema = z.object({
   title: z.string().min(1, "Title is required").max(500, "Title too long"),
   description: z.string().max(5000, "Description too long").optional(),
+  isPersonal: z.boolean().optional(),
 });
 
 export const updateTodoSchema = z.object({

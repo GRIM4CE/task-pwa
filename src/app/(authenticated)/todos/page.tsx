@@ -8,6 +8,7 @@ interface Todo {
   title: string;
   description: string | null;
   completed: boolean;
+  isPersonal: boolean;
   sortOrder: number;
   createdAt: number;
   updatedAt: number;
@@ -44,7 +45,6 @@ export default function TodosPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("joined");
-  const [currentUsername, setCurrentUsername] = useState("");
 
   const loadTodos = useCallback(async () => {
     const { data } = await api.todos.list();
@@ -57,12 +57,6 @@ export default function TodosPage() {
   useEffect(() => {
     loadTodos();
   }, [loadTodos]);
-
-  useEffect(() => {
-    api.auth.status().then(({ data }) => {
-      setCurrentUsername((data?.user as { username: string } | undefined)?.username ?? "");
-    });
-  }, []);
 
   // Refresh when the app comes back into focus (e.g. switching apps on iPhone)
   useEffect(() => {
@@ -80,7 +74,10 @@ export default function TodosPage() {
     if (!newTitle.trim()) return;
     setAdding(true);
 
-    const { data } = await api.todos.create({ title: newTitle.trim() });
+    const { data } = await api.todos.create({
+      title: newTitle.trim(),
+      isPersonal: activeTab === "personal",
+    });
     if (data) {
       setTodos((prev) => [...prev, data]);
       setNewTitle("");
@@ -119,10 +116,9 @@ export default function TodosPage() {
     setEditTitle("");
   }
 
-  const visibleTodos =
-    activeTab === "personal"
-      ? todos.filter((t) => t.createdBy === currentUsername)
-      : todos;
+  const visibleTodos = todos.filter((t) =>
+    activeTab === "personal" ? t.isPersonal : !t.isPersonal
+  );
   const activeTodos = visibleTodos.filter((t) => !t.completed);
   const completedTodos = visibleTodos.filter((t) => t.completed);
 
