@@ -544,7 +544,7 @@ function EditTodoModal({
           <button
             type="button"
             onClick={onDelete}
-            className="rounded-lg px-3 py-2 text-sm text-danger hover:bg-surface-hover"
+            className="rounded-lg border border-danger/40 bg-danger/10 px-4 py-2 text-sm font-medium text-danger hover:bg-danger hover:text-white focus:outline-none focus:ring-2 focus:ring-danger"
           >
             Delete
           </button>
