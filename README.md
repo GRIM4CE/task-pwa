@@ -1,36 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Todo PWA
 
-## Getting Started
+A Next.js 16 PWA with TOTP auth, Turso (libSQL) storage, and a daily cleanup cron.
 
-First, run the development server:
+## Local development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Required env vars (see `src/lib/env.ts` and `src/db/index.ts`):
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `APP_SECRET` – secret used for session/crypto
+- `APP_USERNAME` – comma-separated list of allowed usernames
+- `TURSO_DATABASE_URL` – libSQL URL (falls back to `file:./data/local.db` locally)
+- `TURSO_AUTH_TOKEN` – Turso auth token (omit for the local file DB)
+- `CRON_SECRET` – shared secret the scheduled cleanup job presents as `Authorization: Bearer …`
 
-## Learn More
+## Deploy on AWS Amplify Hosting
 
-To learn more about Next.js, take a look at the following resources:
+1. Push this repo to GitHub (already done) and in the Amplify console choose **Host web app → GitHub** and pick the branch you want to deploy (e.g. `main`).
+2. Amplify detects Next.js and uses the `amplify.yml` in the repo root. The SSR compute runtime is selected automatically.
+3. Set the env vars above under **App settings → Environment variables**. The build runs `npm run db:migrate` against Turso, so `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` must be present at build time as well as runtime.
+4. Attach a custom domain under **App settings → Domain management** for a stable URL (the generated `*.amplifyapp.com` URL is also stable per branch).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Scheduled cleanup (replaces Vercel Cron)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Amplify has no built-in cron, so schedule the cleanup with **Amazon EventBridge Scheduler**:
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Schedule: `cron(0 0 * * ? *)` (daily at 00:00 UTC)
+- Target: **HTTPS → API destination** pointing at `https://<your-domain>/api/cron/cleanup`
+- Method: `GET`
+- Header: `Authorization: Bearer <CRON_SECRET>` (store the secret in AWS Secrets Manager and reference it from the connection)
