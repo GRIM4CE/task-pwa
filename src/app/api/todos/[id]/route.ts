@@ -15,7 +15,13 @@ export async function PATCH(
 
   const { id } = await params;
 
-  let body: { title?: string; description?: string | null; completed?: boolean; sortOrder?: number };
+  let body: {
+    title?: string;
+    description?: string | null;
+    completed?: boolean;
+    sortOrder?: number;
+    recurrence?: "daily" | "weekly" | null;
+  };
   try {
     const raw = await request.json();
     body = updateTodoSchema.parse(raw);
@@ -39,11 +45,16 @@ export async function PATCH(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const updateData: Record<string, unknown> = { updatedAt: new Date() };
+  const now = new Date();
+  const updateData: Record<string, unknown> = { updatedAt: now };
   if (body.title !== undefined) updateData.title = body.title;
   if (body.description !== undefined) updateData.description = body.description;
-  if (body.completed !== undefined) updateData.completed = body.completed;
   if (body.sortOrder !== undefined) updateData.sortOrder = body.sortOrder;
+  if (body.recurrence !== undefined) updateData.recurrence = body.recurrence;
+  if (body.completed !== undefined) {
+    updateData.completed = body.completed;
+    updateData.lastCompletedAt = body.completed ? now : null;
+  }
 
   const [updated] = await db
     .update(schema.todos)
@@ -64,6 +75,8 @@ export async function PATCH(
     completed: updated.completed,
     isPersonal: updated.isPersonal,
     sortOrder: updated.sortOrder,
+    recurrence: updated.recurrence,
+    lastCompletedAt: updated.lastCompletedAt ? updated.lastCompletedAt.getTime() : null,
     createdAt: updated.createdAt.getTime(),
     updatedAt: updated.updatedAt.getTime(),
     createdBy: creator[0]?.username ?? "unknown",
