@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { eq, desc, or, and } from "drizzle-orm";
+import { and, eq, desc, lt, or, isNull } from "drizzle-orm";
 import { validateSession } from "@/lib/session";
 import { createTodoSchema } from "@/lib/validation";
 import { sql } from "drizzle-orm";
@@ -10,6 +10,19 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // Lazily evict non-recurring completed todos older than 24h so they
+  // disappear on open. Recurring todos are left for the recurrence reset.
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  await db
+    .delete(schema.todos)
+    .where(
+      and(
+        eq(schema.todos.completed, true),
+        isNull(schema.todos.recurrence),
+        lt(schema.todos.updatedAt, cutoff)
+      )
+    );
 
   // Joined todos are visible to everyone; personal todos are visible only to their owner.
   const todoList = await db
