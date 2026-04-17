@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { and, eq, desc, lt, or, isNull } from "drizzle-orm";
+import { and, eq, desc, gte, or, isNull, isNotNull, not } from "drizzle-orm";
 import { validateSession } from "@/lib/session";
 import { createTodoSchema } from "@/lib/validation";
 import { sql } from "drizzle-orm";
@@ -11,18 +11,9 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Lazily evict non-recurring completed todos older than 24h so they
-  // disappear on open. Recurring todos are left for the recurrence reset.
-  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  await db
-    .delete(schema.todos)
-    .where(
-      and(
-        eq(schema.todos.completed, true),
-        isNull(schema.todos.recurrence),
-        lt(schema.todos.updatedAt, cutoff)
-      )
-    );
+  // Non-recurring completed todos are kept in the DB so the archive can show
+  // them, but are hidden from the main list 24h after completion.
+  const recentCompletedCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
   // Joined todos are visible to everyone; personal todos are visible only to their owner.
   const todoList = await db
@@ -42,9 +33,19 @@ export async function GET() {
     .from(schema.todos)
     .innerJoin(schema.users, eq(schema.todos.userId, schema.users.id))
     .where(
-      or(
-        eq(schema.todos.isPersonal, false),
-        and(eq(schema.todos.isPersonal, true), eq(schema.todos.userId, session.user.id))
+      and(
+        or(
+          eq(schema.todos.isPersonal, false),
+          and(eq(schema.todos.isPersonal, true), eq(schema.todos.userId, session.user.id))
+        ),
+        or(
+          not(eq(schema.todos.completed, true)),
+          isNotNull(schema.todos.recurrence),
+          and(
+            isNull(schema.todos.recurrence),
+            gte(schema.todos.lastCompletedAt, recentCompletedCutoff)
+          )
+        )
       )
     )
     .orderBy(desc(schema.todos.createdAt));

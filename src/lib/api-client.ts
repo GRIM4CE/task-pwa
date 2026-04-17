@@ -55,6 +55,7 @@ export const api = {
   },
   todos: {
     list: () => apiRequest<TodoDTO[]>("/api/todos"),
+    archive: () => apiRequest<TodoDTO[]>("/api/todos/archive"),
     create: (body: { title: string; description?: string; isPersonal?: boolean; recurrence?: Recurrence }) =>
       apiRequest<TodoDTO>("/api/todos", { method: "POST", body: JSON.stringify(body) }),
     update: (id: string, body: { title?: string; description?: string | null; completed?: boolean; sortOrder?: number; recurrence?: Recurrence }) =>
