@@ -33,6 +33,12 @@ export async function PATCH(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  // Personal todos are only modifiable by their owner; they're also hidden from
+  // non-owners, so surface a 404 rather than a 403 to avoid leaking existence.
+  if (existing[0].isPersonal && existing[0].userId !== session.user.id) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const updateData: Record<string, unknown> = { updatedAt: new Date() };
   if (body.title !== undefined) updateData.title = body.title;
   if (body.description !== undefined) updateData.description = body.description;
@@ -56,6 +62,7 @@ export async function PATCH(
     title: updated.title,
     description: updated.description,
     completed: updated.completed,
+    isPersonal: updated.isPersonal,
     sortOrder: updated.sortOrder,
     createdAt: updated.createdAt.getTime(),
     updatedAt: updated.updatedAt.getTime(),
@@ -81,6 +88,10 @@ export async function DELETE(
     .limit(1);
 
   if (existing.length === 0) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (existing[0].isPersonal && existing[0].userId !== session.user.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
