@@ -3,7 +3,7 @@ import { db, schema } from "@/db";
 import { eq, and, lt, isNull } from "drizzle-orm";
 
 export async function GET(request: NextRequest) {
-  // Verify this is called by Vercel Cron (or with the correct secret)
+  // Verify the caller (e.g. EventBridge Scheduler) presents the shared secret
   const authHeader = request.headers.get("authorization");
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
