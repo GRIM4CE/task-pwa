@@ -211,7 +211,7 @@ export default function TodosPage() {
     <div className="mx-auto max-w-2xl px-4 py-6">
       <div
         role="tablist"
-        aria-label="Task lists"
+        aria-label="Todo lists"
         className="mb-4 flex gap-1 rounded-lg border border-border bg-surface p-1"
       >
         {(["joined", "personal"] as const).map((tab) => {
@@ -240,7 +240,7 @@ export default function TodosPage() {
       <div className="mb-6 flex items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold text-text">
-            {activeTab === "joined" ? "Joined Tasks" : "Personal Tasks"}
+            {activeTab === "joined" ? "Joined Todos" : "Personal Todos"}
           </h2>
           <p className="text-sm text-text-muted">
             {regularActive.length} remaining
@@ -272,7 +272,7 @@ export default function TodosPage() {
           type="text"
           value={newTitle}
           onChange={(e) => setNewTitle(e.target.value)}
-          placeholder="Add a new task..."
+          placeholder="Add a new todo..."
           className="flex-1 rounded-lg border border-border bg-surface px-3 py-2 text-text placeholder-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           maxLength={500}
         />
@@ -387,8 +387,8 @@ export default function TodosPage() {
         <div className="py-12 text-center">
           <p className="text-text-muted">
             {activeTab === "personal"
-              ? "No personal tasks yet. Add one above to get started."
-              : "No tasks yet. Add one above to get started."}
+              ? "No personal todos yet. Add one above to get started."
+              : "No todos yet. Add one above to get started."}
           </p>
         </div>
       )}
@@ -472,7 +472,7 @@ function TodoRow({
             ? "flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 border-success bg-success/20 hover:bg-success/10 focus:outline-none focus:ring-2 focus:ring-success disabled:opacity-50"
             : "h-5 w-5 shrink-0 rounded border-2 border-border hover:border-primary focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
         }
-        aria-label={done ? "Uncomplete task" : "Complete task"}
+        aria-label={done ? "Uncomplete todo" : "Complete todo"}
       >
         {done && (
           <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-success" viewBox="0 0 20 20" fill="currentColor">
@@ -506,7 +506,7 @@ function TodoRow({
             type="button"
             onClick={onMoveUp}
             disabled={!canMoveUp}
-            aria-label="Move task up"
+            aria-label="Move todo up"
             className="rounded p-1 text-text-muted hover:text-text focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-30 disabled:hover:text-text-muted"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -517,7 +517,7 @@ function TodoRow({
             type="button"
             onClick={onMoveDown}
             disabled={!canMoveDown}
-            aria-label="Move task down"
+            aria-label="Move todo down"
             className="rounded p-1 text-text-muted hover:text-text focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-30 disabled:hover:text-text-muted"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -530,7 +530,7 @@ function TodoRow({
           <button
             onClick={onSettings}
             className="shrink-0 rounded p-1 text-text-muted hover:text-text focus:outline-none focus:ring-2 focus:ring-primary"
-            aria-label="Task frequency settings"
+            aria-label="Todo frequency settings"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
@@ -540,7 +540,7 @@ function TodoRow({
           <button
             onClick={onDelete}
             className="shrink-0 rounded p-1 text-text-muted opacity-0 hover:text-danger group-hover:opacity-100 focus:opacity-100 focus:outline-none"
-            aria-label="Delete task"
+            aria-label="Delete todo"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
@@ -562,7 +562,7 @@ function FrequencyModal({
   onSelect: (recurrence: Recurrence) => void;
 }) {
   const options: { value: Recurrence; label: string; hint: string }[] = [
-    { value: null, label: "No repeat", hint: "One-time task" },
+    { value: null, label: "No repeat", hint: "One-time todo" },
     { value: "daily", label: "Daily", hint: "Resets 24 hours after completion" },
     { value: "weekly", label: "Weekly", hint: "Resets 7 days after completion" },
   ];
@@ -652,7 +652,7 @@ function EditTodoModal({
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-md rounded-lg border border-border bg-surface p-5 shadow-lg"
       >
-        <h3 className="mb-4 text-lg font-semibold text-text">Edit task</h3>
+        <h3 className="mb-4 text-lg font-semibold text-text">Edit todo</h3>
 
         <label className="mb-3 block">
           <span className="mb-1 block text-sm text-text-muted">Title</span>

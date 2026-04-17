@@ -10,7 +10,7 @@ export function recurrencePeriodMs(recurrence: Recurrence): number | null {
   return null;
 }
 
-// A completed recurring task is "due" for reset once the rolling period since
+// A completed recurring todo is "due" for reset once the rolling period since
 // it was last completed has fully elapsed.
 export function isRecurringResetDue(
   recurrence: Recurrence,
