@@ -85,7 +85,7 @@ export default function LoginPage() {
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-border bg-surface px-3 py-2 text-text placeholder-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                className="mt-1 block w-full rounded-lg border border-border bg-white px-3 py-2 text-black placeholder-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 placeholder="admin"
               />
             </div>
@@ -104,7 +104,7 @@ export default function LoginPage() {
                 maxLength={6}
                 value={totpCode}
                 onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                className="mt-1 block w-full rounded-lg border border-border bg-surface px-3 py-2 text-center text-2xl tracking-[0.3em] text-text placeholder-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                className="mt-1 block w-full rounded-lg border border-border bg-white px-3 py-2 text-center text-2xl tracking-[0.3em] text-black placeholder-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 placeholder="000000"
               />
             </div>
@@ -118,7 +118,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading || totpCode.length !== 6}
-              className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full rounded-lg bg-blue-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-950 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? "Signing in..." : "Sign In"}
             </button>
@@ -144,7 +144,7 @@ export default function LoginPage() {
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-border bg-surface px-3 py-2 text-text placeholder-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                className="mt-1 block w-full rounded-lg border border-border bg-white px-3 py-2 text-black placeholder-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 placeholder="admin"
               />
             </div>
@@ -160,7 +160,7 @@ export default function LoginPage() {
                 maxLength={8}
                 value={recoveryCode}
                 onChange={(e) => setRecoveryCode(e.target.value.toLowerCase().slice(0, 8))}
-                className="mt-1 block w-full rounded-lg border border-border bg-surface px-3 py-2 text-center text-lg tracking-wider text-text placeholder-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+                className="mt-1 block w-full rounded-lg border border-border bg-white px-3 py-2 text-center text-lg tracking-wider text-black placeholder-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary font-mono"
                 placeholder="abcd1234"
               />
             </div>
@@ -174,7 +174,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading || recoveryCode.length !== 8}
-              className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full rounded-lg bg-blue-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-950 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? "Verifying..." : "Use Recovery Code"}
             </button>
