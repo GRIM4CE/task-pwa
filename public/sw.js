@@ -1,5 +1,14 @@
-const CACHE_NAME = "todo-v2";
-const STATIC_ASSETS = ["/", "/login", "/todos", "/manifest.json"];
+const CACHE_NAME = "todo-v3";
+const STATIC_ASSETS = [
+  "/",
+  "/login",
+  "/todos",
+  "/manifest.json",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/icon-512-maskable.png",
+  "/icons/apple-touch-icon.png",
+];
 
 // Install: cache static assets
 self.addEventListener("install", (event) => {
