@@ -32,7 +32,7 @@ export default function AuthenticatedLayout({
   useEffect(() => {
     const root = document.documentElement;
     const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-    const isPink = username?.toLowerCase() === "juliette";
+    const isPink = username?.toLowerCase().startsWith("juliette") ?? false;
     if (isPink) {
       root.dataset.theme = "pink";
       if (meta) meta.content = "#b03f74";
