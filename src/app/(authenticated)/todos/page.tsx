@@ -183,8 +183,13 @@ export default function TodosPage() {
   );
   const regularActive = visibleTodos.filter((t) => !t.completed && t.recurrence === null);
   const regularDone = visibleTodos.filter((t) => t.completed && t.recurrence === null);
-  const dailyTodos = visibleTodos.filter((t) => t.recurrence === "daily");
-  const weeklyTodos = visibleTodos.filter((t) => t.recurrence === "weekly");
+  // Stable sort keeps sortOrder within each completion group; incomplete first.
+  const dailyTodos = visibleTodos
+    .filter((t) => t.recurrence === "daily")
+    .sort((a, b) => Number(a.completed) - Number(b.completed));
+  const weeklyTodos = visibleTodos
+    .filter((t) => t.recurrence === "weekly")
+    .sort((a, b) => Number(a.completed) - Number(b.completed));
 
   if (loading) {
     return (
