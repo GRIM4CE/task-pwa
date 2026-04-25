@@ -31,13 +31,18 @@ export default function AuthenticatedLayout({
 
   useEffect(() => {
     const root = document.documentElement;
-    if (username?.toLowerCase() === "juliette") {
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    const isPink = username?.toLowerCase() === "juliette";
+    if (isPink) {
       root.dataset.theme = "pink";
+      if (meta) meta.content = "#b03f74";
     } else {
       delete root.dataset.theme;
+      if (meta) meta.content = "#3b719f";
     }
     return () => {
       delete root.dataset.theme;
+      if (meta) meta.content = "#3b719f";
     };
   }, [username]);
 
