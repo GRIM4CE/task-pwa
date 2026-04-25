@@ -39,8 +39,14 @@ export default function AuthenticatedLayout({
 
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="border-b border-border bg-surface">
-        <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
+      <header
+        className="border-b border-border bg-surface"
+        style={{
+          marginTop: "calc(-1 * env(safe-area-inset-top))",
+          paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)",
+        }}
+      >
+        <div className="mx-auto flex max-w-2xl items-center justify-between px-4 pb-3">
           <Link href="/todos" className="text-lg font-semibold text-text hover:text-primary">
             Todo
           </Link>
