@@ -244,7 +244,7 @@ export default function TodosPage() {
         <button
           type="submit"
           disabled={adding || !newTitle.trim()}
-          className="rounded-lg bg-blue-900 px-4 py-2 text-sm font-medium text-white hover:bg-blue-950 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-text hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {adding ? "..." : "Add"}
         </button>

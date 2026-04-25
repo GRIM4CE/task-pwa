@@ -1,29 +1,19 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #0f172a;
-  --color-surface: #1e293b;
-  --color-surface-hover: #334155;
-  --color-border: #334155;
-  --color-primary: #3b82f6;
-  --color-primary-hover: #2563eb;
-  --color-danger: #ef4444;
+  --color-background: #0c1334;
+  --color-surface: #18206f;
+  --color-surface-hover: #252e85;
+  --color-border: #252e85;
+  --color-primary: #d88373;
+  --color-primary-hover: #c46d5d;
+  --color-danger: #bd1e1e;
   --color-success: #22c55e;
-  --color-text: #f1f5f9;
-  --color-text-muted: #94a3b8;
-  --color-app: #3b719f;
+  --color-text: #f5e2c8;
+  --color-text-muted: #bfa987;
+  --color-app: #17255a;
   --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-}
-
-[data-theme="pink"] {
-  --color-background: #2a0f1f;
-  --color-surface: #3d1a2d;
-  --color-surface-hover: #5a2742;
-  --color-border: #5a2742;
-  --color-primary: #ec4899;
-  --color-primary-hover: #db2777;
-  --color-app: #b03f74;
 }
 
 /* PWA standalone mode - safe area insets for notch devices */

@@ -13,7 +13,6 @@ export default function AuthenticatedLayout({
   const router = useRouter();
   const pathname = usePathname();
   const [checked, setChecked] = useState(false);
-  const [username, setUsername] = useState<string | null>(null);
 
   useEffect(() => {
     api.auth.status().then(({ data }) => {
@@ -22,29 +21,10 @@ export default function AuthenticatedLayout({
       } else if (!data?.isAuthenticated) {
         router.replace("/login");
       } else {
-        const user = data.user as { username?: string } | null;
-        setUsername(user?.username ?? null);
         setChecked(true);
       }
     });
   }, [router]);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-    const isPink = username?.toLowerCase().startsWith("juliette") ?? false;
-    if (isPink) {
-      root.dataset.theme = "pink";
-      if (meta) meta.content = "#b03f74";
-    } else {
-      delete root.dataset.theme;
-      if (meta) meta.content = "#3b719f";
-    }
-    return () => {
-      delete root.dataset.theme;
-      if (meta) meta.content = "#3b719f";
-    };
-  }, [username]);
 
   if (!checked) {
     return (
