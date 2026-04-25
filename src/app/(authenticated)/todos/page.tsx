@@ -631,23 +631,19 @@ function TodoRow({
         )}
       </button>
 
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex-1 min-w-0 text-left"
-      >
-        <span className={`block truncate ${done ? "text-text-muted line-through" : "text-text"}`}>
+      <div className="flex-1 min-w-0">
+        <span className={`block break-words ${done ? "text-text-muted line-through" : "text-text"}`}>
           {todo.title}
         </span>
         {todo.description && (
-          <span className={`mt-0.5 block truncate text-xs ${done ? "text-text-muted/60" : "text-text-muted"}`}>
+          <span className={`mt-0.5 block break-words text-xs ${done ? "text-text-muted/60" : "text-text-muted"}`}>
             {todo.description}
           </span>
         )}
         <span className={`text-xs ${done ? "text-text-muted/60" : "text-text-muted"}`}>
           {todo.createdBy} &middot; {formatRelativeDate(todo.createdAt)}
         </span>
-      </button>
+      </div>
 
       <button
         onClick={onOpen}
