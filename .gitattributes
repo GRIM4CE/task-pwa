@@ -1,0 +1,19 @@
+# Normalize line endings: store LF in the repo, check out per-platform.
+* text=auto eol=lf
+
+# Binary files — never diff or merge as text.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.zip  binary
+*.gz   binary
+*.woff  binary
+*.woff2 binary
+
+# Generated / vendored — exclude from diffs and language stats.
+package-lock.json   linguist-generated=true
+yarn.lock           linguist-generated=true
+pnpm-lock.yaml      linguist-generated=true

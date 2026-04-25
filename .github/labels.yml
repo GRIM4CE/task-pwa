@@ -1,0 +1,63 @@
+# Labels synced by .github/workflows/label-sync.yml.
+# Names match the branch prefixes in CLAUDE.md and the categories in release.yml.
+
+- name: feat
+  color: '0e8a16'
+  description: New feature
+
+- name: fix
+  color: 'd73a4a'
+  description: Bug fix
+
+- name: perf
+  color: 'fbca04'
+  description: Performance improvement
+
+- name: refactor
+  color: '5319e7'
+  description: Code restructuring without behavior change
+
+- name: docs
+  color: '0075ca'
+  description: Documentation only
+
+- name: test
+  color: 'bfd4f2'
+  description: Adding or updating tests
+
+- name: chore
+  color: 'cfd3d7'
+  description: Maintenance, deps, configs
+
+- name: style
+  color: 'f9d0c4'
+  description: Formatting only, no logic change
+
+- name: dependencies
+  color: '0366d6'
+  description: Dependency updates (used by Dependabot)
+
+- name: ignore-for-release
+  color: '24292e'
+  description: Exclude this PR from auto-generated release notes
+
+# GitHub defaults — kept here so they get consistent descriptions across repos.
+- name: bug
+  color: 'd73a4a'
+  description: Something is broken
+
+- name: enhancement
+  color: 'a2eeef'
+  description: Improvement to existing functionality
+
+- name: question
+  color: 'd876e3'
+  description: Further information is requested
+
+- name: good first issue
+  color: '7057ff'
+  description: Good for newcomers
+
+- name: help wanted
+  color: '008672'
+  description: Extra attention is needed

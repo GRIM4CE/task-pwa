@@ -1,0 +1,25 @@
+# Syncs repo labels from .github/labels.yml.
+# Runs automatically when labels.yml changes; can also be triggered manually
+# (Actions tab → Sync labels → Run workflow) to seed labels in a fresh repo.
+
+name: Sync labels
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/labels.yml']
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EndBug/label-sync@v2
+        with:
+          config-file: .github/labels.yml
+          # Set to true to remove any labels not declared in labels.yml.
+          delete-other-labels: false

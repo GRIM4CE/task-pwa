@@ -1,0 +1,15 @@
+{
+  "explorer.fileNesting.enabled": true,
+  "explorer.fileNesting.expand": false,
+  "explorer.fileNesting.patterns": {
+    ".gitignore": ".gitattributes, .gitmessage, .gitmodules, .mailmap, .gitkeep",
+    "README.md": "LICENSE, CLAUDE.md, CHANGELOG.md, CONTRIBUTING.md, SECURITY.md, CODE_OF_CONDUCT.md, AUTHORS, NOTICE",
+    ".env": ".env.*",
+    "package.json": "package-lock.json, yarn.lock, pnpm-lock.yaml, bun.lockb, .npmrc, .yarnrc, .yarnrc.yml, .nvmrc, .node-version",
+    "tsconfig.json": "tsconfig.*.json",
+    "pyproject.toml": "poetry.lock, uv.lock, requirements*.txt, setup.py, setup.cfg, MANIFEST.in, .python-version",
+    "Cargo.toml": "Cargo.lock",
+    "go.mod": "go.sum",
+    "Dockerfile": ".dockerignore, docker-compose*.yml, docker-compose*.yaml, compose*.yml, compose*.yaml"
+  }
+}

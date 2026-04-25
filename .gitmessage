@@ -1,0 +1,11 @@
+# <type>: <short summary, imperative mood, ~50 chars>
+#
+# Why this change exists. Focus on motivation, not mechanics —
+# the diff already shows what changed.
+#
+# Wrap body at ~72 chars. Reference issues/PRs as needed.
+#
+# Types: feat, fix, refactor, docs, chore, test, style, perf
+#
+# Wire this template up per-repo with:
+#   git config commit.template .gitmessage

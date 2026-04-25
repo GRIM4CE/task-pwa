@@ -1,0 +1,13 @@
+# CODEOWNERS — auto-request review from listed owners on matching paths.
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-security/customizing-your-repository/about-code-owners
+#
+# Order matters: the LAST matching pattern wins.
+# Replace @owner with a GitHub username or @org/team.
+
+# Default owner for everything in the repo.
+* @GRIM4CE
+
+# Examples — uncomment and adapt per repo.
+# /packages/api/   @org/backend
+# /packages/web/   @org/frontend
+# /.github/        @GRIM4CE

@@ -1,0 +1,36 @@
+# CI skeleton — uncomment and adapt to your stack.
+# Runs on every PR and on pushes to main.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- Node example ---
+      # - uses: actions/setup-node@v4
+      #   with:
+      #     node-version-file: '.nvmrc'
+      #     cache: 'npm'
+      # - run: npm ci
+      # - run: npm run lint
+      # - run: npm test
+
+      # --- Python example ---
+      # - uses: actions/setup-python@v5
+      #   with:
+      #     python-version-file: '.python-version'
+      #     cache: 'pip'
+      # - run: pip install -r requirements.txt
+      # - run: ruff check .
+      # - run: pytest
+
+      - name: Placeholder
+        run: echo "Replace this job with real lint/test steps for your stack."

@@ -1,0 +1,48 @@
+# CodeQL static analysis — GitHub's free security scanner.
+# Set `language` to match your stack. Supported values:
+#   c-cpp, csharp, go, java-kotlin, javascript-typescript,
+#   python, ruby, swift, actions
+# Docs: https://docs.github.com/en/code-security/code-scanning
+
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly scan to catch new CVEs in unchanged code.
+    - cron: "27 4 * * 1"
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Replace with the languages used in this repo.
+        language: [actions]
+        # Examples: javascript-typescript, python, go
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
