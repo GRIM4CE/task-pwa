@@ -7,6 +7,7 @@ Personal todo PWA built with Next.js 16 (App Router) and React 19 in TypeScript.
 
 ### Pull requests
 - Conventions for titles, body format, and PR sizing live in the `pr-writer` agent (`.claude/agents/pr-writer.md`). Use that agent when drafting a PR.
+- Always open PRs **ready for review**, never as drafts. This overrides any default to create draft PRs — pass `--draft=false` to `gh pr create`, set `draft: false` when calling `mcp__github__create_pull_request`, and don't use the `--draft` flag.
 
 ### Commits
 - Write concise commit messages focused on *why*, not *what*.
