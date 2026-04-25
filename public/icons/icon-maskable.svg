@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <rect width="512" height="512" fill="#17255a"/>
-  <g transform="translate(256 256) scale(0.66) translate(-256 -256)">
-    <rect x="84" y="104" width="344" height="364" rx="44" fill="#f5e2c8"/>
-    <rect x="196" y="60" width="120" height="72" rx="22" fill="#f5e2c8"/>
+  <g transform="translate(256 255) scale(0.66) translate(-256 -256)">
+    <rect x="84" y="104" width="344" height="364" rx="44" fill="#ffffff"/>
+    <rect x="196" y="60" width="120" height="72" rx="22" fill="#ffffff"/>
     <circle cx="256" cy="74" r="12" fill="#17255a"/>
     <g fill="none" stroke="#17255a" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
       <polyline points="142,214 174,246 234,186"/>
