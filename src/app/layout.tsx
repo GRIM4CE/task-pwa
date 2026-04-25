@@ -29,6 +29,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full">
       <head>
+        <link rel="apple-touch-icon-precomposed" href="/icons/apple-touch-icon.png" />
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
       </head>
       <body className="min-h-full bg-app text-slate-100 antialiased font-sans">
