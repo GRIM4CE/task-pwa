@@ -211,7 +211,7 @@ export default function SetupPage() {
                 maxLength={6}
                 value={totpCode}
                 onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                className="mt-2 block w-full rounded-lg border border-border bg-white px-3 py-3 text-center text-2xl tracking-[0.3em] text-black placeholder-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                className="mt-2 block w-full rounded-lg border border-border bg-input px-3 py-3 text-center text-2xl tracking-[0.3em] text-app placeholder-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 placeholder="000000"
                 autoFocus
               />
