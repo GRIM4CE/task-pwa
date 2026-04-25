@@ -1,8 +1,0 @@
-{
-  "recommendations": [
-    "editorconfig.editorconfig",
-    "github.vscode-github-actions",
-    "redhat.vscode-yaml",
-    "tamasfe.even-better-toml"
-  ]
-}

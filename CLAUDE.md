@@ -1,17 +1,7 @@
 # Project instructions for Claude Code
 
 ## About this project
-<!-- One or two sentences: what this repo is, primary language/framework, how to run it. -->
-
-## Nested CLAUDE.md files
-Add additional `CLAUDE.md` files in subdirectories when they contain domain-specific logic, unique conventions, or distinct tooling. This is especially useful in mono-repos, but applies anywhere a directory has context that doesn't belong in the root file.
-
-Examples:
-- `packages/api/CLAUDE.md` — API-specific patterns, endpoint conventions, auth handling
-- `packages/web/CLAUDE.md` — frontend component patterns, state management, styling approach
-- `scripts/CLAUDE.md` — scripting conventions, which scripts are safe to run
-
-Keep nested files focused; they supplement the root file, not replace it. Root file owns cross-cutting concerns (git, PRs, safety, general style). Nested files own domain-specific patterns, local commands, and package-specific gotchas.
+Personal todo PWA built with Next.js 16 (App Router) and React 19 in TypeScript. Auth is TOTP-based, storage is Turso (libSQL) accessed through Drizzle ORM, styling is Tailwind v4. Deployed to AWS Amplify Hosting; a daily cleanup job runs via EventBridge Scheduler hitting `/api/cron/cleanup`.
 
 ## Working preferences
 
@@ -68,12 +58,15 @@ Keep nested files focused; they supplement the root file, not replace it. Root f
 - Dependabot is enabled by default (see `.github/dependabot.yml`); keep minor/patch updates grouped to limit PR noise.
 
 ### Testing
-- Add tests for new functionality; bug fixes should include a regression test.
-- Prefer integration tests for user-facing flows, unit tests for pure logic.
-- Tests should be deterministic—no flaky tests, no reliance on external services without mocking.
+- No test runner is set up in this project yet. Don't add tests piecemeal — if a change would benefit from coverage, flag it so we can pick a framework (likely Vitest + Playwright) intentionally rather than ad hoc.
 
 ### File and folder structure
-<!-- Define where new files should go: components, services, utils, tests, etc. -->
+- `src/app/` — Next.js App Router routes. `(authenticated)/` is the route group behind session, `login/` and `setup/` are public, `api/` holds route handlers (auth, todos, cron).
+- `src/components/` — shared React components.
+- `src/db/` — Drizzle setup: `schema.ts`, `index.ts` (libSQL client), `migrate.ts` (run by `db:migrate`).
+- `src/lib/` — server-side helpers: `session`, `totp`, `crypto`, `rate-limit`, `lockout`, `audit`, `validation`, `recurrence`, `env`, `api-client`.
+- `drizzle/` — generated SQL migrations; don't hand-edit, regenerate via `npm run db:generate`.
+- Path alias `@/*` maps to `src/*` (see `tsconfig.json`).
 
 ### Naming conventions
 - Follow the established conventions for the stack (e.g., camelCase for JS/TS, snake_case for Python/Ruby).
@@ -91,12 +84,18 @@ Keep nested files focused; they supplement the root file, not replace it. Root f
 - Be direct about trade-offs or concerns.
 
 ## Commands
-<!-- Fill these in per-project -->
-- Install: `<package-manager> install`
-- Test: `<test-command>`
-- Lint / typecheck: `<lint-command>`
-- Dev server: `<dev-command>`
+- Install: `npm install`
+- Dev server: `npm run dev` (http://localhost:3000)
+- Lint: `npm run lint`
+- Build: `npm run build` — also runs `db:generate` and `db:migrate`, so it touches the database.
+- DB migrations: `npm run db:generate` (from schema diff), `npm run db:migrate` (apply).
+- DB UI: `npm run db:studio`.
+- Tests: not configured.
 
 ## Gotchas
-<!-- Anything non-obvious: unusual build steps, framework quirks, files not to touch, etc. -->
+- `next build` runs `drizzle-kit generate` and `src/db/migrate.ts` before compiling, so `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` (or the local file fallback) must be available at build time, not just runtime.
+- Without `TURSO_DATABASE_URL`, the libSQL client falls back to `file:./data/local.db` for local dev.
+- `.env.example` still labels `CRON_SECRET` as the "Vercel Cron secret" — this app deploys on AWS Amplify and the cron is triggered by EventBridge calling `/api/cron/cleanup` with `Authorization: Bearer $CRON_SECRET`. The comment is stale.
+- Don't hand-edit files under `drizzle/` — regenerate them from `src/db/schema.ts`.
+- All authenticated routes live under `src/app/(authenticated)/`; adding a new logged-in page means putting it inside that route group, not a sibling of it.
 
