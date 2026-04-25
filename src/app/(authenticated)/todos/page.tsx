@@ -182,14 +182,9 @@ export default function TodosPage() {
     activeTab === "personal" ? t.isPersonal : !t.isPersonal
   );
   const regularActive = visibleTodos.filter((t) => !t.completed && t.recurrence === null);
-  const regularDone = visibleTodos.filter((t) => t.completed && t.recurrence === null);
-  // Stable sort keeps sortOrder within each completion group; incomplete first.
-  const dailyTodos = visibleTodos
-    .filter((t) => t.recurrence === "daily")
-    .sort((a, b) => Number(a.completed) - Number(b.completed));
-  const weeklyTodos = visibleTodos
-    .filter((t) => t.recurrence === "weekly")
-    .sort((a, b) => Number(a.completed) - Number(b.completed));
+  const dailyTodos = visibleTodos.filter((t) => !t.completed && t.recurrence === "daily");
+  const weeklyTodos = visibleTodos.filter((t) => !t.completed && t.recurrence === "weekly");
+  const completedTodos = visibleTodos.filter((t) => t.completed);
 
   if (loading) {
     return (
@@ -232,7 +227,7 @@ export default function TodosPage() {
         </h2>
         <p className="text-sm text-text-muted">
           {regularActive.length} remaining
-          {regularDone.length > 0 ? `, ${regularDone.length} done` : ""}
+          {completedTodos.length > 0 ? `, ${completedTodos.length} done` : ""}
         </p>
       </div>
 
@@ -291,11 +286,11 @@ export default function TodosPage() {
         </Section>
       )}
 
-      {/* Complete (regular done) todos */}
-      {regularDone.length > 0 && (
+      {/* Complete todos (any recurrence) */}
+      {completedTodos.length > 0 && (
         <Section title="Complete">
           <div className="space-y-2">
-            {regularDone.map((todo) => (
+            {completedTodos.map((todo) => (
               <TodoRow
                 key={todo.id}
                 todo={todo}
