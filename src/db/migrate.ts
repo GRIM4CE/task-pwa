@@ -1,9 +1,17 @@
+import { mkdirSync } from "fs";
+import { dirname } from "path";
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
 
+const url = process.env.TURSO_DATABASE_URL ?? "file:./data/local.db";
+
+if (url.startsWith("file:")) {
+  mkdirSync(dirname(url.slice("file:".length)), { recursive: true });
+}
+
 const client = createClient({
-  url: process.env.TURSO_DATABASE_URL ?? "file:./data/local.db",
+  url,
   authToken: process.env.TURSO_AUTH_TOKEN,
 });
 
