@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #a8b8d4;
+  --color-background: #8a9dc0;
   --color-surface: #17255a;
   --color-surface-hover: #0c1334;
   --color-border: #cbd5e1;
@@ -11,7 +11,7 @@
   --color-success: #22c55e;
   --color-text: #0c1334;
   --color-text-muted: #64748b;
-  --color-app: #a8b8d4;
+  --color-app: #8a9dc0;
   --color-select: #f5e2c8;
   --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
