@@ -47,8 +47,8 @@ export default function TodosPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("joined");
   const resettingRef = useRef<Set<string>>(new Set());
 
-  // Compare lastCompletedAt against now and uncomplete any recurring todos
-  // whose rolling 24h (daily) or 7d (weekly) window has elapsed.
+  // Uncomplete any recurring todos whose next local-midnight reset boundary
+  // has passed since they were last completed (in the user's browser timezone).
   const resetDueRecurring = useCallback(async (list: Todo[]) => {
     const now = Date.now();
     const due = list.filter(
@@ -252,7 +252,7 @@ export default function TodosPage() {
 
       {/* Daily section */}
       {dailyTodos.length > 0 && (
-        <Section title="Daily" hint="Resets 24 hours after completion">
+        <Section title="Daily" hint="Resets at local midnight">
           <DraggableTodoList
             todos={dailyTodos}
             onReorder={handleReorder}
@@ -264,7 +264,7 @@ export default function TodosPage() {
 
       {/* Weekly section */}
       {weeklyTodos.length > 0 && (
-        <Section title="Weekly" hint="Resets 7 days after completion">
+        <Section title="Weekly" hint="Resets 7 days later at local midnight">
           <DraggableTodoList
             todos={weeklyTodos}
             onReorder={handleReorder}
@@ -753,8 +753,8 @@ function EditTodoModal({
                 className="w-full rounded-lg border border-border bg-input px-3 py-2 text-input-text focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
               >
                 <option value="">No repeat</option>
-                <option value="daily">Daily — resets 24 hours after completion</option>
-                <option value="weekly">Weekly — resets 7 days after completion</option>
+                <option value="daily">Daily — resets at local midnight</option>
+                <option value="weekly">Weekly — resets 7 days later at local midnight</option>
               </select>
             </label>
           </div>
