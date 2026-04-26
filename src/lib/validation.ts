@@ -1,7 +1,13 @@
 import { z } from "zod";
 
+const usernameField = z
+  .string()
+  .min(1, "Username is required")
+  .max(64, "Username too long")
+  .transform((v) => v.trim().toLowerCase());
+
 export const loginSchema = z.object({
-  username: z.string().min(1, "Username is required").max(64, "Username too long"),
+  username: usernameField,
   totpCode: z.string().regex(/^\d{6}$/, "Code must be 6 digits"),
 });
 
@@ -10,7 +16,7 @@ export const verifyTotpSchema = z.object({
 });
 
 export const recoveryLoginSchema = z.object({
-  username: z.string().min(1, "Username is required"),
+  username: usernameField,
   recoveryCode: z.string().min(8, "Invalid recovery code").max(8, "Invalid recovery code"),
 });
 

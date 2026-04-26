@@ -6,6 +6,11 @@ import { useRouter, usePathname } from "next/navigation";
 import { api } from "@/lib/api-client";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 
+function themeForUsername(username: string): string | null {
+  if (username.startsWith("juliette")) return "juliette";
+  return null;
+}
+
 export default function AuthenticatedLayout({
   children,
 }: {
@@ -22,6 +27,13 @@ export default function AuthenticatedLayout({
       } else if (!data?.isAuthenticated) {
         router.replace("/login");
       } else {
+        const username = (data.user as { username?: string } | null)?.username ?? "";
+        const theme = themeForUsername(username);
+        if (theme) {
+          document.documentElement.dataset.theme = theme;
+        } else {
+          delete document.documentElement.dataset.theme;
+        }
         setChecked(true);
       }
     });
