@@ -89,7 +89,7 @@ export default function ArchivePage() {
           {filtered.map((todo) => (
             <li
               key={todo.id}
-              className="flex items-start gap-3 rounded-lg border border-border bg-surface/50 px-4 py-3"
+              className="flex items-start gap-3 rounded-lg border border-border bg-surface px-4 py-3"
             >
               <div
                 aria-hidden
@@ -109,13 +109,13 @@ export default function ArchivePage() {
                 </svg>
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-text-muted line-through">{todo.title}</p>
+                <p className="truncate text-background/60 line-through">{todo.title}</p>
                 {todo.description && (
-                  <p className="mt-0.5 truncate text-xs text-text-muted/60">
+                  <p className="mt-0.5 truncate text-xs text-background/40">
                     {todo.description}
                   </p>
                 )}
-                <p className="mt-1 text-xs text-text-muted/70">
+                <p className="mt-1 text-xs text-background/50">
                   {todo.createdBy}
                   {todo.isPersonal ? " · Personal" : " · Joined"}
                   {todo.lastCompletedAt

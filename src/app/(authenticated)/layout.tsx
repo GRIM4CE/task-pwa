@@ -47,7 +47,7 @@ export default function AuthenticatedLayout({
         }}
       >
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 pb-3">
-          <Link href="/todos" className="text-lg font-semibold text-text hover:text-primary">
+          <Link href="/todos" className="text-lg font-semibold text-background hover:text-primary">
             Todo
           </Link>
           <nav className="flex items-center gap-1" aria-label="Primary">
@@ -57,8 +57,8 @@ export default function AuthenticatedLayout({
               aria-current={archiveActive ? "page" : undefined}
               className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
                 archiveActive
-                  ? "bg-surface-hover text-text"
-                  : "text-text-muted hover:bg-surface-hover hover:text-text"
+                  ? "bg-surface-hover text-background"
+                  : "text-background/60 hover:bg-surface-hover hover:text-background"
               }`}
             >
               <svg
@@ -81,8 +81,8 @@ export default function AuthenticatedLayout({
               aria-current={settingsActive ? "page" : undefined}
               className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
                 settingsActive
-                  ? "bg-surface-hover text-text"
-                  : "text-text-muted hover:bg-surface-hover hover:text-text"
+                  ? "bg-surface-hover text-background"
+                  : "text-background/60 hover:bg-surface-hover hover:text-background"
               }`}
             >
               <svg
