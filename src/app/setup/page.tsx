@@ -122,7 +122,7 @@ export default function SetupPage() {
             <button
               onClick={handleStartSetup}
               disabled={loading}
-              className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-text hover:bg-primary-hover disabled:opacity-50"
+              className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50"
             >
               {loading ? "Setting up..." : "Begin Setup"}
             </button>
@@ -164,7 +164,7 @@ export default function SetupPage() {
 
             <button
               onClick={() => setStep("verify")}
-              className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-text hover:bg-primary-hover"
+              className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-hover"
             >
               I&apos;ve scanned the code
             </button>
@@ -211,7 +211,7 @@ export default function SetupPage() {
                 maxLength={6}
                 value={totpCode}
                 onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                className="mt-2 block w-full rounded-lg border border-border bg-white px-3 py-3 text-center text-2xl tracking-[0.3em] text-app placeholder-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                className="mt-2 block w-full rounded-lg border border-border bg-white px-3 py-3 text-center text-2xl tracking-[0.3em] text-text placeholder-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 placeholder="000000"
                 autoFocus
               />
@@ -226,7 +226,7 @@ export default function SetupPage() {
             <button
               type="submit"
               disabled={loading || totpCode.length !== 6 || !selectedUsername}
-              className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-text hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? "Verifying..." : "Verify Code"}
             </button>
