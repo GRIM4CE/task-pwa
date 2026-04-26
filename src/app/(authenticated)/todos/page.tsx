@@ -209,10 +209,10 @@ export default function TodosPage() {
               role="tab"
               aria-selected={isActive}
               onClick={() => setActiveTab(tab)}
-              className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
+              className={`flex-1 rounded-md px-3 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-surface ${
                 isActive
-                  ? "bg-primary text-white"
-                  : "text-background/60 hover:bg-surface-hover hover:text-background"
+                  ? "bg-primary font-semibold text-white shadow-md"
+                  : "font-medium text-background/60 hover:bg-surface-hover hover:text-background"
               }`}
             >
               {tab === "joined" ? "Joined" : "Personal"}
