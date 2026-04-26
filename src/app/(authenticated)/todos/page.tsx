@@ -199,7 +199,7 @@ export default function TodosPage() {
       <div
         role="tablist"
         aria-label="Todo lists"
-        className="mb-4 flex gap-1 rounded-lg border border-border bg-surface p-1"
+        className="mb-4 flex gap-1 rounded-lg border border-on-surface bg-surface p-1"
       >
         {(["joined", "personal"] as const).map((tab) => {
           const isActive = activeTab === tab;
@@ -238,7 +238,7 @@ export default function TodosPage() {
           value={newTitle}
           onChange={(e) => setNewTitle(e.target.value)}
           placeholder="Add a new todo..."
-          className="flex-1 rounded-lg border border-border bg-input px-3 py-2 text-text placeholder-gray-400 focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+          className="flex-1 rounded-lg border border-border bg-input px-3 py-2 text-input-text placeholder-gray-400 focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
           maxLength={500}
         />
         <button
@@ -620,8 +620,8 @@ function TodoRow({
         lifted
           ? "border-focus bg-surface-hover ring-2 ring-focus/40"
           : done
-            ? "border-border bg-surface-hover"
-            : "border-border bg-surface"
+            ? "border-on-surface bg-surface-hover"
+            : "border-on-surface bg-surface"
       }`}
     >
       <button
@@ -730,7 +730,7 @@ function EditTodoModal({
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 maxLength={500}
-                className="w-full rounded-lg border border-border bg-input px-3 py-2 text-text placeholder-gray-400 focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+                className="w-full rounded-lg border border-border bg-input px-3 py-2 text-input-text placeholder-gray-400 focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
               />
             </label>
 
@@ -741,7 +741,7 @@ function EditTodoModal({
                 onChange={(e) => setDescription(e.target.value)}
                 maxLength={5000}
                 rows={5}
-                className="w-full rounded-lg border border-border bg-input px-3 py-2 text-text placeholder-gray-400 focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+                className="w-full rounded-lg border border-border bg-input px-3 py-2 text-input-text placeholder-gray-400 focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
               />
             </label>
 
@@ -750,7 +750,7 @@ function EditTodoModal({
               <select
                 value={recurrence ?? ""}
                 onChange={(e) => setRecurrence((e.target.value || null) as Recurrence)}
-                className="w-full rounded-lg border border-border bg-input px-3 py-2 text-text focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+                className="w-full rounded-lg border border-border bg-input px-3 py-2 text-input-text focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
               >
                 <option value="">No repeat</option>
                 <option value="daily">Daily — resets 24 hours after completion</option>
