@@ -13,7 +13,7 @@ export const env = {
   get appUsernames(): string[] {
     return getEnv("APP_USERNAME", "admin")
       .split(",")
-      .map((u) => u.trim())
+      .map((u) => u.trim().toLowerCase())
       .filter(Boolean);
   },
   get nodeEnv() {
