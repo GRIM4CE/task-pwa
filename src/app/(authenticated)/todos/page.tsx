@@ -498,13 +498,22 @@ function DraggableTodoList({
       }, 350);
     }
 
+    // Block the browser's native touch scrolling while a drag is in progress.
+    // pointermove.preventDefault is unreliable for this on iOS Safari, so we
+    // also intercept the underlying touchmove with a non-passive listener.
+    function onTouchMove(e: TouchEvent) {
+      e.preventDefault();
+    }
+
     window.addEventListener("pointermove", onMove, { passive: false });
     window.addEventListener("pointerup", onEnd);
     window.addEventListener("pointercancel", onEnd);
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
     return () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onEnd);
       window.removeEventListener("pointercancel", onEnd);
+      window.removeEventListener("touchmove", onTouchMove);
     };
   }, [drag, todos, onReorder]);
 
@@ -571,7 +580,7 @@ function DraggableTodoList({
               transition: drag && !isDragging ? "transform 150ms ease" : undefined,
               zIndex: isDragging ? 20 : undefined,
               position: "relative",
-              touchAction: "pan-y",
+              touchAction: drag ? "none" : "pan-y",
               WebkitTouchCallout: "none",
               WebkitUserSelect: "none",
               userSelect: "none",
