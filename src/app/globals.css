@@ -1,18 +1,45 @@
 @import "tailwindcss";
 
+/*
+ * Base palette — raw colors. Edit a value here and it propagates everywhere
+ * via the semantic tokens below. Do NOT use --c-* directly in components;
+ * always reach through a semantic token.
+ */
+:root {
+  --c-navy-900: #0c1334;
+  --c-navy-700: #17255a;
+  --c-page-bg: #6a7ea6;
+  --c-white: #ffffff;
+  --c-cream: #f5e2c8;
+  --c-red-700: #bd1e1e;
+  --c-red-800: #9a1818;
+  --c-coral: #d88373;
+  --c-green: #22c55e;
+  --c-slate-300: #cbd5e1;
+  --c-slate-500: #64748b;
+  --c-blue-focus: #3b5bb8;
+}
+
+/*
+ * Semantic tokens — what components actually reference. Each one expresses
+ * intent (surface, input, primary action, focus, etc.) so changing the base
+ * palette above flows through without touching component code.
+ */
 @theme {
-  --color-background: #c5d1e6;
-  --color-surface: #17255a;
-  --color-surface-hover: #0c1334;
-  --color-border: #cbd5e1;
-  --color-primary: #bd1e1e;
-  --color-primary-hover: #9a1818;
-  --color-danger: #d88373;
-  --color-success: #22c55e;
-  --color-text: #0c1334;
-  --color-text-muted: #64748b;
-  --color-app: #c5d1e6;
-  --color-select: #f5e2c8;
+  --color-background: var(--c-page-bg);
+  --color-surface: var(--c-navy-700);
+  --color-surface-hover: var(--c-navy-900);
+  --color-on-surface: var(--c-white);
+  --color-input: var(--c-white);
+  --color-border: var(--c-slate-300);
+  --color-text: var(--c-navy-900);
+  --color-text-muted: var(--c-slate-500);
+  --color-primary: var(--c-red-700);
+  --color-primary-hover: var(--c-red-800);
+  --color-danger: var(--c-coral);
+  --color-success: var(--c-green);
+  --color-focus: var(--c-blue-focus);
+  --color-select: var(--c-cream);
   --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
