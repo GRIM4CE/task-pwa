@@ -68,7 +68,7 @@ export default function ArchivePage() {
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search completed todos..."
           aria-label="Search completed todos"
-          className="w-full rounded-lg border border-border bg-white px-3 py-2 text-text placeholder-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          className="w-full rounded-lg border border-border bg-input px-3 py-2 text-text placeholder-gray-400 focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
         />
       </div>
 
@@ -109,13 +109,13 @@ export default function ArchivePage() {
                 </svg>
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-background/60 line-through">{todo.title}</p>
+                <p className="truncate text-on-surface/60 line-through">{todo.title}</p>
                 {todo.description && (
-                  <p className="mt-0.5 truncate text-xs text-background/40">
+                  <p className="mt-0.5 truncate text-xs text-on-surface/40">
                     {todo.description}
                   </p>
                 )}
-                <p className="mt-1 text-xs text-background/50">
+                <p className="mt-1 text-xs text-on-surface/50">
                   {todo.createdBy}
                   {todo.isPersonal ? " · Personal" : " · Joined"}
                   {todo.lastCompletedAt
