@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { api } from "@/lib/api-client";
+import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 
 export default function AuthenticatedLayout({
   children,
@@ -40,7 +41,7 @@ export default function AuthenticatedLayout({
   return (
     <div className="min-h-screen flex flex-col">
       <header
-        className="border-b border-on-surface bg-surface"
+        className="border-b border-border-on-surface bg-surface"
         style={{
           marginTop: "calc(-1 * env(safe-area-inset-top))",
           paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)",
@@ -51,6 +52,7 @@ export default function AuthenticatedLayout({
             Todo
           </Link>
           <nav className="flex items-center gap-1" aria-label="Primary">
+            <ThemeSwitcher />
             <Link
               href="/archive"
               aria-label="Completed todos archive"

@@ -103,7 +103,7 @@ export default function SetupPage() {
 
         {step === "init" && (
           <div className="space-y-4">
-            <div className="rounded-lg border border-on-surface bg-surface p-4 text-sm text-on-surface/60">
+            <div className="rounded-lg border border-border-on-surface bg-surface p-4 text-sm text-on-surface/60">
               <p className="font-medium text-on-surface">You&apos;ll need an authenticator app:</p>
               <ul className="mt-2 list-disc pl-5 space-y-1">
                 <li>Google Authenticator</li>
@@ -143,7 +143,7 @@ export default function SetupPage() {
             </div>
 
             {usernames.length > 1 && (
-              <div className="rounded-lg border border-on-surface bg-surface p-3 text-center text-sm text-on-surface/60">
+              <div className="rounded-lg border border-border-on-surface bg-surface p-3 text-center text-sm text-on-surface/60">
                 This code will be shared by: <span className="text-on-surface font-medium">{usernames.join(", ")}</span>
               </div>
             )}
@@ -157,7 +157,7 @@ export default function SetupPage() {
             </button>
 
             {showManualKey && (
-              <div className="rounded-lg border border-on-surface bg-surface p-3 text-center">
+              <div className="rounded-lg border border-border-on-surface bg-surface p-3 text-center">
                 <code className="break-all text-sm text-primary">{manualKey}</code>
               </div>
             )}
@@ -187,7 +187,7 @@ export default function SetupPage() {
                       className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                         selectedUsername === name
                           ? "border-primary bg-primary/10 text-primary"
-                          : "border-on-surface bg-surface text-on-surface/60 hover:bg-surface-hover"
+                          : "border-border-on-surface bg-surface text-on-surface/60 hover:bg-surface-hover"
                       }`}
                     >
                       {name}
@@ -243,7 +243,7 @@ export default function SetupPage() {
 
         {step === "recovery" && (
           <div className="space-y-4">
-            <div className="rounded-lg border border-on-surface bg-surface p-4">
+            <div className="rounded-lg border border-border-on-surface bg-surface p-4">
               <p className="text-sm font-medium text-danger mb-3">
                 Save these recovery codes securely. Each can only be used once.
               </p>
@@ -261,7 +261,7 @@ export default function SetupPage() {
 
             <button
               onClick={handleCopyRecoveryCodes}
-              className="w-full rounded-lg border border-on-surface bg-surface px-4 py-2 text-sm text-on-surface/60 hover:bg-surface-hover"
+              className="w-full rounded-lg border border-border-on-surface bg-surface px-4 py-2 text-sm text-on-surface/60 hover:bg-surface-hover"
             >
               Copy all codes
             </button>

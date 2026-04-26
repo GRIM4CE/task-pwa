@@ -199,7 +199,7 @@ export default function TodosPage() {
       <div
         role="tablist"
         aria-label="Todo lists"
-        className="mb-4 flex gap-1 rounded-lg border border-on-surface bg-surface p-1"
+        className="mb-4 flex gap-1 rounded-lg border border-border-on-surface bg-surface p-1"
       >
         {(["joined", "personal"] as const).map((tab) => {
           const isActive = activeTab === tab;
@@ -620,8 +620,8 @@ function TodoRow({
         lifted
           ? "border-focus bg-surface-hover ring-2 ring-focus/40"
           : done
-            ? "border-on-surface bg-surface-hover"
-            : "border-on-surface bg-surface"
+            ? "border-border-on-surface bg-surface-hover"
+            : "border-border-on-surface bg-surface"
       }`}
     >
       <button

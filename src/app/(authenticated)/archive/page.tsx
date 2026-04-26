@@ -89,7 +89,7 @@ export default function ArchivePage() {
           {filtered.map((todo) => (
             <li
               key={todo.id}
-              className="flex items-start gap-3 rounded-lg border border-on-surface bg-surface px-4 py-3"
+              className="flex items-start gap-3 rounded-lg border border-border-on-surface bg-surface px-4 py-3"
             >
               <div
                 aria-hidden
