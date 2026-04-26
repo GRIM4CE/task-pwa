@@ -30,12 +30,12 @@ export default function SettingsPage() {
         <p className="text-sm text-text-muted">Manage your account</p>
       </div>
 
-      <section className="mb-6 rounded-lg border border-border bg-surface p-4">
+      <section className="mb-6 rounded-lg border border-on-surface bg-surface p-4">
         <h3 className="mb-2 text-sm font-medium text-on-surface/60">Account</h3>
         <p className="text-on-surface">{username || "—"}</p>
       </section>
 
-      <section className="rounded-lg border border-border bg-surface p-4">
+      <section className="rounded-lg border border-on-surface bg-surface p-4">
         <h3 className="mb-2 text-sm font-medium text-on-surface/60">Session</h3>
         <button
           onClick={handleLogout}

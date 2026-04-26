@@ -68,7 +68,7 @@ export default function ArchivePage() {
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search completed todos..."
           aria-label="Search completed todos"
-          className="w-full rounded-lg border border-border bg-input px-3 py-2 text-text placeholder-gray-400 focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+          className="w-full rounded-lg border border-border bg-input px-3 py-2 text-input-text placeholder-gray-400 focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
         />
       </div>
 
@@ -89,7 +89,7 @@ export default function ArchivePage() {
           {filtered.map((todo) => (
             <li
               key={todo.id}
-              className="flex items-start gap-3 rounded-lg border border-border bg-surface px-4 py-3"
+              className="flex items-start gap-3 rounded-lg border border-on-surface bg-surface px-4 py-3"
             >
               <div
                 aria-hidden

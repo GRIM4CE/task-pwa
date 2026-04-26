@@ -103,7 +103,7 @@ export default function SetupPage() {
 
         {step === "init" && (
           <div className="space-y-4">
-            <div className="rounded-lg border border-border bg-surface p-4 text-sm text-on-surface/60">
+            <div className="rounded-lg border border-on-surface bg-surface p-4 text-sm text-on-surface/60">
               <p className="font-medium text-on-surface">You&apos;ll need an authenticator app:</p>
               <ul className="mt-2 list-disc pl-5 space-y-1">
                 <li>Google Authenticator</li>
@@ -143,7 +143,7 @@ export default function SetupPage() {
             </div>
 
             {usernames.length > 1 && (
-              <div className="rounded-lg border border-border bg-surface p-3 text-center text-sm text-on-surface/60">
+              <div className="rounded-lg border border-on-surface bg-surface p-3 text-center text-sm text-on-surface/60">
                 This code will be shared by: <span className="text-on-surface font-medium">{usernames.join(", ")}</span>
               </div>
             )}
@@ -157,7 +157,7 @@ export default function SetupPage() {
             </button>
 
             {showManualKey && (
-              <div className="rounded-lg border border-border bg-surface p-3 text-center">
+              <div className="rounded-lg border border-on-surface bg-surface p-3 text-center">
                 <code className="break-all text-sm text-primary">{manualKey}</code>
               </div>
             )}
@@ -187,7 +187,7 @@ export default function SetupPage() {
                       className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                         selectedUsername === name
                           ? "border-primary bg-primary/10 text-primary"
-                          : "border-border bg-surface text-on-surface/60 hover:bg-surface-hover"
+                          : "border-on-surface bg-surface text-on-surface/60 hover:bg-surface-hover"
                       }`}
                     >
                       {name}
@@ -211,7 +211,7 @@ export default function SetupPage() {
                 maxLength={6}
                 value={totpCode}
                 onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                className="mt-2 block w-full rounded-lg border border-border bg-input px-3 py-3 text-center text-2xl tracking-[0.3em] text-text placeholder-gray-400 focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+                className="mt-2 block w-full rounded-lg border border-border bg-input px-3 py-3 text-center text-2xl tracking-[0.3em] text-input-text placeholder-gray-400 focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
                 placeholder="000000"
                 autoFocus
               />
@@ -243,7 +243,7 @@ export default function SetupPage() {
 
         {step === "recovery" && (
           <div className="space-y-4">
-            <div className="rounded-lg border border-border bg-surface p-4">
+            <div className="rounded-lg border border-on-surface bg-surface p-4">
               <p className="text-sm font-medium text-danger mb-3">
                 Save these recovery codes securely. Each can only be used once.
               </p>
@@ -251,7 +251,7 @@ export default function SetupPage() {
                 {recoveryCodes.map((code, i) => (
                   <div
                     key={i}
-                    className="rounded bg-on-surface px-3 py-2 text-center font-mono text-sm text-text"
+                    className="rounded bg-on-surface px-3 py-2 text-center font-mono text-sm text-input-text"
                   >
                     {code}
                   </div>
@@ -261,7 +261,7 @@ export default function SetupPage() {
 
             <button
               onClick={handleCopyRecoveryCodes}
-              className="w-full rounded-lg border border-border bg-surface px-4 py-2 text-sm text-on-surface/60 hover:bg-surface-hover"
+              className="w-full rounded-lg border border-on-surface bg-surface px-4 py-2 text-sm text-on-surface/60 hover:bg-surface-hover"
             >
               Copy all codes
             </button>

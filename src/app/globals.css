@@ -8,7 +8,8 @@
 :root {
   --c-navy-900: #0c1334;
   --c-navy-700: #17255a;
-  --c-page-bg: #6a7ea6;
+  --c-page-bg: #1f2e6e;
+  --c-border-subtle: #2a3a82;
   --c-white: #ffffff;
   --c-cream: #f5e2c8;
   --c-red-700: #bd1e1e;
@@ -31,9 +32,11 @@
   --color-surface-hover: var(--c-navy-900);
   --color-on-surface: var(--c-white);
   --color-input: var(--c-white);
+  --color-input-text: var(--c-navy-900);
   --color-border: var(--c-slate-300);
-  --color-text: var(--c-navy-900);
-  --color-text-muted: var(--c-slate-500);
+  --color-border-on-surface: var(--c-border-subtle);
+  --color-text: var(--c-white);
+  --color-text-muted: var(--c-slate-300);
   --color-primary: var(--c-red-700);
   --color-primary-hover: var(--c-red-800);
   --color-danger: var(--c-coral);
