@@ -199,7 +199,7 @@ export default function TodosPage() {
       <div
         role="tablist"
         aria-label="Todo lists"
-        className="mb-4 flex gap-1 rounded-lg border border-border bg-surface p-1"
+        className="mb-4 flex gap-1 rounded-lg border border-surface-hover bg-background p-1 shadow-inner"
       >
         {(["joined", "personal"] as const).map((tab) => {
           const isActive = activeTab === tab;
@@ -209,10 +209,10 @@ export default function TodosPage() {
               role="tab"
               aria-selected={isActive}
               onClick={() => setActiveTab(tab)}
-              className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
+              className={`flex-1 rounded-md px-3 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background ${
                 isActive
-                  ? "bg-primary text-white"
-                  : "text-text-muted hover:bg-surface-hover hover:text-text"
+                  ? "bg-primary font-semibold text-white shadow-md"
+                  : "font-medium text-text-muted hover:bg-surface hover:text-text"
               }`}
             >
               {tab === "joined" ? "Joined" : "Personal"}
