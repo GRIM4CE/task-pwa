@@ -199,7 +199,7 @@ export default function TodosPage() {
       <div
         role="tablist"
         aria-label="Todo lists"
-        className="mb-4 flex gap-1 rounded-lg border border-surface-hover bg-background p-1 shadow-inner"
+        className="mb-4 flex gap-1 rounded-lg border border-border bg-surface p-1"
       >
         {(["joined", "personal"] as const).map((tab) => {
           const isActive = activeTab === tab;
@@ -209,10 +209,10 @@ export default function TodosPage() {
               role="tab"
               aria-selected={isActive}
               onClick={() => setActiveTab(tab)}
-              className={`flex-1 rounded-md px-3 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background ${
+              className={`flex-1 rounded-md px-3 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-surface ${
                 isActive
                   ? "bg-primary font-semibold text-white shadow-md"
-                  : "font-medium text-text-muted hover:bg-surface hover:text-text"
+                  : "font-medium text-background/60 hover:bg-surface-hover hover:text-background"
               }`}
             >
               {tab === "joined" ? "Joined" : "Personal"}
@@ -611,7 +611,7 @@ function TodoRow({
         lifted
           ? "border-primary bg-surface-hover ring-2 ring-primary/40"
           : done
-            ? "border-border bg-surface/50"
+            ? "border-border bg-surface-hover"
             : "border-border bg-surface"
       }`}
     >
@@ -632,22 +632,22 @@ function TodoRow({
       </button>
 
       <div className="flex-1 min-w-0">
-        <span className={`block break-words ${done ? "text-text-muted line-through" : "text-text"}`}>
+        <span className={`block break-words ${done ? "text-background/50 line-through" : "text-background"}`}>
           {todo.title}
         </span>
         {todo.description && (
-          <span className={`mt-0.5 block break-words text-xs ${done ? "text-text-muted/60" : "text-text-muted"}`}>
+          <span className={`mt-0.5 block break-words text-xs ${done ? "text-background/40" : "text-background/60"}`}>
             {todo.description}
           </span>
         )}
-        <span className={`text-xs ${done ? "text-text-muted/60" : "text-text-muted"}`}>
+        <span className={`text-xs ${done ? "text-background/40" : "text-background/60"}`}>
           {todo.createdBy} &middot; {formatRelativeDate(todo.createdAt)}
         </span>
       </div>
 
       <button
         onClick={onOpen}
-        className="shrink-0 rounded p-1 text-text-muted hover:text-text focus:outline-none focus:ring-2 focus:ring-primary"
+        className="shrink-0 rounded p-1 text-background/60 hover:text-background focus:outline-none focus:ring-2 focus:ring-primary"
         aria-label="Todo settings"
       >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -698,11 +698,11 @@ function EditTodoModal({
           <button
             type="button"
             onClick={onCancel}
-            className="rounded px-2 py-1 text-sm text-text-muted hover:bg-surface-hover hover:text-text focus:outline-none focus:ring-2 focus:ring-primary"
+            className="rounded px-2 py-1 text-sm text-background/60 hover:bg-surface-hover hover:text-background focus:outline-none focus:ring-2 focus:ring-primary"
           >
             Cancel
           </button>
-          <h3 className="text-base font-semibold text-text">Edit todo</h3>
+          <h3 className="text-base font-semibold text-background">Edit todo</h3>
           <button
             type="submit"
             disabled={saving || !title.trim()}
@@ -715,7 +715,7 @@ function EditTodoModal({
         <div className="flex-1 overflow-y-auto px-4 py-5">
           <div className="mx-auto max-w-2xl">
             <label className="mb-4 block">
-              <span className="mb-1 block text-sm text-text-muted">Title</span>
+              <span className="mb-1 block text-sm text-background/60">Title</span>
               <input
                 type="text"
                 value={title}
@@ -726,7 +726,7 @@ function EditTodoModal({
             </label>
 
             <label className="mb-4 block">
-              <span className="mb-1 block text-sm text-text-muted">Description</span>
+              <span className="mb-1 block text-sm text-background/60">Description</span>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -737,7 +737,7 @@ function EditTodoModal({
             </label>
 
             <label className="mb-4 block">
-              <span className="mb-1 block text-sm text-text-muted">Repeats</span>
+              <span className="mb-1 block text-sm text-background/60">Repeats</span>
               <select
                 value={recurrence ?? ""}
                 onChange={(e) => setRecurrence((e.target.value || null) as Recurrence)}
