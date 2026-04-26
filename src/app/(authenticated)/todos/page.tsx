@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { api, type TodoDTO, type Recurrence } from "@/lib/api-client";
+import { type TodoDTO, type Recurrence } from "@/lib/api-client";
 import { isRecurringResetDue } from "@/lib/recurrence";
+import { useTodoRepository } from "@/lib/todos/use-todo-repository";
 
 type Todo = TodoDTO;
 
@@ -39,6 +40,7 @@ function formatRelativeDate(timestamp: number): string {
 type TabKey = "joined" | "personal";
 
 export default function TodosPage() {
+  const repo = useTodoRepository();
   const [todos, setTodos] = useState<Todo[]>([]);
   const [newTitle, setNewTitle] = useState("");
   const [loading, setLoading] = useState(true);
@@ -63,7 +65,7 @@ export default function TodosPage() {
     due.forEach((t) => resettingRef.current.add(t.id));
 
     const results = await Promise.all(
-      due.map((t) => api.todos.update(t.id, { completed: false }))
+      due.map((t) => repo.update(t.id, { completed: false }))
     );
 
     setTodos((prev) => {
@@ -77,10 +79,10 @@ export default function TodosPage() {
     });
 
     due.forEach((t) => resettingRef.current.delete(t.id));
-  }, []);
+  }, [repo]);
 
   const loadTodos = useCallback(async () => {
-    const { data } = await api.todos.list();
+    const { data } = await repo.list();
     if (data) {
       setTodos(data);
       setLoading(false);
@@ -88,7 +90,7 @@ export default function TodosPage() {
       return;
     }
     setLoading(false);
-  }, [resetDueRecurring]);
+  }, [repo, resetDueRecurring]);
 
   useEffect(() => {
     loadTodos();
@@ -110,7 +112,7 @@ export default function TodosPage() {
     if (!newTitle.trim()) return;
     setAdding(true);
 
-    const { data } = await api.todos.create({
+    const { data } = await repo.create({
       title: newTitle.trim(),
       isPersonal: activeTab === "personal",
       recurrence: null,
@@ -123,7 +125,7 @@ export default function TodosPage() {
   }
 
   async function handleToggle(todo: Todo) {
-    const { data } = await api.todos.update(todo.id, {
+    const { data } = await repo.update(todo.id, {
       completed: !todo.completed,
     });
     if (data) {
@@ -132,7 +134,7 @@ export default function TodosPage() {
   }
 
   async function handleDelete(id: string) {
-    const { data } = await api.todos.delete(id);
+    const { data } = await repo.delete(id);
     if (data?.success) {
       setTodos((prev) => prev.filter((t) => t.id !== id));
       if (editing?.id === id) setEditing(null);
@@ -161,7 +163,7 @@ export default function TodosPage() {
       );
     });
 
-    const { error } = await api.todos.reorder(newIds);
+    const { error } = await repo.reorder(newIds);
     if (error) {
       setTodos(prev);
     }
@@ -171,7 +173,7 @@ export default function TodosPage() {
     id: string,
     patch: { title: string; description: string | null; recurrence: Recurrence }
   ) {
-    const { data } = await api.todos.update(id, patch);
+    const { data } = await repo.update(id, patch);
     if (data) {
       setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
       setEditing(null);

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { api, type TodoDTO } from "@/lib/api-client";
+import { type TodoDTO } from "@/lib/api-client";
+import { useTodoRepository } from "@/lib/todos/use-todo-repository";
 
 function formatCompletedDate(timestamp: number): string {
   const now = new Date();
@@ -24,13 +25,14 @@ function formatCompletedDate(timestamp: number): string {
 }
 
 export default function ArchivePage() {
+  const repo = useTodoRepository();
   const [todos, setTodos] = useState<TodoDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
     let cancelled = false;
-    api.todos.archive().then(({ data }) => {
+    repo.archive().then(({ data }) => {
       if (cancelled) return;
       if (data) setTodos(data);
       setLoading(false);
@@ -38,7 +40,7 @@ export default function ArchivePage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [repo]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api-client";
+import { enterGuestMode } from "@/lib/guest-mode";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -38,6 +39,11 @@ export default function LoginPage() {
     if (data?.success) {
       router.push("/todos");
     }
+  }
+
+  function handleContinueAsGuest() {
+    enterGuestMode();
+    router.push("/todos");
   }
 
   async function handleRecovery(e: React.FormEvent) {
@@ -130,6 +136,28 @@ export default function LoginPage() {
             >
               Use a recovery code instead
             </button>
+
+            <div className="relative pt-2">
+              <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                <div className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center">
+                <span className="bg-background px-2 text-xs uppercase tracking-wider text-text-muted">
+                  or
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleContinueAsGuest}
+              className="w-full rounded-lg border border-border bg-surface px-4 py-2.5 text-sm font-medium text-text hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
+            >
+              Continue as Guest
+            </button>
+            <p className="text-center text-xs text-text-muted">
+              Guest todos are saved only on this device.
+            </p>
           </form>
         ) : (
           <form onSubmit={handleRecovery} className="space-y-4">

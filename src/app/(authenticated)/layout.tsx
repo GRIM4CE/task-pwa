@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { api } from "@/lib/api-client";
+import { isGuestMode } from "@/lib/guest-mode";
+
+const subscribeNoop = () => () => {};
 
 export default function AuthenticatedLayout({
   children,
@@ -12,19 +15,22 @@ export default function AuthenticatedLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [checked, setChecked] = useState(false);
+  const isGuest = useSyncExternalStore(subscribeNoop, isGuestMode, () => false);
+  const [authChecked, setAuthChecked] = useState(false);
+  const checked = isGuest || authChecked;
 
   useEffect(() => {
+    if (isGuest) return;
     api.auth.status().then(({ data }) => {
       if (data?.needsSetup) {
         router.replace("/setup");
       } else if (!data?.isAuthenticated) {
         router.replace("/login");
       } else {
-        setChecked(true);
+        setAuthChecked(true);
       }
     });
-  }, [router]);
+  }, [router, isGuest]);
 
   if (!checked) {
     return (

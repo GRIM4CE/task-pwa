@@ -2,11 +2,17 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { isGuestMode } from "@/lib/guest-mode";
 
 export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
+    if (isGuestMode()) {
+      router.replace("/todos");
+      return;
+    }
+
     async function checkAuth() {
       try {
         const res = await fetch("/api/auth/status");

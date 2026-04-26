@@ -1,25 +1,36 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api-client";
+import { exitGuestMode, isGuestMode } from "@/lib/guest-mode";
+import { GUEST_USERNAME } from "@/lib/todos/local-repository";
+
+const subscribeNoop = () => () => {};
 
 export default function SettingsPage() {
   const router = useRouter();
-  const [username, setUsername] = useState("");
+  const isGuest = useSyncExternalStore(subscribeNoop, isGuestMode, () => false);
+  const [apiUsername, setApiUsername] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
+  const username = isGuest ? GUEST_USERNAME : apiUsername;
 
   useEffect(() => {
+    if (isGuest) return;
     api.auth.status().then(({ data }) => {
       if (data?.isAuthenticated) {
-        setUsername((data.user as { username: string })?.username ?? "");
+        setApiUsername((data.user as { username: string })?.username ?? "");
       }
     });
-  }, []);
+  }, [isGuest]);
 
   async function handleLogout() {
     setLoggingOut(true);
-    await api.auth.logout();
+    if (isGuest) {
+      exitGuestMode();
+    } else {
+      await api.auth.logout();
+    }
     router.push("/login");
   }
 
