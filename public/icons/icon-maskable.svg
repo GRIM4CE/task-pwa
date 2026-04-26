@@ -1,18 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <rect width="512" height="512" fill="#17255a"/>
-  <g transform="translate(256 255) scale(0.66) translate(-256 -256)">
-    <rect x="84" y="104" width="344" height="364" rx="44" fill="#ffffff"/>
-    <rect x="196" y="60" width="120" height="72" rx="22" fill="#ffffff"/>
-    <circle cx="256" cy="74" r="12" fill="#17255a"/>
-    <g fill="none" stroke="#17255a" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="142,214 174,246 234,186"/>
-      <polyline points="142,304 174,336 234,276"/>
-      <polyline points="142,394 174,426 234,366"/>
-    </g>
-    <g fill="#17255a">
-      <rect x="262" y="204" width="138" height="22" rx="11"/>
-      <rect x="262" y="294" width="116" height="22" rx="11"/>
-      <rect x="262" y="384" width="92" height="22" rx="11"/>
-    </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="512" height="512">
+  <rect width="48" height="48" fill="#32161f"/>
+  <g fill="#fffffb" transform="translate(24 24.1) scale(0.62) translate(-24 -24.1)">
+    <polygon points="8,10 26,10 26,6 4,6 4,42 30,42 30,38 8,38"/>
+    <polygon points="35,14 41,14 44,14 44,6 32,6 32,14"/>
+    <polygon points="41,18 35,18 32,18 32,34.701 38,42.201 44,34.701 44,18"/>
+    <polygon points="21,13.856 17.229,17.627 15.343,15.742 12.516,18.571 17.229,23.283 23.828,16.685"/>
+    <polygon points="15.343,25.742 12.516,28.571 17.229,33.283 23.828,26.685 21,23.856 17.229,27.627"/>
   </g>
 </svg>

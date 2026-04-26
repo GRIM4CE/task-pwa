@@ -6,19 +6,17 @@
  * always reach through a semantic token.
  */
 :root {
-  --c-navy-900: #0c1334;
-  --c-navy-700: #17255a;
-  --c-page-bg: #1f2e6e;
-  --c-border-subtle: #2a3a82;
-  --c-white: #ffffff;
-  --c-cream: #f5e2c8;
-  --c-red-700: #bd1e1e;
-  --c-red-800: #9a1818;
-  --c-coral: #d88373;
-  --c-green: #22c55e;
-  --c-slate-300: #cbd5e1;
-  --c-slate-500: #64748b;
-  --c-blue-focus: #3b5bb8;
+  --c-page-bg: #12131e;       /* Dusty Grape -80% */
+  --c-violet-700: #32161f;    /* Midnight Violet — surface */
+  --c-violet-500: #502331;    /* Midnight Violet +10% — outline / hover */
+  --c-grape-700: #5b5f97;     /* Dusty Grape */
+  --c-grape-200: #b8b8d1;     /* Pale Slate */
+  --c-porcelain: #fffffb;
+  --c-magenta-700: #e83f6f;   /* Magenta Bloom */
+  --c-magenta-800: #d4194e;   /* Magenta Bloom -20% */
+  --c-flag-red: #c1292e;
+  --c-sea-green: #32936f;
+  --c-sunflower: #ffc145;
 }
 
 /*
@@ -28,23 +26,47 @@
  */
 @theme {
   --color-background: var(--c-page-bg);
-  --color-surface: var(--c-navy-700);
-  --color-surface-hover: var(--c-navy-900);
-  --color-on-surface: var(--c-white);
-  --color-input: var(--c-white);
-  --color-input-text: var(--c-navy-900);
-  --color-border: var(--c-slate-300);
-  --color-border-on-surface: var(--c-border-subtle);
-  --color-text: var(--c-white);
-  --color-text-muted: var(--c-slate-300);
-  --color-primary: var(--c-red-700);
-  --color-primary-hover: var(--c-red-800);
-  --color-danger: var(--c-coral);
-  --color-success: var(--c-green);
-  --color-focus: var(--c-blue-focus);
-  --color-select: var(--c-cream);
+  --color-surface: var(--c-violet-700);
+  --color-surface-hover: var(--c-violet-500);
+  --color-on-surface: var(--c-porcelain);
+  --color-input: var(--c-porcelain);
+  --color-input-text: var(--c-page-bg);
+  --color-border: var(--c-grape-200);
+  --color-border-on-surface: var(--c-violet-500);
+  --color-text: var(--c-porcelain);
+  --color-text-muted: var(--c-grape-200);
+  --color-primary: var(--c-magenta-700);
+  --color-primary-hover: var(--c-magenta-800);
+  --color-danger: var(--c-flag-red);
+  --color-success: var(--c-sea-green);
+  --color-focus: var(--c-sunflower);
+  --color-select: var(--c-grape-700);
   --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/*
+ * Theme overrides — opt in by setting `data-theme` on <html>. Each theme
+ * re-maps the semantic tokens above; base palette variables are not used
+ * here so the override is self-contained and easy to remove.
+ */
+:root[data-theme="juliette"] {
+  --color-background: #e5d0e3;
+  --color-surface: #e7e5e5;
+  --color-surface-hover: #d8d6d6;
+  --color-on-surface: #5d4a66;
+  --color-input: #e7e5e5;
+  --color-input-text: #5d4a66;
+  --color-border: #6a5d7b;
+  --color-border-on-surface: #e0b0d5;
+  --color-text: #5d4a66;
+  --color-text-muted: #6a5d7b;
+  --color-primary: #5d4a66;
+  --color-primary-hover: #3f3344;
+  --color-danger: #744253;
+  --color-success: #7be0ad;
+  --color-focus: #8e7dbe;
+  --color-select: #e0b0d5;
 }
 
 /* PWA standalone mode - safe area insets for notch devices */
