@@ -47,7 +47,9 @@ export default function TodosPage() {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Todo | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("joined");
+  const [justCompletedIds, setJustCompletedIds] = useState<Set<string>>(() => new Set());
   const resettingRef = useRef<Set<string>>(new Set());
+  const pendingToggleRef = useRef<Set<string>>(new Set());
 
   // Uncomplete any recurring todos whose next local-midnight reset boundary
   // has passed since they were last completed (in the user's browser timezone).
@@ -125,9 +127,49 @@ export default function TodosPage() {
   }
 
   async function handleToggle(todo: Todo) {
-    const { data } = await repo.update(todo.id, {
-      completed: !todo.completed,
-    });
+    if (pendingToggleRef.current.has(todo.id)) return;
+    pendingToggleRef.current.add(todo.id);
+
+    const next = !todo.completed;
+    const previous = {
+      completed: todo.completed,
+      lastCompletedAt: todo.lastCompletedAt,
+    };
+
+    setTodos((prev) =>
+      prev.map((t) =>
+        t.id === todo.id
+          ? { ...t, completed: next, lastCompletedAt: next ? Date.now() : null }
+          : t
+      )
+    );
+
+    if (next) {
+      setJustCompletedIds((prev) => {
+        const s = new Set(prev);
+        s.add(todo.id);
+        return s;
+      });
+      window.setTimeout(() => {
+        setJustCompletedIds((prev) => {
+          if (!prev.has(todo.id)) return prev;
+          const s = new Set(prev);
+          s.delete(todo.id);
+          return s;
+        });
+      }, 500);
+    }
+
+    const { data, error } = await repo.update(todo.id, { completed: next });
+    pendingToggleRef.current.delete(todo.id);
+
+    if (error) {
+      setTodos((prev) =>
+        prev.map((t) => (t.id === todo.id ? { ...t, ...previous } : t))
+      );
+      return;
+    }
+
     if (data) {
       setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
     }
@@ -297,6 +339,7 @@ export default function TodosPage() {
                 key={todo.id}
                 todo={todo}
                 done
+                justCompleted={justCompletedIds.has(todo.id)}
                 onToggle={() => handleToggle(todo)}
                 onOpen={() => setEditing(todo)}
               />
@@ -607,15 +650,20 @@ function TodoRow({
   todo,
   done,
   lifted,
+  justCompleted,
   onToggle,
   onOpen,
 }: {
   todo: Todo;
   done?: boolean;
   lifted?: boolean;
+  justCompleted?: boolean;
   onToggle: () => void;
   onOpen: () => void;
 }) {
+  const checkboxBase = done
+    ? "flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 border-success bg-success/20 hover:bg-success/10 focus:outline-none focus:ring-2 focus:ring-success"
+    : "h-5 w-5 shrink-0 rounded border-2 border-border hover:border-focus focus:outline-none focus:ring-2 focus:ring-focus";
   return (
     <div
       className={`flex items-center gap-3 rounded-lg border px-4 py-3 ${
@@ -628,11 +676,7 @@ function TodoRow({
     >
       <button
         onClick={onToggle}
-        className={
-          done
-            ? "flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 border-success bg-success/20 hover:bg-success/10 focus:outline-none focus:ring-2 focus:ring-success"
-            : "h-5 w-5 shrink-0 rounded border-2 border-border hover:border-focus focus:outline-none focus:ring-2 focus:ring-focus"
-        }
+        className={`${checkboxBase}${justCompleted ? " animate-complete-pop" : ""}`}
         aria-label={done ? "Uncomplete todo" : "Complete todo"}
       >
         {done && (

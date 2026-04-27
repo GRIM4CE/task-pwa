@@ -78,3 +78,23 @@
     padding-right: env(safe-area-inset-right);
   }
 }
+
+/* Confirmation pulse for a freshly-completed todo so the user sees their
+ * tap registered even before the row settles into the Complete section. */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes complete-pop {
+    0% {
+      transform: scale(1);
+    }
+    45% {
+      transform: scale(1.35);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+
+  .animate-complete-pop {
+    animation: complete-pop 360ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+}
