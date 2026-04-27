@@ -50,6 +50,7 @@ export default function TodosPage() {
   const [justCompletedIds, setJustCompletedIds] = useState<Set<string>>(() => new Set());
   const resettingRef = useRef<Set<string>>(new Set());
   const pendingToggleRef = useRef<Set<string>>(new Set());
+  const completionTimersRef = useRef<Map<string, number>>(new Map());
 
   // Uncomplete any recurring todos whose next local-midnight reset boundary
   // has passed since they were last completed (in the user's browser timezone).
@@ -144,13 +145,24 @@ export default function TodosPage() {
       )
     );
 
+    // Each completion replaces any in-flight timer for this id, so a fast
+    // complete -> uncomplete -> complete sequence still gets a full 500ms
+    // animation window driven by the latest completion. Uncompleting clears
+    // the flag immediately so the row doesn't keep animating.
+    const existingTimer = completionTimersRef.current.get(todo.id);
+    if (existingTimer !== undefined) {
+      window.clearTimeout(existingTimer);
+      completionTimersRef.current.delete(todo.id);
+    }
+
     if (next) {
       setJustCompletedIds((prev) => {
         const s = new Set(prev);
         s.add(todo.id);
         return s;
       });
-      window.setTimeout(() => {
+      const timerId = window.setTimeout(() => {
+        completionTimersRef.current.delete(todo.id);
         setJustCompletedIds((prev) => {
           if (!prev.has(todo.id)) return prev;
           const s = new Set(prev);
@@ -158,6 +170,14 @@ export default function TodosPage() {
           return s;
         });
       }, 500);
+      completionTimersRef.current.set(todo.id, timerId);
+    } else {
+      setJustCompletedIds((prev) => {
+        if (!prev.has(todo.id)) return prev;
+        const s = new Set(prev);
+        s.delete(todo.id);
+        return s;
+      });
     }
 
     const { data, error } = await repo.update(todo.id, { completed: next });
