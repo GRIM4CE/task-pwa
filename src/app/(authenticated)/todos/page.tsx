@@ -225,10 +225,14 @@ export default function TodosPage() {
   const visibleTodos = todos.filter((t) =>
     activeTab === "personal" ? t.isPersonal : !t.isPersonal
   );
-  const regularActive = visibleTodos.filter((t) => !t.completed && t.recurrence === null);
-  const dailyTodos = visibleTodos.filter((t) => !t.completed && t.recurrence === "daily");
-  const weeklyTodos = visibleTodos.filter((t) => !t.completed && t.recurrence === "weekly");
-  const completedTodos = visibleTodos.filter((t) => t.completed);
+  // A todo that was just completed stays in its active section until the
+  // animation finishes, so the user sees the confirmation where they tapped
+  // before the row settles into the Complete section.
+  const isActiveSlot = (t: Todo) => !t.completed || justCompletedIds.has(t.id);
+  const regularActive = visibleTodos.filter((t) => isActiveSlot(t) && t.recurrence === null);
+  const dailyTodos = visibleTodos.filter((t) => isActiveSlot(t) && t.recurrence === "daily");
+  const weeklyTodos = visibleTodos.filter((t) => isActiveSlot(t) && t.recurrence === "weekly");
+  const completedTodos = visibleTodos.filter((t) => t.completed && !justCompletedIds.has(t.id));
 
   if (loading) {
     return (
@@ -299,6 +303,7 @@ export default function TodosPage() {
         <Section title="Daily" hint="Resets at local midnight">
           <DraggableTodoList
             todos={dailyTodos}
+            justCompletedIds={justCompletedIds}
             onReorder={handleReorder}
             onToggle={handleToggle}
             onOpen={(t) => setEditing(t)}
@@ -311,6 +316,7 @@ export default function TodosPage() {
         <Section title="Weekly" hint="Resets 7 days later at local midnight">
           <DraggableTodoList
             todos={weeklyTodos}
+            justCompletedIds={justCompletedIds}
             onReorder={handleReorder}
             onToggle={handleToggle}
             onOpen={(t) => setEditing(t)}
@@ -323,6 +329,7 @@ export default function TodosPage() {
         <Section title="General">
           <DraggableTodoList
             todos={regularActive}
+            justCompletedIds={justCompletedIds}
             onReorder={handleReorder}
             onToggle={handleToggle}
             onOpen={(t) => setEditing(t)}
@@ -404,11 +411,13 @@ type DragState = {
 
 function DraggableTodoList({
   todos,
+  justCompletedIds,
   onReorder,
   onToggle,
   onOpen,
 }: {
   todos: Todo[];
+  justCompletedIds: Set<string>;
   onReorder: (ids: string[]) => void | Promise<void>;
   onToggle: (todo: Todo) => void;
   onOpen: (todo: Todo) => void;
@@ -636,6 +645,7 @@ function DraggableTodoList({
               todo={todo}
               done={todo.completed}
               lifted={isDragging}
+              justCompleted={justCompletedIds.has(todo.id)}
               onToggle={() => onToggle(todo)}
               onOpen={() => onOpen(todo)}
             />
@@ -672,7 +682,7 @@ function TodoRow({
           : done
             ? "border-border-on-surface bg-surface-hover"
             : "border-border-on-surface bg-surface"
-      }`}
+      }${justCompleted ? " animate-complete-row" : ""}`}
     >
       <button
         onClick={onToggle}
