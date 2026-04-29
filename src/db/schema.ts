@@ -157,9 +157,9 @@ export const todos = sqliteTable(
   ]
 );
 
-// One row per completion event for a recurring todo. Non-recurring completions
-// are also recorded so global stats can include them, but the analytics surface
-// primarily reads recurring rows.
+// One row per completion event for a recurring todo. Lets analytics
+// reconstruct history that would otherwise be lost when a recurring reset
+// overwrites lastCompletedAt. Non-recurring completions are not recorded.
 export const todoCompletions = sqliteTable(
   "todo_completions",
   {

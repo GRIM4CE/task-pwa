@@ -21,6 +21,7 @@ import type {
 
 const STORAGE_KEY = "todo-pwa:guest:todos";
 const COMPLETIONS_KEY = "todo-pwa:guest:completions";
+const COMPLETIONS_RETENTION_MS = 120 * 24 * 60 * 60 * 1000;
 export const GUEST_USERNAME = "Guest";
 
 type CompletionEvent = { todoId: string; completedAt: number };
@@ -64,7 +65,10 @@ function readCompletions(): CompletionEvent[] {
 
 function writeCompletions(events: CompletionEvent[]): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(COMPLETIONS_KEY, JSON.stringify(events));
+  // Prune on write so localStorage doesn't grow unbounded over time.
+  const cutoff = Date.now() - COMPLETIONS_RETENTION_MS;
+  const pruned = events.filter((e) => e.completedAt >= cutoff);
+  window.localStorage.setItem(COMPLETIONS_KEY, JSON.stringify(pruned));
 }
 
 export const localTodoRepository: TodoRepository = {
@@ -80,7 +84,7 @@ export const localTodoRepository: TodoRepository = {
 
   async stats() {
     const all = readAll();
-    const cutoff = Date.now() - 120 * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - COMPLETIONS_RETENTION_MS;
     const events = readCompletions().filter((e) => e.completedAt >= cutoff);
     const byTodo = new Map<string, number[]>();
     for (const e of events) {
@@ -138,7 +142,11 @@ export const localTodoRepository: TodoRepository = {
     next[index] = updated;
     writeAll(next);
 
-    if (parsed.data.completed === true && previous.completed === false) {
+    if (
+      parsed.data.completed === true &&
+      previous.completed === false &&
+      previous.recurrence !== null
+    ) {
       writeCompletions([
         ...readCompletions(),
         { todoId: id, completedAt: updated.lastCompletedAt ?? Date.now() },

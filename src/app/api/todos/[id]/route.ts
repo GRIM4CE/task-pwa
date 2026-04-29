@@ -63,11 +63,18 @@ export async function PATCH(
     .returning();
 
   // Record an immutable completion event so analytics can reconstruct history
-  // even after a recurring todo resets and overwrites lastCompletedAt.
-  if (body.completed === true && existing[0].completed === false) {
+  // even after a recurring todo resets and overwrites lastCompletedAt. Only
+  // recurring todos surface in stats, so non-recurring completions aren't
+  // logged. Attribution is to the actor (session user) — joined todos are
+  // editable by anyone, and stats are per-user.
+  if (
+    body.completed === true &&
+    existing[0].completed === false &&
+    existing[0].recurrence !== null
+  ) {
     await db.insert(schema.todoCompletions).values({
       todoId: updated.id,
-      userId: updated.userId,
+      userId: session.user.id,
       completedAt: now,
     });
   }

@@ -38,27 +38,18 @@ export async function GET() {
       )
     );
 
+  // Stats are per-user: a joined todo can be completed by anyone, but each
+  // user only sees their own completion history.
   const completions = await db
     .select({
       todoId: schema.todoCompletions.todoId,
       completedAt: schema.todoCompletions.completedAt,
     })
     .from(schema.todoCompletions)
-    .innerJoin(
-      schema.todos,
-      eq(schema.todoCompletions.todoId, schema.todos.id)
-    )
     .where(
       and(
-        isNotNull(schema.todos.recurrence),
-        gte(schema.todoCompletions.completedAt, cutoff),
-        or(
-          eq(schema.todos.isPersonal, false),
-          and(
-            eq(schema.todos.isPersonal, true),
-            eq(schema.todos.userId, session.user.id)
-          )
-        )
+        eq(schema.todoCompletions.userId, session.user.id),
+        gte(schema.todoCompletions.completedAt, cutoff)
       )
     )
     .orderBy(asc(schema.todoCompletions.completedAt));
