@@ -54,6 +54,7 @@ export default function AuthenticatedLayout({
   }
 
   const archiveActive = pathname?.startsWith("/archive");
+  const statsActive = pathname?.startsWith("/stats");
   const settingsActive = pathname?.startsWith("/settings");
 
   return (
@@ -93,6 +94,25 @@ export default function AuthenticatedLayout({
                   d="M3.5 9.5h13v5.75A1.75 1.75 0 0114.75 17h-9.5A1.75 1.75 0 013.5 15.25V9.5zm4 2.25a.75.75 0 01.75-.75h3.5a.75.75 0 010 1.5h-3.5a.75.75 0 01-.75-.75z"
                   clipRule="evenodd"
                 />
+              </svg>
+            </Link>
+            <Link
+              href="/stats"
+              aria-label="Repeat task stats"
+              aria-current={statsActive ? "page" : undefined}
+              className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
+                statsActive
+                  ? "bg-surface-hover text-on-surface"
+                  : "text-on-surface/60 hover:bg-surface-hover hover:text-on-surface"
+              }`}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path d="M3 17a1 1 0 011-1h1V8a1 1 0 112 0v8h2V5a1 1 0 112 0v11h2v-6a1 1 0 112 0v6h1a1 1 0 110 2H4a1 1 0 01-1-1z" />
               </svg>
             </Link>
             <Link

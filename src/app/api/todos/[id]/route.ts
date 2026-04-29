@@ -62,6 +62,16 @@ export async function PATCH(
     .where(eq(schema.todos.id, id))
     .returning();
 
+  // Record an immutable completion event so analytics can reconstruct history
+  // even after a recurring todo resets and overwrites lastCompletedAt.
+  if (body.completed === true && existing[0].completed === false) {
+    await db.insert(schema.todoCompletions).values({
+      todoId: updated.id,
+      userId: updated.userId,
+      completedAt: now,
+    });
+  }
+
   const creator = await db
     .select({ username: schema.users.username })
     .from(schema.users)

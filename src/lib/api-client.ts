@@ -41,6 +41,19 @@ export interface TodoDTO {
   createdBy: string;
 }
 
+export interface RecurringTodoStats {
+  id: string;
+  title: string;
+  recurrence: "daily" | "weekly";
+  isPersonal: boolean;
+  createdAt: number;
+  completions: number[];
+}
+
+export interface StatsDTO {
+  todos: RecurringTodoStats[];
+}
+
 export const api = {
   auth: {
     status: () => apiRequest<{ isAuthenticated: boolean; user: unknown; needsSetup: boolean; usernames?: string[] }>("/api/auth/status"),
@@ -56,6 +69,7 @@ export const api = {
   todos: {
     list: () => apiRequest<TodoDTO[]>("/api/todos"),
     archive: () => apiRequest<TodoDTO[]>("/api/todos/archive"),
+    stats: () => apiRequest<StatsDTO>("/api/todos/stats"),
     create: (body: { title: string; description?: string; isPersonal?: boolean; recurrence?: Recurrence }) =>
       apiRequest<TodoDTO>("/api/todos", { method: "POST", body: JSON.stringify(body) }),
     update: (id: string, body: { title?: string; description?: string | null; completed?: boolean; sortOrder?: number; recurrence?: Recurrence }) =>

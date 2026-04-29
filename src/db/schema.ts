@@ -156,3 +156,35 @@ export const todos = sqliteTable(
     index("idx_todos_user").on(table.userId, table.completed, table.sortOrder),
   ]
 );
+
+// One row per completion event for a recurring todo. Non-recurring completions
+// are also recorded so global stats can include them, but the analytics surface
+// primarily reads recurring rows.
+export const todoCompletions = sqliteTable(
+  "todo_completions",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    todoId: text("todo_id")
+      .notNull()
+      .references(() => todos.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    completedAt: integer("completed_at", { mode: "timestamp" }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    index("idx_todo_completions_todo_completed").on(
+      table.todoId,
+      table.completedAt
+    ),
+    index("idx_todo_completions_user_completed").on(
+      table.userId,
+      table.completedAt
+    ),
+  ]
+);

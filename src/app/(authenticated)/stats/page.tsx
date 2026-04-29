@@ -1,0 +1,258 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import type { StatsDTO } from "@/lib/api-client";
+import {
+  computeStats,
+  percent,
+  type DailyStat,
+  type WeeklyStat,
+} from "@/lib/analytics";
+import { useTodoRepository } from "@/lib/todos/use-todo-repository";
+
+const WEEKDAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
+
+export default function StatsPage() {
+  const repo = useTodoRepository();
+  const [data, setData] = useState<StatsDTO | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    repo.stats().then(({ data }) => {
+      if (cancelled) return;
+      setData(data);
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [repo]);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
+  const stats = data ? computeStats(data.todos) : null;
+  const hasAnyRecurring =
+    !!stats && (stats.daily.length > 0 || stats.weekly.length > 0);
+
+  return (
+    <div className="mx-auto max-w-2xl px-4 py-6">
+      <div className="mb-6">
+        <h2 className="text-xl font-semibold text-text">Repeat task stats</h2>
+        <p className="text-sm text-text-muted">
+          How often you&apos;re hitting your daily and weekly repeats.
+        </p>
+      </div>
+
+      {!hasAnyRecurring ? (
+        <div className="py-12 text-center">
+          <p className="text-text-muted">
+            No daily or weekly repeats yet. Set a repeat on a todo to start
+            tracking.
+          </p>
+        </div>
+      ) : (
+        <>
+          {stats && <GlobalCard stats={stats.global} />}
+          {stats && stats.daily.length > 0 && (
+            <Section title="Daily" hint="This week (Mon–Sun)">
+              <div className="space-y-2">
+                {stats.daily.map((d) => (
+                  <DailyRow key={d.id} stat={d} />
+                ))}
+              </div>
+            </Section>
+          )}
+          {stats && stats.weekly.length > 0 && (
+            <Section title="Weekly" hint="This calendar month">
+              <div className="space-y-2">
+                {stats.weekly.map((w) => (
+                  <WeeklyRow key={w.id} stat={w} />
+                ))}
+              </div>
+            </Section>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function Section({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mt-8">
+      <div className="mb-3 flex items-baseline justify-between">
+        <h3 className="text-sm font-medium text-text-muted">{title}</h3>
+        {hint && <span className="text-xs text-text-muted/70">{hint}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function GlobalCard({
+  stats,
+}: {
+  stats: ReturnType<typeof computeStats>["global"];
+}) {
+  const weekPct = percent(stats.weekCompletedDays, stats.weekTotalDays);
+  const monthPct = percent(stats.monthCompletedWeeks, stats.monthTotalWeeks);
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <Tile
+        label="Daily this week"
+        value={stats.dailyCount === 0 ? "—" : `${weekPct}%`}
+        sub={
+          stats.dailyCount === 0
+            ? "No daily repeats"
+            : `${stats.weekCompletedDays} / ${stats.weekTotalDays} day-completions`
+        }
+      />
+      <Tile
+        label="Weekly this month"
+        value={stats.weeklyCount === 0 ? "—" : `${monthPct}%`}
+        sub={
+          stats.weeklyCount === 0
+            ? "No weekly repeats"
+            : `${stats.monthCompletedWeeks} / ${stats.monthTotalWeeks} week-completions`
+        }
+      />
+    </div>
+  );
+}
+
+function Tile({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+}) {
+  return (
+    <div className="rounded-lg border border-border-on-surface bg-surface px-4 py-3">
+      <div className="text-xs uppercase tracking-wide text-on-surface/60">
+        {label}
+      </div>
+      <div className="mt-1 text-2xl font-semibold text-on-surface">{value}</div>
+      <div className="mt-1 text-xs text-on-surface/60">{sub}</div>
+    </div>
+  );
+}
+
+function DailyRow({ stat }: { stat: DailyStat }) {
+  return (
+    <div className="rounded-lg border border-border-on-surface bg-surface px-4 py-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="truncate text-on-surface">{stat.title}</span>
+        <span className="shrink-0 text-sm font-medium text-on-surface/70">
+          {stat.completedCount} / {stat.totalDays}
+        </span>
+      </div>
+      <div
+        className="mt-2 grid gap-1"
+        style={{ gridTemplateColumns: `repeat(${stat.totalDays}, minmax(0, 1fr))` }}
+        aria-label="Completions for each day this week"
+      >
+        {stat.days.map((d, i) => (
+          <DayPill
+            key={d.date}
+            label={WEEKDAY_LABELS[i]}
+            completed={d.completed}
+            isFuture={d.isFuture}
+            isToday={d.isToday}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DayPill({
+  label,
+  completed,
+  isFuture,
+  isToday,
+}: {
+  label: string;
+  completed: boolean;
+  isFuture: boolean;
+  isToday: boolean;
+}) {
+  const base =
+    "flex h-7 items-center justify-center rounded text-[10px] font-medium";
+  const tone = completed
+    ? "bg-success/80 text-white"
+    : isFuture
+      ? "bg-surface-hover text-on-surface/40"
+      : "bg-surface-hover text-on-surface/60";
+  const ring = isToday ? " ring-1 ring-focus" : "";
+  return <div className={`${base} ${tone}${ring}`}>{label}</div>;
+}
+
+function WeeklyRow({ stat }: { stat: WeeklyStat }) {
+  return (
+    <div className="rounded-lg border border-border-on-surface bg-surface px-4 py-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="truncate text-on-surface">{stat.title}</span>
+        <span className="shrink-0 text-sm font-medium text-on-surface/70">
+          {stat.completedCount} / {stat.totalWeeks}
+        </span>
+      </div>
+      <div
+        className="mt-2 grid gap-1"
+        style={{
+          gridTemplateColumns: `repeat(${stat.totalWeeks}, minmax(0, 1fr))`,
+        }}
+        aria-label="Completions for each week this month"
+      >
+        {stat.weeks.map((w, i) => (
+          <WeekPill
+            key={w.weekStart}
+            label={`W${i + 1}`}
+            completed={w.completed}
+            isFuture={w.isFuture}
+            isCurrent={w.isCurrent}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WeekPill({
+  label,
+  completed,
+  isFuture,
+  isCurrent,
+}: {
+  label: string;
+  completed: boolean;
+  isFuture: boolean;
+  isCurrent: boolean;
+}) {
+  const base =
+    "flex h-7 items-center justify-center rounded text-[10px] font-medium";
+  const tone = completed
+    ? "bg-success/80 text-white"
+    : isFuture
+      ? "bg-surface-hover text-on-surface/40"
+      : "bg-surface-hover text-on-surface/60";
+  const ring = isCurrent ? " ring-1 ring-focus" : "";
+  return <div className={`${base} ${tone}${ring}`}>{label}</div>;
+}
