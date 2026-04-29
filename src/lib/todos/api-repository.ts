@@ -8,6 +8,7 @@ import type {
 export const apiTodoRepository: TodoRepository = {
   list: () => api.todos.list(),
   archive: () => api.todos.archive(),
+  stats: () => api.todos.stats(),
   create: (input: CreateTodoInput) => api.todos.create(input),
   update: (id: string, patch: UpdateTodoPatch) => api.todos.update(id, patch),
   delete: async (id: string) => {
