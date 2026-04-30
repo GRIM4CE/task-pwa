@@ -159,7 +159,12 @@ function DailyRow({ stat }: { stat: DailyStat }) {
   return (
     <div className="rounded-lg border border-border-on-surface bg-surface px-4 py-3">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="truncate text-on-surface">{stat.title}</span>
+        <div className="min-w-0 flex-1">
+          <span className="block truncate text-on-surface">{stat.title}</span>
+          {stat.streak > 0 && (
+            <StreakBadge label={`${stat.streak}-day streak`} />
+          )}
+        </div>
         <span className="shrink-0 text-sm font-medium text-on-surface/70">
           {stat.completedCount} / {stat.totalDays}
         </span>
@@ -179,7 +184,57 @@ function DailyRow({ stat }: { stat: DailyStat }) {
           />
         ))}
       </div>
+      <div
+        className="mt-2 grid gap-[2px]"
+        style={{ gridTemplateColumns: `repeat(${stat.heatmap.length}, minmax(0, 1fr))` }}
+        aria-label="Last 30 days of completions"
+      >
+        {stat.heatmap.map((d) => (
+          <HeatCell
+            key={d.date}
+            completed={d.completed}
+            isToday={d.isToday}
+            date={d.date}
+          />
+        ))}
+      </div>
+      <div className="mt-1 flex justify-between text-[10px] text-on-surface/50">
+        <span>30 days ago</span>
+        <span>Today</span>
+      </div>
     </div>
+  );
+}
+
+function StreakBadge({ label }: { label: string }) {
+  return (
+    <span className="mt-0.5 inline-block text-xs text-on-surface/60">
+      {label}
+    </span>
+  );
+}
+
+function HeatCell({
+  completed,
+  isToday,
+  date,
+}: {
+  completed: boolean;
+  isToday: boolean;
+  date: number;
+}) {
+  const tone = completed ? "bg-success/80" : "bg-surface-hover";
+  const ring = isToday ? " ring-1 ring-focus" : "";
+  const title = new Date(date).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+  return (
+    <div
+      className={`h-3 rounded-sm ${tone}${ring}`}
+      title={`${title}${completed ? " — completed" : ""}`}
+    />
   );
 }
 
@@ -209,7 +264,12 @@ function WeeklyRow({ stat }: { stat: WeeklyStat }) {
   return (
     <div className="rounded-lg border border-border-on-surface bg-surface px-4 py-3">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="truncate text-on-surface">{stat.title}</span>
+        <div className="min-w-0 flex-1">
+          <span className="block truncate text-on-surface">{stat.title}</span>
+          {stat.streak > 0 && (
+            <StreakBadge label={`${stat.streak}-week streak`} />
+          )}
+        </div>
         <span className="shrink-0 text-sm font-medium text-on-surface/70">
           {stat.completedCount} / {stat.totalWeeks}
         </span>
