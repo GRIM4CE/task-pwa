@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { type TodoDTO, type Recurrence } from "@/lib/api-client";
+import { type TodoDTO, type Recurrence, type SubtaskDTO } from "@/lib/api-client";
 import { isRecurringResetDue } from "@/lib/recurrence";
+import { sortSubtasks } from "@/lib/todos/domain";
 import { useTodoRepository } from "@/lib/todos/use-todo-repository";
 
 type Todo = TodoDTO;
+type Subtask = SubtaskDTO;
 
 const LONG_PRESS_MS = 400;
 const MOVE_CANCEL_PX = 10;
@@ -42,6 +44,8 @@ type TabKey = "joined" | "personal";
 export default function TodosPage() {
   const repo = useTodoRepository();
   const [todos, setTodos] = useState<Todo[]>([]);
+  const [subtasks, setSubtasks] = useState<Subtask[]>([]);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [newTitle, setNewTitle] = useState("");
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
@@ -85,15 +89,28 @@ export default function TodosPage() {
   }, [repo]);
 
   const loadTodos = useCallback(async () => {
-    const { data } = await repo.list();
-    if (data) {
-      setTodos(data);
-      setLoading(false);
-      resetDueRecurring(data);
-      return;
+    const [todosResult, subtasksResult] = await Promise.all([
+      repo.list(),
+      repo.listSubtasks(),
+    ]);
+    if (todosResult.data) {
+      setTodos(todosResult.data);
+      resetDueRecurring(todosResult.data);
+    }
+    if (subtasksResult.data) {
+      setSubtasks(subtasksResult.data);
     }
     setLoading(false);
   }, [repo, resetDueRecurring]);
+
+  function toggleExpanded(id: string) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   useEffect(() => {
     loadTodos();
@@ -277,6 +294,44 @@ export default function TodosPage() {
   );
   const completedTodos = visibleTodos.filter((t) => t.completed && !justCompletedIds.has(t.id));
 
+  function renderTopLevelTodo(todo: Todo, isDragging?: boolean) {
+    const done = todo.completed;
+    const childSubtasks = subtasks.filter((s) => s.parentId === todo.id);
+    const subtaskTotal = childSubtasks.length;
+    const subtaskDone = childSubtasks.filter((s) => s.completed).length;
+    const expanded = expandedIds.has(todo.id);
+    const activeSubtasks = sortSubtasks(
+      childSubtasks.filter((s) => !s.completed || justCompletedIds.has(s.id))
+    );
+
+    return (
+      <>
+        <TodoRow
+          todo={todo}
+          done={done}
+          lifted={isDragging}
+          justCompleted={justCompletedIds.has(todo.id)}
+          expanded={done ? undefined : expanded}
+          subtaskTotal={subtaskTotal}
+          subtaskDone={subtaskDone}
+          onToggle={() => handleToggle(todo)}
+          onTogglePin={() => handleTogglePin(todo)}
+          onToggleExpand={done ? undefined : () => toggleExpanded(todo.id)}
+          onOpen={() => setEditing(todo)}
+        />
+        {!done && expanded && (
+          <div className="mt-2 ml-7 space-y-2">
+            {activeSubtasks.length === 0 ? (
+              <p className="text-xs text-on-surface/50">No subtasks yet.</p>
+            ) : (
+              activeSubtasks.map((s) => <SubtaskRow key={s.id} subtask={s} />)
+            )}
+          </div>
+        )}
+      </>
+    );
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -346,15 +401,7 @@ export default function TodosPage() {
         <Section title="This Week">
           <div className="space-y-2">
             {thisWeekTodos.map((todo) => (
-              <TodoRow
-                key={todo.id}
-                todo={todo}
-                done={todo.completed}
-                justCompleted={justCompletedIds.has(todo.id)}
-                onToggle={() => handleToggle(todo)}
-                onTogglePin={() => handleTogglePin(todo)}
-                onOpen={() => setEditing(todo)}
-              />
+              <div key={todo.id}>{renderTopLevelTodo(todo)}</div>
             ))}
           </div>
         </Section>
@@ -366,17 +413,7 @@ export default function TodosPage() {
           <DraggableLongPressList
             items={dailyTodos}
             onReorder={handleReorder}
-            renderItem={(todo, isDragging) => (
-              <TodoRow
-                todo={todo}
-                done={todo.completed}
-                lifted={isDragging}
-                justCompleted={justCompletedIds.has(todo.id)}
-                onToggle={() => handleToggle(todo)}
-                onTogglePin={() => handleTogglePin(todo)}
-                onOpen={() => setEditing(todo)}
-              />
-            )}
+            renderItem={(todo, isDragging) => renderTopLevelTodo(todo, isDragging)}
           />
         </Section>
       )}
@@ -387,17 +424,7 @@ export default function TodosPage() {
           <DraggableLongPressList
             items={regularActive}
             onReorder={handleReorder}
-            renderItem={(todo, isDragging) => (
-              <TodoRow
-                todo={todo}
-                done={todo.completed}
-                lifted={isDragging}
-                justCompleted={justCompletedIds.has(todo.id)}
-                onToggle={() => handleToggle(todo)}
-                onTogglePin={() => handleTogglePin(todo)}
-                onOpen={() => setEditing(todo)}
-              />
-            )}
+            renderItem={(todo, isDragging) => renderTopLevelTodo(todo, isDragging)}
           />
         </Section>
       )}
@@ -407,15 +434,7 @@ export default function TodosPage() {
         <Section title="Complete">
           <div className="space-y-2">
             {completedTodos.map((todo) => (
-              <TodoRow
-                key={todo.id}
-                todo={todo}
-                done
-                justCompleted={justCompletedIds.has(todo.id)}
-                onToggle={() => handleToggle(todo)}
-                onTogglePin={() => handleTogglePin(todo)}
-                onOpen={() => setEditing(todo)}
-              />
+              <div key={todo.id}>{renderTopLevelTodo(todo)}</div>
             ))}
           </div>
         </Section>
@@ -716,19 +735,28 @@ function TodoRow({
   done,
   lifted,
   justCompleted,
+  expanded,
+  subtaskTotal,
+  subtaskDone,
   onToggle,
   onTogglePin,
+  onToggleExpand,
   onOpen,
 }: {
   todo: Todo;
   done?: boolean;
   lifted?: boolean;
   justCompleted?: boolean;
+  expanded?: boolean;
+  subtaskTotal?: number;
+  subtaskDone?: number;
   onToggle: () => void;
   onTogglePin?: () => void;
+  onToggleExpand?: () => void;
   onOpen: () => void;
 }) {
   const pinned = todo.pinnedToWeek;
+  const showBadge = (subtaskTotal ?? 0) > 0;
   const checkboxBase = done
     ? "flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 border-success bg-success/20 hover:bg-success/10 focus:outline-none focus:ring-2 focus:ring-success"
     : "h-5 w-5 shrink-0 rounded border-2 border-border hover:border-focus focus:outline-none focus:ring-2 focus:ring-focus";
@@ -757,6 +785,18 @@ function TodoRow({
       <div className="flex-1 min-w-0">
         <span className={`block break-words ${done ? "text-on-surface/50 line-through" : "text-on-surface"}`}>
           {todo.title}
+          {showBadge && (
+            <span
+              className={`ml-2 inline-block rounded px-1.5 py-0.5 align-middle text-[10px] font-medium ${
+                done
+                  ? "bg-surface text-on-surface/40"
+                  : "bg-surface text-on-surface/60"
+              }`}
+              aria-label={`${subtaskDone} of ${subtaskTotal} subtasks done`}
+            >
+              {subtaskDone}/{subtaskTotal}
+            </span>
+          )}
         </span>
         {todo.description && (
           <span className={`mt-0.5 block break-words text-xs ${done ? "text-on-surface/40" : "text-on-surface/60"}`}>
@@ -767,6 +807,24 @@ function TodoRow({
           {todo.createdBy} &middot; {formatRelativeDate(todo.createdAt)}
         </span>
       </div>
+
+      {onToggleExpand && (
+        <button
+          onClick={onToggleExpand}
+          className="shrink-0 rounded p-1 text-on-surface/60 hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+          aria-label={expanded ? "Collapse subtasks" : "Expand subtasks"}
+          aria-expanded={expanded}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className={`h-4 w-4 transition-transform ${expanded ? "rotate-90" : ""}`}
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+          </svg>
+        </button>
+      )}
 
       {onTogglePin && !done && (
         <button
@@ -790,6 +848,40 @@ function TodoRow({
           <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
         </svg>
       </button>
+    </div>
+  );
+}
+
+function SubtaskRow({ subtask }: { subtask: Subtask }) {
+  const done = subtask.completed;
+  return (
+    <div
+      className={`flex items-center gap-3 rounded-lg border px-3 py-2 ${
+        done ? "border-border-on-surface bg-surface-hover" : "border-border-on-surface bg-surface"
+      }`}
+    >
+      <span
+        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 ${
+          done ? "border-success bg-success/20" : "border-border"
+        }`}
+        aria-hidden="true"
+      >
+        {done && (
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5 text-success" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+          </svg>
+        )}
+      </span>
+      <div className="flex-1 min-w-0">
+        <span className={`block break-words text-sm ${done ? "text-on-surface/50 line-through" : "text-on-surface"}`}>
+          {subtask.title}
+        </span>
+        {subtask.description && (
+          <span className={`mt-0.5 block break-words text-xs ${done ? "text-on-surface/40" : "text-on-surface/60"}`}>
+            {subtask.description}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
