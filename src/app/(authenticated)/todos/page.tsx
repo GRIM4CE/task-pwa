@@ -233,12 +233,29 @@ export default function TodosPage() {
 
   async function handleEditSave(
     id: string,
-    patch: { title: string; description: string | null; recurrence: Recurrence }
+    patch: { title: string; description: string | null; recurrence: Recurrence; pinnedToWeek: boolean }
   ) {
     const { data } = await repo.update(id, patch);
     if (data) {
       setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
       setEditing(null);
+    }
+  }
+
+  async function handleTogglePin(todo: Todo) {
+    const next = !todo.pinnedToWeek;
+    setTodos((prev) =>
+      prev.map((t) => (t.id === todo.id ? { ...t, pinnedToWeek: next } : t))
+    );
+    const { data, error } = await repo.update(todo.id, { pinnedToWeek: next });
+    if (error) {
+      setTodos((prev) =>
+        prev.map((t) => (t.id === todo.id ? { ...t, pinnedToWeek: !next } : t))
+      );
+      return;
+    }
+    if (data) {
+      setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
     }
   }
 
@@ -249,9 +266,15 @@ export default function TodosPage() {
   // animation finishes, so the user sees the confirmation where they tapped
   // before the row settles into the Complete section.
   const isActiveSlot = (t: Todo) => !t.completed || justCompletedIds.has(t.id);
-  const regularActive = visibleTodos.filter((t) => isActiveSlot(t) && t.recurrence === null);
-  const dailyTodos = visibleTodos.filter((t) => isActiveSlot(t) && t.recurrence === "daily");
-  const weeklyTodos = visibleTodos.filter((t) => isActiveSlot(t) && t.recurrence === "weekly");
+  const thisWeekTodos = visibleTodos.filter(
+    (t) => isActiveSlot(t) && (t.recurrence === "weekly" || t.pinnedToWeek)
+  );
+  const dailyTodos = visibleTodos.filter(
+    (t) => isActiveSlot(t) && t.recurrence === "daily" && !t.pinnedToWeek
+  );
+  const regularActive = visibleTodos.filter(
+    (t) => isActiveSlot(t) && t.recurrence === null && !t.pinnedToWeek
+  );
   const completedTodos = visibleTodos.filter((t) => t.completed && !justCompletedIds.has(t.id));
 
   if (loading) {
@@ -318,6 +341,25 @@ export default function TodosPage() {
         </button>
       </form>
 
+      {/* This Week (weekly recurrence + pinned, no DnD) */}
+      {thisWeekTodos.length > 0 && (
+        <Section title="This Week">
+          <div className="space-y-2">
+            {thisWeekTodos.map((todo) => (
+              <TodoRow
+                key={todo.id}
+                todo={todo}
+                done={todo.completed}
+                justCompleted={justCompletedIds.has(todo.id)}
+                onToggle={() => handleToggle(todo)}
+                onTogglePin={() => handleTogglePin(todo)}
+                onOpen={() => setEditing(todo)}
+              />
+            ))}
+          </div>
+        </Section>
+      )}
+
       {/* Daily section */}
       {dailyTodos.length > 0 && (
         <Section title="Daily" hint="Resets at local midnight">
@@ -331,26 +373,7 @@ export default function TodosPage() {
                 lifted={isDragging}
                 justCompleted={justCompletedIds.has(todo.id)}
                 onToggle={() => handleToggle(todo)}
-                onOpen={() => setEditing(todo)}
-              />
-            )}
-          />
-        </Section>
-      )}
-
-      {/* Weekly section */}
-      {weeklyTodos.length > 0 && (
-        <Section title="Weekly" hint="Resets 7 days later at local midnight">
-          <DraggableLongPressList
-            items={weeklyTodos}
-            onReorder={handleReorder}
-            renderItem={(todo, isDragging) => (
-              <TodoRow
-                todo={todo}
-                done={todo.completed}
-                lifted={isDragging}
-                justCompleted={justCompletedIds.has(todo.id)}
-                onToggle={() => handleToggle(todo)}
+                onTogglePin={() => handleTogglePin(todo)}
                 onOpen={() => setEditing(todo)}
               />
             )}
@@ -371,6 +394,7 @@ export default function TodosPage() {
                 lifted={isDragging}
                 justCompleted={justCompletedIds.has(todo.id)}
                 onToggle={() => handleToggle(todo)}
+                onTogglePin={() => handleTogglePin(todo)}
                 onOpen={() => setEditing(todo)}
               />
             )}
@@ -389,6 +413,7 @@ export default function TodosPage() {
                 done
                 justCompleted={justCompletedIds.has(todo.id)}
                 onToggle={() => handleToggle(todo)}
+                onTogglePin={() => handleTogglePin(todo)}
                 onOpen={() => setEditing(todo)}
               />
             ))}
@@ -692,6 +717,7 @@ function TodoRow({
   lifted,
   justCompleted,
   onToggle,
+  onTogglePin,
   onOpen,
 }: {
   todo: Todo;
@@ -699,8 +725,10 @@ function TodoRow({
   lifted?: boolean;
   justCompleted?: boolean;
   onToggle: () => void;
+  onTogglePin?: () => void;
   onOpen: () => void;
 }) {
+  const pinned = todo.pinnedToWeek;
   const checkboxBase = done
     ? "flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 border-success bg-success/20 hover:bg-success/10 focus:outline-none focus:ring-2 focus:ring-success"
     : "h-5 w-5 shrink-0 rounded border-2 border-border hover:border-focus focus:outline-none focus:ring-2 focus:ring-focus";
@@ -740,6 +768,19 @@ function TodoRow({
         </span>
       </div>
 
+      {onTogglePin && !done && (
+        <button
+          onClick={onTogglePin}
+          className={`shrink-0 rounded p-1 text-base leading-none focus:outline-none focus:ring-2 focus:ring-primary ${
+            pinned ? "opacity-100" : "opacity-40 hover:opacity-80"
+          }`}
+          aria-label={pinned ? "Unpin from This Week" : "Pin to This Week"}
+          aria-pressed={pinned}
+        >
+          <span aria-hidden="true">📌</span>
+        </button>
+      )}
+
       <button
         onClick={onOpen}
         className="shrink-0 rounded p-1 text-on-surface/60 hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
@@ -761,12 +802,13 @@ function EditTodoModal({
 }: {
   todo: Todo;
   onCancel: () => void;
-  onSave: (patch: { title: string; description: string | null; recurrence: Recurrence }) => void | Promise<void>;
+  onSave: (patch: { title: string; description: string | null; recurrence: Recurrence; pinnedToWeek: boolean }) => void | Promise<void>;
   onDelete: () => void;
 }) {
   const [title, setTitle] = useState(todo.title);
   const [description, setDescription] = useState(todo.description ?? "");
   const [recurrence, setRecurrence] = useState<Recurrence>(todo.recurrence);
+  const [pinnedToWeek, setPinnedToWeek] = useState(todo.pinnedToWeek);
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -777,6 +819,7 @@ function EditTodoModal({
       title: title.trim(),
       description: description.trim() ? description.trim() : null,
       recurrence,
+      pinnedToWeek,
     });
     setSaving(false);
   }
@@ -842,6 +885,16 @@ function EditTodoModal({
                 <option value="daily">Daily — resets at local midnight</option>
                 <option value="weekly">Weekly — resets 7 days later at local midnight</option>
               </select>
+            </label>
+
+            <label className="mb-4 flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={pinnedToWeek}
+                onChange={(e) => setPinnedToWeek(e.target.checked)}
+                className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-focus"
+              />
+              <span className="text-sm text-text">Pin to This Week</span>
             </label>
           </div>
         </div>
