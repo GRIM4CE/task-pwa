@@ -56,13 +56,24 @@ export async function GET() {
       updatedAt: schema.subtasks.updatedAt,
       createdBy: schema.users.username,
       parentTitle: schema.todos.title,
-      parentIsPersonal: schema.todos.isPersonal,
-      parentUserId: schema.todos.userId,
     })
     .from(schema.subtasks)
     .innerJoin(schema.users, eq(schema.subtasks.userId, schema.users.id))
     .innerJoin(schema.todos, eq(schema.subtasks.parentId, schema.todos.id))
-    .where(eq(schema.subtasks.completed, true));
+    .where(
+      and(
+        eq(schema.subtasks.completed, true),
+        // Privacy is enforced in SQL (not in JS) so the DB doesn't return rows
+        // belonging to other users' personal todos in the first place.
+        or(
+          eq(schema.todos.isPersonal, false),
+          and(
+            eq(schema.todos.isPersonal, true),
+            eq(schema.todos.userId, session.user.id)
+          )
+        )
+      )
+    );
 
   const items: ArchiveItem[] = [
     ...todoList.map<ArchiveItem>((t) => ({
@@ -82,30 +93,26 @@ export async function GET() {
         createdBy: t.createdBy,
       },
     })),
-    ...subtaskList
-      .filter(
-        (s) => !s.parentIsPersonal || s.parentUserId === session.user.id
-      )
-      .map<ArchiveItem>((s) => ({
-        kind: "subtask",
-        parentTitle: s.parentTitle,
-        data: {
-          id: s.id,
-          parentId: s.parentId,
-          title: s.title,
-          description: s.description,
-          completed: s.completed,
-          isPersonal: s.isPersonal,
-          pinnedToWeek: s.pinnedToWeek,
-          sortOrder: s.sortOrder,
-          lastCompletedAt: s.lastCompletedAt
-            ? s.lastCompletedAt.getTime()
-            : null,
-          createdAt: s.createdAt.getTime(),
-          updatedAt: s.updatedAt.getTime(),
-          createdBy: s.createdBy,
-        },
-      })),
+    ...subtaskList.map<ArchiveItem>((s) => ({
+      kind: "subtask",
+      parentTitle: s.parentTitle,
+      data: {
+        id: s.id,
+        parentId: s.parentId,
+        title: s.title,
+        description: s.description,
+        completed: s.completed,
+        isPersonal: s.isPersonal,
+        pinnedToWeek: s.pinnedToWeek,
+        sortOrder: s.sortOrder,
+        lastCompletedAt: s.lastCompletedAt
+          ? s.lastCompletedAt.getTime()
+          : null,
+        createdAt: s.createdAt.getTime(),
+        updatedAt: s.updatedAt.getTime(),
+        createdBy: s.createdBy,
+      },
+    })),
   ].sort(
     (a, b) => (b.data.lastCompletedAt ?? 0) - (a.data.lastCompletedAt ?? 0)
   );

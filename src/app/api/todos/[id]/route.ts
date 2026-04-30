@@ -61,30 +61,35 @@ export async function PATCH(
     if (body.completed) updateData.pinnedToWeek = false;
   }
 
-  const [updated] = await db
-    .update(schema.todos)
-    .set(updateData)
-    .where(eq(schema.todos.id, id))
-    .returning();
+  // Wrap the parent update + subtask cascade in a single transaction so a
+  // crash between the two writes can't leave a completed parent next to
+  // still-open subtasks.
+  const updated = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(schema.todos)
+      .set(updateData)
+      .where(eq(schema.todos.id, id))
+      .returning();
 
-  // Cascade complete to all open subtasks: checking off the parent means the
-  // whole task is done, regardless of which subtasks remained.
-  if (body.completed === true && existing[0].completed === false) {
-    await db
-      .update(schema.subtasks)
-      .set({
-        completed: true,
-        lastCompletedAt: now,
-        pinnedToWeek: false,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(schema.subtasks.parentId, id),
-          eq(schema.subtasks.completed, false)
-        )
-      );
-  }
+    if (body.completed === true && existing[0].completed === false) {
+      await tx
+        .update(schema.subtasks)
+        .set({
+          completed: true,
+          lastCompletedAt: now,
+          pinnedToWeek: false,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(schema.subtasks.parentId, id),
+            eq(schema.subtasks.completed, false)
+          )
+        );
+    }
+
+    return row;
+  });
 
   // Record an immutable completion event so analytics can reconstruct history
   // even after a recurring todo resets and overwrites lastCompletedAt. Only

@@ -59,10 +59,10 @@ export default function ArchivePage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
       <div className="mb-6">
-        <h2 className="text-xl font-semibold text-text">Completed Todos</h2>
+        <h2 className="text-xl font-semibold text-text">Completed</h2>
         <p className="text-sm text-text-muted">
           {items.length === 0
-            ? "No completed todos yet"
+            ? "No completed items yet"
             : `${items.length} completed item${items.length === 1 ? "" : "s"}`}
         </p>
       </div>
@@ -72,8 +72,8 @@ export default function ArchivePage() {
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search completed todos..."
-          aria-label="Search completed todos"
+          placeholder="Search completed items..."
+          aria-label="Search completed items"
           className="w-full rounded-lg border border-border bg-input px-3 py-2 text-input-text placeholder-gray-400 focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
         />
       </div>
@@ -86,8 +86,8 @@ export default function ArchivePage() {
         <div className="py-12 text-center">
           <p className="text-text-muted">
             {items.length === 0
-              ? "Completed todos will appear here after a day."
-              : "No todos match your search."}
+              ? "Completed todos and subtasks will appear here after a day."
+              : "No items match your search."}
           </p>
         </div>
       ) : (
