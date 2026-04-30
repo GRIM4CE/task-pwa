@@ -43,6 +43,8 @@ export interface DailyStat {
   completedCount: number;
   totalDays: number;
   days: DayCell[];
+  streak: number;
+  heatmap: DayCell[];
 }
 
 export interface WeekCell {
@@ -60,6 +62,7 @@ export interface WeeklyStat {
   completedCount: number;
   totalWeeks: number;
   weeks: WeekCell[];
+  streak: number;
 }
 
 export interface GlobalStats {
@@ -75,6 +78,77 @@ export interface ComputedStats {
   daily: DailyStat[];
   weekly: WeeklyStat[];
   global: GlobalStats;
+}
+
+const HEATMAP_DAYS = 30;
+
+function completedDaySet(completions: number[]): Set<number> {
+  const set = new Set<number>();
+  for (const ts of completions) {
+    set.add(startOfDay(new Date(ts)).getTime());
+  }
+  return set;
+}
+
+function completedWeekSet(completions: number[]): Set<number> {
+  const set = new Set<number>();
+  for (const ts of completions) {
+    set.add(startOfWeek(new Date(ts)).getTime());
+  }
+  return set;
+}
+
+// Walks backward from today (or yesterday, if today isn't done yet so an
+// in-progress day doesn't break the streak) counting consecutive completed
+// days. Capped indirectly by the API's 120-day completions window.
+function dailyStreak(completions: number[], todayStart: Date): number {
+  if (completions.length === 0) return 0;
+  const days = completedDaySet(completions);
+  const today = todayStart.getTime();
+  const yesterday = addDays(todayStart, -1).getTime();
+  let cursor: number;
+  if (days.has(today)) cursor = today;
+  else if (days.has(yesterday)) cursor = yesterday;
+  else return 0;
+  let count = 0;
+  while (days.has(cursor)) {
+    count++;
+    cursor = addDays(new Date(cursor), -1).getTime();
+  }
+  return count;
+}
+
+function weeklyStreak(completions: number[], thisWeekStart: Date): number {
+  if (completions.length === 0) return 0;
+  const weeks = completedWeekSet(completions);
+  const thisWeek = thisWeekStart.getTime();
+  const lastWeek = addDays(thisWeekStart, -DAYS_IN_WEEK).getTime();
+  let cursor: number;
+  if (weeks.has(thisWeek)) cursor = thisWeek;
+  else if (weeks.has(lastWeek)) cursor = lastWeek;
+  else return 0;
+  let count = 0;
+  while (weeks.has(cursor)) {
+    count++;
+    cursor = addDays(new Date(cursor), -DAYS_IN_WEEK).getTime();
+  }
+  return count;
+}
+
+function dailyHeatmap(completions: number[], todayStart: Date): DayCell[] {
+  const days = completedDaySet(completions);
+  const cells: DayCell[] = [];
+  for (let i = HEATMAP_DAYS - 1; i >= 0; i--) {
+    const dayStart = addDays(todayStart, -i);
+    const startMs = dayStart.getTime();
+    cells.push({
+      date: startMs,
+      completed: days.has(startMs),
+      isFuture: false,
+      isToday: i === 0,
+    });
+  }
+  return cells;
 }
 
 function dailyForTodo(
@@ -106,6 +180,8 @@ function dailyForTodo(
     completedCount,
     totalDays: DAYS_IN_WEEK,
     days,
+    streak: dailyStreak(todo.completions, todayStart),
+    heatmap: dailyHeatmap(todo.completions, todayStart),
   };
 }
 
@@ -147,6 +223,7 @@ function weeklyForTodo(
     completedCount,
     totalWeeks: cells.length,
     weeks: cells,
+    streak: weeklyStreak(todo.completions, thisWeekStart),
   };
 }
 
