@@ -27,6 +27,7 @@ export const createTodoSchema = z.object({
   description: z.string().max(5000, "Description too long").optional(),
   isPersonal: z.boolean().optional(),
   recurrence: recurrenceSchema.optional(),
+  pinnedToWeek: z.boolean().optional(),
 });
 
 export const updateTodoSchema = z.object({
@@ -35,8 +36,29 @@ export const updateTodoSchema = z.object({
   completed: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
   recurrence: recurrenceSchema.optional(),
+  pinnedToWeek: z.boolean().optional(),
 });
 
 export const reorderTodosSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, "At least one id required"),
+});
+
+export const createSubtaskSchema = z.object({
+  parentId: z.string().min(1, "Parent id is required"),
+  title: z.string().min(1, "Title is required").max(500, "Title too long"),
+  description: z.string().max(5000, "Description too long").optional(),
+  pinnedToWeek: z.boolean().optional(),
+});
+
+export const updateSubtaskSchema = z.object({
+  title: z.string().min(1, "Title is required").max(500, "Title too long").optional(),
+  description: z.string().max(5000, "Description too long").nullable().optional(),
+  completed: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+  pinnedToWeek: z.boolean().optional(),
+});
+
+export const reorderSubtasksSchema = z.object({
+  parentId: z.string().min(1, "Parent id is required"),
   ids: z.array(z.string().min(1)).min(1, "At least one id required"),
 });

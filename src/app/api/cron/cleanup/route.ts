@@ -23,6 +23,16 @@ export async function GET(request: NextRequest) {
     )
     .returning({ id: schema.todos.id });
 
+  const deletedSubtasks = await db
+    .delete(schema.subtasks)
+    .where(
+      and(
+        eq(schema.subtasks.completed, true),
+        lt(schema.subtasks.updatedAt, cutoff)
+      )
+    )
+    .returning({ id: schema.subtasks.id });
+
   // Also clean up old TOTP used codes (older than 5 minutes)
   const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
   await db
@@ -38,6 +48,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     success: true,
     deletedTodos: deleted.length,
+    deletedSubtasks: deletedSubtasks.length,
     timestamp: new Date().toISOString(),
   });
 }

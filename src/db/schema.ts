@@ -144,6 +144,7 @@ export const todos = sqliteTable(
     isPersonal: integer("is_personal", { mode: "boolean" }).notNull().default(false),
     sortOrder: integer("sort_order").notNull().default(0),
     recurrence: text("recurrence", { enum: ["daily", "weekly"] }),
+    pinnedToWeek: integer("pinned_to_week", { mode: "boolean" }).notNull().default(false),
     lastCompletedAt: integer("last_completed_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
@@ -186,5 +187,37 @@ export const todoCompletions = sqliteTable(
       table.userId,
       table.completedAt
     ),
+  ]
+);
+
+export const subtasks = sqliteTable(
+  "subtasks",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    parentId: text("parent_id")
+      .notNull()
+      .references(() => todos.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    completed: integer("completed", { mode: "boolean" }).notNull().default(false),
+    isPersonal: integer("is_personal", { mode: "boolean" }).notNull().default(false),
+    pinnedToWeek: integer("pinned_to_week", { mode: "boolean" }).notNull().default(false),
+    sortOrder: integer("sort_order").notNull().default(0),
+    lastCompletedAt: integer("last_completed_at", { mode: "timestamp" }),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    index("idx_subtasks_parent").on(table.parentId, table.sortOrder),
+    index("idx_subtasks_user").on(table.userId, table.completed),
   ]
 );

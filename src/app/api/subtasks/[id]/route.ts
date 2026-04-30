@@ -1,8 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { validateSession } from "@/lib/session";
-import { updateTodoSchema } from "@/lib/validation";
+import { updateSubtaskSchema } from "@/lib/validation";
+
+async function loadSubtaskWithParent(id: string) {
+  const rows = await db
+    .select({
+      subtask: schema.subtasks,
+      parent: schema.todos,
+    })
+    .from(schema.subtasks)
+    .innerJoin(schema.todos, eq(schema.subtasks.parentId, schema.todos.id))
+    .where(eq(schema.subtasks.id, id))
+    .limit(1);
+  return rows[0] ?? null;
+}
 
 export async function PATCH(
   request: NextRequest,
@@ -20,29 +33,25 @@ export async function PATCH(
     description?: string | null;
     completed?: boolean;
     sortOrder?: number;
-    recurrence?: "daily" | "weekly" | null;
     pinnedToWeek?: boolean;
   };
   try {
     const raw = await request.json();
-    body = updateTodoSchema.parse(raw);
+    body = updateSubtaskSchema.parse(raw);
   } catch {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  const existing = await db
-    .select()
-    .from(schema.todos)
-    .where(eq(schema.todos.id, id))
-    .limit(1);
-
-  if (existing.length === 0) {
+  const existing = await loadSubtaskWithParent(id);
+  if (!existing) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Personal todos are only modifiable by their owner; they're also hidden from
-  // non-owners, so surface a 404 rather than a 403 to avoid leaking existence.
-  if (existing[0].isPersonal && existing[0].userId !== session.user.id) {
+  // Personal-parent subtasks are visible only to the parent's owner.
+  if (
+    existing.parent.isPersonal &&
+    existing.parent.userId !== session.user.id
+  ) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -51,62 +60,18 @@ export async function PATCH(
   if (body.title !== undefined) updateData.title = body.title;
   if (body.description !== undefined) updateData.description = body.description;
   if (body.sortOrder !== undefined) updateData.sortOrder = body.sortOrder;
-  if (body.recurrence !== undefined) updateData.recurrence = body.recurrence;
   if (body.pinnedToWeek !== undefined) updateData.pinnedToWeek = body.pinnedToWeek;
   if (body.completed !== undefined) {
     updateData.completed = body.completed;
     updateData.lastCompletedAt = body.completed ? now : null;
-    // Pinning is meant for "this week's open work"; clear it on completion so
-    // unchecking later doesn't resurrect the pin.
     if (body.completed) updateData.pinnedToWeek = false;
   }
 
-  // Wrap the parent update + subtask cascade in a single transaction so a
-  // crash between the two writes can't leave a completed parent next to
-  // still-open subtasks.
-  const updated = await db.transaction(async (tx) => {
-    const [row] = await tx
-      .update(schema.todos)
-      .set(updateData)
-      .where(eq(schema.todos.id, id))
-      .returning();
-
-    if (body.completed === true && existing[0].completed === false) {
-      await tx
-        .update(schema.subtasks)
-        .set({
-          completed: true,
-          lastCompletedAt: now,
-          pinnedToWeek: false,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(schema.subtasks.parentId, id),
-            eq(schema.subtasks.completed, false)
-          )
-        );
-    }
-
-    return row;
-  });
-
-  // Record an immutable completion event so analytics can reconstruct history
-  // even after a recurring todo resets and overwrites lastCompletedAt. Only
-  // recurring todos surface in stats, so non-recurring completions aren't
-  // logged. Attribution is to the actor (session user) — joined todos are
-  // editable by anyone, and stats are per-user.
-  if (
-    body.completed === true &&
-    existing[0].completed === false &&
-    existing[0].recurrence !== null
-  ) {
-    await db.insert(schema.todoCompletions).values({
-      todoId: updated.id,
-      userId: session.user.id,
-      completedAt: now,
-    });
-  }
+  const [updated] = await db
+    .update(schema.subtasks)
+    .set(updateData)
+    .where(eq(schema.subtasks.id, id))
+    .returning();
 
   const creator = await db
     .select({ username: schema.users.username })
@@ -116,13 +81,13 @@ export async function PATCH(
 
   return NextResponse.json({
     id: updated.id,
+    parentId: updated.parentId,
     title: updated.title,
     description: updated.description,
     completed: updated.completed,
     isPersonal: updated.isPersonal,
-    sortOrder: updated.sortOrder,
-    recurrence: updated.recurrence,
     pinnedToWeek: updated.pinnedToWeek,
+    sortOrder: updated.sortOrder,
     lastCompletedAt: updated.lastCompletedAt ? updated.lastCompletedAt.getTime() : null,
     createdAt: updated.createdAt.getTime(),
     updatedAt: updated.updatedAt.getTime(),
@@ -141,21 +106,19 @@ export async function DELETE(
 
   const { id } = await params;
 
-  const existing = await db
-    .select()
-    .from(schema.todos)
-    .where(eq(schema.todos.id, id))
-    .limit(1);
-
-  if (existing.length === 0) {
+  const existing = await loadSubtaskWithParent(id);
+  if (!existing) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  if (existing[0].isPersonal && existing[0].userId !== session.user.id) {
+  if (
+    existing.parent.isPersonal &&
+    existing.parent.userId !== session.user.id
+  ) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  await db.delete(schema.todos).where(eq(schema.todos.id, id));
+  await db.delete(schema.subtasks).where(eq(schema.subtasks.id, id));
 
   return NextResponse.json({ success: true });
 }
