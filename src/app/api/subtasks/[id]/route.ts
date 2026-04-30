@@ -53,9 +53,9 @@ export async function PATCH(
   if (body.completed !== undefined) {
     updateData.completed = body.completed;
     updateData.lastCompletedAt = body.completed ? now : null;
-    if (body.completed && body.pinnedToWeek === undefined) {
-      updateData.pinnedToWeek = false;
-    }
+    // Always force-clear the pin on completion — matches applySubtaskUpdate()
+    // and overrides any pinnedToWeek the client may have included.
+    if (body.completed) updateData.pinnedToWeek = false;
   }
 
   const [updated] = await db

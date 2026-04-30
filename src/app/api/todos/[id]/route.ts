@@ -56,11 +56,10 @@ export async function PATCH(
   if (body.completed !== undefined) {
     updateData.completed = body.completed;
     updateData.lastCompletedAt = body.completed ? now : null;
-    // A completed item shouldn't keep its This Week pin — clear it implicitly
-    // unless the same request also explicitly set pinnedToWeek.
-    if (body.completed && body.pinnedToWeek === undefined) {
-      updateData.pinnedToWeek = false;
-    }
+    // A completed item never keeps its This Week pin. Always force-clears,
+    // overriding any pinnedToWeek the client may have included in the same
+    // patch — matches applyUpdate() in the local mirror.
+    if (body.completed) updateData.pinnedToWeek = false;
   }
 
   const [updated] = await db

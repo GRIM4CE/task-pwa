@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { and, eq, desc, or, isNull, inArray } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
+import { and, eq, desc, or, isNull } from "drizzle-orm";
 import { validateSession } from "@/lib/session";
 import type { ArchiveItem } from "@/lib/api-client";
 
@@ -39,51 +40,44 @@ export async function GET() {
     )
     .orderBy(desc(schema.todos.lastCompletedAt));
 
-  // Subtasks visible to the session user: parent is joined, or parent is
-  // personal and owned by them. Subtasks inherit isPersonal from their parent
-  // at creation time, so filtering on the subtask's own flag is enough.
-  const visibleParents = await db
-    .select({ id: schema.todos.id, title: schema.todos.title })
-    .from(schema.todos)
+  // Pull subtasks + parent title in a single join. Subtasks inherit visibility
+  // from their parent (joined → public, personal → owner-only); applying the
+  // predicate against `todos` directly avoids preloading every visible parent
+  // id into a bound-parameter list, which would blow past SQLite's ~999 cap
+  // for heavy users.
+  const parentTodos = alias(schema.todos, "parent_todos");
+  const subtaskRows = await db
+    .select({
+      id: schema.subtasks.id,
+      parentId: schema.subtasks.parentId,
+      parentTitle: parentTodos.title,
+      title: schema.subtasks.title,
+      description: schema.subtasks.description,
+      completed: schema.subtasks.completed,
+      isPersonal: schema.subtasks.isPersonal,
+      sortOrder: schema.subtasks.sortOrder,
+      pinnedToWeek: schema.subtasks.pinnedToWeek,
+      lastCompletedAt: schema.subtasks.lastCompletedAt,
+      createdAt: schema.subtasks.createdAt,
+      updatedAt: schema.subtasks.updatedAt,
+      createdBy: schema.users.username,
+    })
+    .from(schema.subtasks)
+    .innerJoin(parentTodos, eq(schema.subtasks.parentId, parentTodos.id))
+    .innerJoin(schema.users, eq(schema.subtasks.userId, schema.users.id))
     .where(
-      or(
-        eq(schema.todos.isPersonal, false),
-        and(
-          eq(schema.todos.isPersonal, true),
-          eq(schema.todos.userId, session.user.id)
+      and(
+        eq(schema.subtasks.completed, true),
+        or(
+          eq(parentTodos.isPersonal, false),
+          and(
+            eq(parentTodos.isPersonal, true),
+            eq(parentTodos.userId, session.user.id)
+          )
         )
       )
-    );
-  const parentIds = visibleParents.map((p) => p.id);
-  const parentTitleById = new Map(visibleParents.map((p) => [p.id, p.title]));
-
-  const subtaskRows =
-    parentIds.length === 0
-      ? []
-      : await db
-          .select({
-            id: schema.subtasks.id,
-            parentId: schema.subtasks.parentId,
-            title: schema.subtasks.title,
-            description: schema.subtasks.description,
-            completed: schema.subtasks.completed,
-            isPersonal: schema.subtasks.isPersonal,
-            sortOrder: schema.subtasks.sortOrder,
-            pinnedToWeek: schema.subtasks.pinnedToWeek,
-            lastCompletedAt: schema.subtasks.lastCompletedAt,
-            createdAt: schema.subtasks.createdAt,
-            updatedAt: schema.subtasks.updatedAt,
-            createdBy: schema.users.username,
-          })
-          .from(schema.subtasks)
-          .innerJoin(schema.users, eq(schema.subtasks.userId, schema.users.id))
-          .where(
-            and(
-              eq(schema.subtasks.completed, true),
-              inArray(schema.subtasks.parentId, parentIds)
-            )
-          )
-          .orderBy(desc(schema.subtasks.lastCompletedAt));
+    )
+    .orderBy(desc(schema.subtasks.lastCompletedAt));
 
   const items: ArchiveItem[] = [
     ...todoRows.map((t) => ({
@@ -119,7 +113,7 @@ export async function GET() {
         updatedAt: s.updatedAt.getTime(),
         createdBy: s.createdBy,
       },
-      parentTitle: parentTitleById.get(s.parentId) ?? "",
+      parentTitle: s.parentTitle,
     })),
   ].sort((a, b) => {
     const aTime = a.kind === "todo" ? a.todo.lastCompletedAt ?? 0 : a.subtask.lastCompletedAt ?? 0;

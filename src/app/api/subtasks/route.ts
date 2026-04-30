@@ -6,7 +6,6 @@ import {
   desc,
   eq,
   gte,
-  inArray,
   isNotNull,
   not,
   or,
@@ -25,25 +24,10 @@ export async function GET() {
   // for completed items so they don't disappear immediately.
   const recentCompletedCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-  // A subtask is visible to the session user when its parent todo is visible:
-  // joined parents are visible to all, personal parents only to their owner.
-  const visibleParents = await db
-    .select({ id: schema.todos.id })
-    .from(schema.todos)
-    .where(
-      or(
-        eq(schema.todos.isPersonal, false),
-        and(
-          eq(schema.todos.isPersonal, true),
-          eq(schema.todos.userId, session.user.id)
-        )
-      )
-    );
-  const parentIds = visibleParents.map((p) => p.id);
-  if (parentIds.length === 0) {
-    return NextResponse.json([]);
-  }
-
+  // Visibility flows through the parent: joined parents are visible to all,
+  // personal parents only to their owner. Joining subtasks → todos in SQL
+  // avoids preloading every parent id into a bound-parameter `IN (...)`,
+  // which can blow past SQLite's ~999-parameter limit for heavy users.
   const rows = await db
     .select({
       id: schema.subtasks.id,
@@ -60,10 +44,17 @@ export async function GET() {
       createdBy: schema.users.username,
     })
     .from(schema.subtasks)
+    .innerJoin(schema.todos, eq(schema.subtasks.parentId, schema.todos.id))
     .innerJoin(schema.users, eq(schema.subtasks.userId, schema.users.id))
     .where(
       and(
-        inArray(schema.subtasks.parentId, parentIds),
+        or(
+          eq(schema.todos.isPersonal, false),
+          and(
+            eq(schema.todos.isPersonal, true),
+            eq(schema.todos.userId, session.user.id)
+          )
+        ),
         or(
           not(eq(schema.subtasks.completed, true)),
           and(
