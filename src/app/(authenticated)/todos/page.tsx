@@ -321,12 +321,19 @@ export default function TodosPage() {
       {/* Daily section */}
       {dailyTodos.length > 0 && (
         <Section title="Daily" hint="Resets at local midnight">
-          <DraggableTodoList
-            todos={dailyTodos}
-            justCompletedIds={justCompletedIds}
+          <DraggableLongPressList
+            items={dailyTodos}
             onReorder={handleReorder}
-            onToggle={handleToggle}
-            onOpen={(t) => setEditing(t)}
+            renderItem={(todo, isDragging) => (
+              <TodoRow
+                todo={todo}
+                done={todo.completed}
+                lifted={isDragging}
+                justCompleted={justCompletedIds.has(todo.id)}
+                onToggle={() => handleToggle(todo)}
+                onOpen={() => setEditing(todo)}
+              />
+            )}
           />
         </Section>
       )}
@@ -334,12 +341,19 @@ export default function TodosPage() {
       {/* Weekly section */}
       {weeklyTodos.length > 0 && (
         <Section title="Weekly" hint="Resets 7 days later at local midnight">
-          <DraggableTodoList
-            todos={weeklyTodos}
-            justCompletedIds={justCompletedIds}
+          <DraggableLongPressList
+            items={weeklyTodos}
             onReorder={handleReorder}
-            onToggle={handleToggle}
-            onOpen={(t) => setEditing(t)}
+            renderItem={(todo, isDragging) => (
+              <TodoRow
+                todo={todo}
+                done={todo.completed}
+                lifted={isDragging}
+                justCompleted={justCompletedIds.has(todo.id)}
+                onToggle={() => handleToggle(todo)}
+                onOpen={() => setEditing(todo)}
+              />
+            )}
           />
         </Section>
       )}
@@ -347,12 +361,19 @@ export default function TodosPage() {
       {/* General (active regular) todos */}
       {regularActive.length > 0 && (
         <Section title="General">
-          <DraggableTodoList
-            todos={regularActive}
-            justCompletedIds={justCompletedIds}
+          <DraggableLongPressList
+            items={regularActive}
             onReorder={handleReorder}
-            onToggle={handleToggle}
-            onOpen={(t) => setEditing(t)}
+            renderItem={(todo, isDragging) => (
+              <TodoRow
+                todo={todo}
+                done={todo.completed}
+                lifted={isDragging}
+                justCompleted={justCompletedIds.has(todo.id)}
+                onToggle={() => handleToggle(todo)}
+                onOpen={() => setEditing(todo)}
+              />
+            )}
           />
         </Section>
       )}
@@ -429,18 +450,14 @@ type DragState = {
   tops: number[];
 };
 
-function DraggableTodoList({
-  todos,
-  justCompletedIds,
+function DraggableLongPressList<T extends { id: string }>({
+  items,
   onReorder,
-  onToggle,
-  onOpen,
+  renderItem,
 }: {
-  todos: Todo[];
-  justCompletedIds: Set<string>;
+  items: T[];
   onReorder: (ids: string[]) => void | Promise<void>;
-  onToggle: (todo: Todo) => void;
-  onOpen: (todo: Todo) => void;
+  renderItem: (item: T, isDragging: boolean) => React.ReactNode;
 }) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -463,11 +480,11 @@ function DraggableTodoList({
 
   const beginDrag = useCallback(
     (id: string, pointerId: number, startPointerY: number, element: HTMLElement) => {
-      const startIndex = todos.findIndex((t) => t.id === id);
+      const startIndex = items.findIndex((t) => t.id === id);
       if (startIndex < 0) return;
       const heights: number[] = [];
       const tops: number[] = [];
-      for (const t of todos) {
+      for (const t of items) {
         const el = itemRefs.current.get(t.id);
         if (!el) return;
         const rect = el.getBoundingClientRect();
@@ -493,7 +510,7 @@ function DraggableTodoList({
         tops,
       });
     },
-    [todos]
+    [items]
   );
 
   // Pending long-press: cancel on movement or early release.
@@ -558,7 +575,7 @@ function DraggableTodoList({
       setDrag((prev) => {
         if (!prev) return prev;
         if (prev.startIndex !== prev.currentIndex) {
-          const ids = todos.map((t) => t.id);
+          const ids = items.map((t) => t.id);
           const [moved] = ids.splice(prev.startIndex, 1);
           ids.splice(prev.currentIndex, 0, moved);
           onReorder(ids);
@@ -589,7 +606,7 @@ function DraggableTodoList({
       window.removeEventListener("pointercancel", onEnd);
       window.removeEventListener("touchmove", onTouchMove);
     };
-  }, [drag, todos, onReorder]);
+  }, [drag, items, onReorder]);
 
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>, id: string) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
@@ -638,17 +655,17 @@ function DraggableTodoList({
       className={`space-y-2 ${drag ? "select-none touch-none" : ""}`}
       onClickCapture={handleClickCapture}
     >
-      {todos.map((todo, index) => {
-        const isDragging = drag?.id === todo.id;
+      {items.map((item, index) => {
+        const isDragging = drag?.id === item.id;
         const transform = transformFor(index);
         return (
           <div
-            key={todo.id}
+            key={item.id}
             ref={(el) => {
-              if (el) itemRefs.current.set(todo.id, el);
-              else itemRefs.current.delete(todo.id);
+              if (el) itemRefs.current.set(item.id, el);
+              else itemRefs.current.delete(item.id);
             }}
-            onPointerDown={(e) => handlePointerDown(e, todo.id)}
+            onPointerDown={(e) => handlePointerDown(e, item.id)}
             style={{
               transform,
               transition: drag && !isDragging ? "transform 150ms ease" : undefined,
@@ -661,14 +678,7 @@ function DraggableTodoList({
             }}
             className={isDragging ? "shadow-lg shadow-black/40" : ""}
           >
-            <TodoRow
-              todo={todo}
-              done={todo.completed}
-              lifted={isDragging}
-              justCompleted={justCompletedIds.has(todo.id)}
-              onToggle={() => onToggle(todo)}
-              onOpen={() => onOpen(todo)}
-            />
+            {renderItem(item, isDragging)}
           </div>
         );
       })}
