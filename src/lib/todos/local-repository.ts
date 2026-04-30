@@ -1,25 +1,38 @@
-import type { StatsDTO, TodoDTO } from "@/lib/api-client";
+import type { ArchiveDTO, StatsDTO, SubtaskDTO, TodoDTO } from "@/lib/api-client";
 import {
+  createSubtaskSchema,
   createTodoSchema,
+  reorderSubtasksSchema,
   reorderTodosSchema,
+  updateSubtaskSchema,
   updateTodoSchema,
 } from "@/lib/validation";
 import {
   applyReorder,
+  applySubtaskReorder,
+  applySubtaskUpdate,
   applyUpdate,
+  cascadeCompleteSubtasks,
   filterArchive,
+  filterArchiveSubtasks,
   filterMainList,
+  filterMainListSubtasks,
   nextSortOrder,
+  nextSubtaskSortOrder,
+  sortSubtasks,
   sortTodos,
 } from "./domain";
 import type {
+  CreateSubtaskInput,
   CreateTodoInput,
   RepoResult,
   TodoRepository,
+  UpdateSubtaskPatch,
   UpdateTodoPatch,
 } from "./repository";
 
 const STORAGE_KEY = "todo-pwa:guest:todos";
+const SUBTASKS_KEY = "todo-pwa:guest:subtasks";
 const COMPLETIONS_KEY = "todo-pwa:guest:completions";
 const COMPLETIONS_RETENTION_MS = 120 * 24 * 60 * 60 * 1000;
 export const GUEST_USERNAME = "Guest";
@@ -40,7 +53,12 @@ function readAll(): TodoDTO[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as TodoDTO[]) : [];
+    if (!Array.isArray(parsed)) return [];
+    // Backfill pinnedToWeek for stored guest todos created before the field existed.
+    return (parsed as TodoDTO[]).map((t) => ({
+      ...t,
+      pinnedToWeek: t.pinnedToWeek ?? false,
+    }));
   } catch {
     return [];
   }
@@ -49,6 +67,23 @@ function readAll(): TodoDTO[] {
 function writeAll(list: TodoDTO[]): void {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+}
+
+function readSubtasks(): SubtaskDTO[] {
+  if (typeof window === "undefined") return [];
+  const raw = window.localStorage.getItem(SUBTASKS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as SubtaskDTO[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSubtasks(list: SubtaskDTO[]): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(SUBTASKS_KEY, JSON.stringify(list));
 }
 
 function readCompletions(): CompletionEvent[] {
@@ -78,8 +113,18 @@ export const localTodoRepository: TodoRepository = {
   },
 
   async archive() {
-    const all = readAll();
-    return ok(filterArchive(all));
+    const todos = readAll();
+    const subtasks = readSubtasks();
+    const subtaskTitles = new Map(todos.map((t) => [t.id, t.title]));
+    const items: ArchiveDTO["items"] = [
+      ...filterArchive(todos).map((t) => ({ kind: "todo" as const, data: t })),
+      ...filterArchiveSubtasks(subtasks).map((s) => ({
+        kind: "subtask" as const,
+        data: s,
+        parentTitle: subtaskTitles.get(s.parentId) ?? null,
+      })),
+    ].sort((a, b) => (b.data.lastCompletedAt ?? 0) - (a.data.lastCompletedAt ?? 0));
+    return ok({ items });
   },
 
   async stats() {
@@ -119,6 +164,7 @@ export const localTodoRepository: TodoRepository = {
       isPersonal: parsed.data.isPersonal ?? false,
       sortOrder: nextSortOrder(all),
       recurrence: parsed.data.recurrence ?? null,
+      pinnedToWeek: parsed.data.pinnedToWeek ?? false,
       lastCompletedAt: null,
       createdAt: now,
       updatedAt: now,
@@ -142,6 +188,15 @@ export const localTodoRepository: TodoRepository = {
     next[index] = updated;
     writeAll(next);
 
+    // Mirror the server-side cascade: completing a parent completes its open subtasks.
+    if (
+      parsed.data.completed === true &&
+      previous.completed === false
+    ) {
+      const subs = readSubtasks();
+      writeSubtasks(cascadeCompleteSubtasks(subs, id));
+    }
+
     if (
       parsed.data.completed === true &&
       previous.completed === false &&
@@ -159,6 +214,9 @@ export const localTodoRepository: TodoRepository = {
     const all = readAll();
     if (!all.some((t) => t.id === id)) return err("Not found");
     writeAll(all.filter((t) => t.id !== id));
+    // Cascade-delete subtasks attached to this todo (mirrors ON DELETE CASCADE).
+    const subs = readSubtasks();
+    writeSubtasks(subs.filter((s) => s.parentId !== id));
     return ok({ success: true as const });
   },
 
@@ -174,10 +232,81 @@ export const localTodoRepository: TodoRepository = {
     writeAll(applyReorder(all, unique));
     return ok({ success: true as const });
   },
+
+  async listSubtasks() {
+    const subs = readSubtasks();
+    return ok(sortSubtasks(filterMainListSubtasks(subs)));
+  },
+
+  async createSubtask(input: CreateSubtaskInput) {
+    const parsed = createSubtaskSchema.safeParse(input);
+    if (!parsed.success) return err("Invalid request");
+
+    const todos = readAll();
+    const parent = todos.find((t) => t.id === parsed.data.parentId);
+    if (!parent) return err("Not found");
+
+    const subs = readSubtasks();
+    const now = Date.now();
+    const subtask: SubtaskDTO = {
+      id: crypto.randomUUID(),
+      parentId: parsed.data.parentId,
+      title: parsed.data.title,
+      description: parsed.data.description ?? null,
+      completed: false,
+      isPersonal: parent.isPersonal,
+      pinnedToWeek: parsed.data.pinnedToWeek ?? false,
+      sortOrder: nextSubtaskSortOrder(subs, parsed.data.parentId),
+      lastCompletedAt: null,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: GUEST_USERNAME,
+    };
+    writeSubtasks([...subs, subtask]);
+    return ok(subtask);
+  },
+
+  async updateSubtask(id: string, patch: UpdateSubtaskPatch) {
+    const parsed = updateSubtaskSchema.safeParse(patch);
+    if (!parsed.success) return err("Invalid request");
+
+    const subs = readSubtasks();
+    const index = subs.findIndex((s) => s.id === id);
+    if (index === -1) return err("Not found");
+
+    const updated = applySubtaskUpdate(subs[index], parsed.data);
+    const next = [...subs];
+    next[index] = updated;
+    writeSubtasks(next);
+    return ok(updated);
+  },
+
+  async deleteSubtask(id: string) {
+    const subs = readSubtasks();
+    if (!subs.some((s) => s.id === id)) return err("Not found");
+    writeSubtasks(subs.filter((s) => s.id !== id));
+    return ok({ success: true as const });
+  },
+
+  async reorderSubtasks(parentId: string, ids: string[]) {
+    const parsed = reorderSubtasksSchema.safeParse({ parentId, ids });
+    if (!parsed.success) return err("Invalid request");
+    const unique = Array.from(new Set(parsed.data.ids));
+    if (unique.length !== parsed.data.ids.length) return err("Invalid request");
+
+    const subs = readSubtasks();
+    if (!unique.every((id) => subs.some((s) => s.id === id && s.parentId === parentId))) {
+      return err("Not found");
+    }
+
+    writeSubtasks(applySubtaskReorder(subs, parentId, unique));
+    return ok({ success: true as const });
+  },
 };
 
 export function clearGuestTodos(): void {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(STORAGE_KEY);
+  window.localStorage.removeItem(SUBTASKS_KEY);
   window.localStorage.removeItem(COMPLETIONS_KEY);
 }

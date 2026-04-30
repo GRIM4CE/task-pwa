@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { type TodoDTO } from "@/lib/api-client";
+import { type ArchiveItem } from "@/lib/api-client";
 import { useTodoRepository } from "@/lib/todos/use-todo-repository";
 
 function formatCompletedDate(timestamp: number): string {
@@ -26,7 +26,7 @@ function formatCompletedDate(timestamp: number): string {
 
 export default function ArchivePage() {
   const repo = useTodoRepository();
-  const [todos, setTodos] = useState<TodoDTO[]>([]);
+  const [items, setItems] = useState<ArchiveItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
@@ -34,7 +34,7 @@ export default function ArchivePage() {
     let cancelled = false;
     repo.archive().then(({ data }) => {
       if (cancelled) return;
-      if (data) setTodos(data);
+      if (data) setItems(data.items);
       setLoading(false);
     });
     return () => {
@@ -44,22 +44,26 @@ export default function ArchivePage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return todos;
-    return todos.filter((t) => {
-      const inTitle = t.title.toLowerCase().includes(q);
-      const inDesc = t.description?.toLowerCase().includes(q) ?? false;
-      return inTitle || inDesc;
+    if (!q) return items;
+    return items.filter((item) => {
+      const inTitle = item.data.title.toLowerCase().includes(q);
+      const inDesc = item.data.description?.toLowerCase().includes(q) ?? false;
+      const inParent =
+        item.kind === "subtask"
+          ? item.parentTitle?.toLowerCase().includes(q) ?? false
+          : false;
+      return inTitle || inDesc || inParent;
     });
-  }, [search, todos]);
+  }, [search, items]);
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
       <div className="mb-6">
         <h2 className="text-xl font-semibold text-text">Completed Todos</h2>
         <p className="text-sm text-text-muted">
-          {todos.length === 0
+          {items.length === 0
             ? "No completed todos yet"
-            : `${todos.length} completed todo${todos.length === 1 ? "" : "s"}`}
+            : `${items.length} completed item${items.length === 1 ? "" : "s"}`}
         </p>
       </div>
 
@@ -81,16 +85,16 @@ export default function ArchivePage() {
       ) : filtered.length === 0 ? (
         <div className="py-12 text-center">
           <p className="text-text-muted">
-            {todos.length === 0
+            {items.length === 0
               ? "Completed todos will appear here after a day."
               : "No todos match your search."}
           </p>
         </div>
       ) : (
         <ul className="space-y-2">
-          {filtered.map((todo) => (
+          {filtered.map((item) => (
             <li
-              key={todo.id}
+              key={`${item.kind}:${item.data.id}`}
               className="flex items-start gap-3 rounded-lg border border-border-on-surface bg-surface px-4 py-3"
             >
               <div
@@ -111,17 +115,23 @@ export default function ArchivePage() {
                 </svg>
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-on-surface/60 line-through">{todo.title}</p>
-                {todo.description && (
+                <p className="truncate text-on-surface/60 line-through">{item.data.title}</p>
+                {item.kind === "subtask" && item.parentTitle && (
+                  <p className="mt-0.5 truncate text-xs text-on-surface/50">
+                    ↳ under {item.parentTitle}
+                  </p>
+                )}
+                {item.data.description && (
                   <p className="mt-0.5 truncate text-xs text-on-surface/40">
-                    {todo.description}
+                    {item.data.description}
                   </p>
                 )}
                 <p className="mt-1 text-xs text-on-surface/50">
-                  {todo.createdBy}
-                  {todo.isPersonal ? " · Personal" : " · Joined"}
-                  {todo.lastCompletedAt
-                    ? ` · Completed ${formatCompletedDate(todo.lastCompletedAt)}`
+                  {item.data.createdBy}
+                  {item.data.isPersonal ? " · Personal" : " · Joined"}
+                  {item.kind === "subtask" ? " · Subtask" : ""}
+                  {item.data.lastCompletedAt
+                    ? ` · Completed ${formatCompletedDate(item.data.lastCompletedAt)}`
                     : ""}
                 </p>
               </div>
