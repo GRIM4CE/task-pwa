@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { type TodoDTO } from "@/lib/api-client";
+import { type ArchiveItem } from "@/lib/api-client";
 import { useTodoRepository } from "@/lib/todos/use-todo-repository";
 
 function formatCompletedDate(timestamp: number): string {
@@ -24,9 +24,42 @@ function formatCompletedDate(timestamp: number): string {
   return `${dd}/${mm}/${yy}`;
 }
 
+type ItemView = {
+  key: string;
+  title: string;
+  description: string | null;
+  parentTitle: string | null;
+  isPersonal: boolean;
+  createdBy: string;
+  completedAt: number | null;
+};
+
+function toView(item: ArchiveItem): ItemView {
+  if (item.kind === "todo") {
+    return {
+      key: `todo:${item.todo.id}`,
+      title: item.todo.title,
+      description: item.todo.description,
+      parentTitle: null,
+      isPersonal: item.todo.isPersonal,
+      createdBy: item.todo.createdBy,
+      completedAt: item.todo.lastCompletedAt,
+    };
+  }
+  return {
+    key: `subtask:${item.subtask.id}`,
+    title: item.subtask.title,
+    description: item.subtask.description,
+    parentTitle: item.parentTitle,
+    isPersonal: item.subtask.isPersonal,
+    createdBy: item.subtask.createdBy,
+    completedAt: item.subtask.lastCompletedAt,
+  };
+}
+
 export default function ArchivePage() {
   const repo = useTodoRepository();
-  const [todos, setTodos] = useState<TodoDTO[]>([]);
+  const [items, setItems] = useState<ArchiveItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
@@ -34,7 +67,7 @@ export default function ArchivePage() {
     let cancelled = false;
     repo.archive().then(({ data }) => {
       if (cancelled) return;
-      if (data) setTodos(data);
+      if (data) setItems(data.items);
       setLoading(false);
     });
     return () => {
@@ -42,24 +75,27 @@ export default function ArchivePage() {
     };
   }, [repo]);
 
+  const views = useMemo(() => items.map(toView), [items]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return todos;
-    return todos.filter((t) => {
-      const inTitle = t.title.toLowerCase().includes(q);
-      const inDesc = t.description?.toLowerCase().includes(q) ?? false;
-      return inTitle || inDesc;
+    if (!q) return views;
+    return views.filter((v) => {
+      const inTitle = v.title.toLowerCase().includes(q);
+      const inDesc = v.description?.toLowerCase().includes(q) ?? false;
+      const inParent = v.parentTitle?.toLowerCase().includes(q) ?? false;
+      return inTitle || inDesc || inParent;
     });
-  }, [search, todos]);
+  }, [search, views]);
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
       <div className="mb-6">
         <h2 className="text-xl font-semibold text-text">Completed Todos</h2>
         <p className="text-sm text-text-muted">
-          {todos.length === 0
+          {views.length === 0
             ? "No completed todos yet"
-            : `${todos.length} completed todo${todos.length === 1 ? "" : "s"}`}
+            : `${views.length} completed item${views.length === 1 ? "" : "s"}`}
         </p>
       </div>
 
@@ -81,16 +117,16 @@ export default function ArchivePage() {
       ) : filtered.length === 0 ? (
         <div className="py-12 text-center">
           <p className="text-text-muted">
-            {todos.length === 0
+            {views.length === 0
               ? "Completed todos will appear here after a day."
               : "No todos match your search."}
           </p>
         </div>
       ) : (
         <ul className="space-y-2">
-          {filtered.map((todo) => (
+          {filtered.map((v) => (
             <li
-              key={todo.id}
+              key={v.key}
               className="flex items-start gap-3 rounded-lg border border-border-on-surface bg-surface px-4 py-3"
             >
               <div
@@ -111,17 +147,22 @@ export default function ArchivePage() {
                 </svg>
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-on-surface/60 line-through">{todo.title}</p>
-                {todo.description && (
+                <p className="truncate text-on-surface/60 line-through">{v.title}</p>
+                {v.parentTitle && (
+                  <p className="mt-0.5 truncate text-xs text-on-surface/50">
+                    ↳ under <span className="italic">{v.parentTitle}</span>
+                  </p>
+                )}
+                {v.description && (
                   <p className="mt-0.5 truncate text-xs text-on-surface/40">
-                    {todo.description}
+                    {v.description}
                   </p>
                 )}
                 <p className="mt-1 text-xs text-on-surface/50">
-                  {todo.createdBy}
-                  {todo.isPersonal ? " · Personal" : " · Joined"}
-                  {todo.lastCompletedAt
-                    ? ` · Completed ${formatCompletedDate(todo.lastCompletedAt)}`
+                  {v.createdBy}
+                  {v.isPersonal ? " · Personal" : " · Joined"}
+                  {v.completedAt
+                    ? ` · Completed ${formatCompletedDate(v.completedAt)}`
                     : ""}
                 </p>
               </div>

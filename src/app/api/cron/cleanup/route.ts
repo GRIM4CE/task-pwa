@@ -23,6 +23,20 @@ export async function GET(request: NextRequest) {
     )
     .returning({ id: schema.todos.id });
 
+  // Subtasks aren't recurring, so any completed subtask older than the same
+  // 24h grace window can go. Subtasks of non-recurring parents are usually
+  // cascade-deleted with the parent above; this catches subtasks of recurring
+  // parents (which stick around) and any leftovers.
+  const deletedSubtasks = await db
+    .delete(schema.subtasks)
+    .where(
+      and(
+        eq(schema.subtasks.completed, true),
+        lt(schema.subtasks.updatedAt, cutoff)
+      )
+    )
+    .returning({ id: schema.subtasks.id });
+
   // Also clean up old TOTP used codes (older than 5 minutes)
   const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
   await db
@@ -38,6 +52,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     success: true,
     deletedTodos: deleted.length,
+    deletedSubtasks: deletedSubtasks.length,
     timestamp: new Date().toISOString(),
   });
 }

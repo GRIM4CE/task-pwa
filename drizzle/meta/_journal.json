@@ -29,6 +29,13 @@
       "when": 1777501977494,
       "tag": "0003_certain_wiccan",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1777550161894,
+      "tag": "0004_rare_iceman",
+      "breakpoints": true
     }
   ]
 }

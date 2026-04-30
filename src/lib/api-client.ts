@@ -35,10 +35,34 @@ export interface TodoDTO {
   isPersonal: boolean;
   sortOrder: number;
   recurrence: Recurrence;
+  pinnedToWeek: boolean;
   lastCompletedAt: number | null;
   createdAt: number;
   updatedAt: number;
   createdBy: string;
+}
+
+export interface SubtaskDTO {
+  id: string;
+  parentId: string;
+  title: string;
+  description: string | null;
+  completed: boolean;
+  isPersonal: boolean;
+  sortOrder: number;
+  pinnedToWeek: boolean;
+  lastCompletedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+  createdBy: string;
+}
+
+export type ArchiveItem =
+  | { kind: "todo"; todo: TodoDTO }
+  | { kind: "subtask"; subtask: SubtaskDTO; parentTitle: string };
+
+export interface ArchiveDTO {
+  items: ArchiveItem[];
 }
 
 export interface RecurringTodoStats {
@@ -68,14 +92,24 @@ export const api = {
   },
   todos: {
     list: () => apiRequest<TodoDTO[]>("/api/todos"),
-    archive: () => apiRequest<TodoDTO[]>("/api/todos/archive"),
+    archive: () => apiRequest<ArchiveDTO>("/api/todos/archive"),
     stats: () => apiRequest<StatsDTO>("/api/todos/stats"),
-    create: (body: { title: string; description?: string; isPersonal?: boolean; recurrence?: Recurrence }) =>
+    create: (body: { title: string; description?: string; isPersonal?: boolean; recurrence?: Recurrence; pinnedToWeek?: boolean }) =>
       apiRequest<TodoDTO>("/api/todos", { method: "POST", body: JSON.stringify(body) }),
-    update: (id: string, body: { title?: string; description?: string | null; completed?: boolean; sortOrder?: number; recurrence?: Recurrence }) =>
+    update: (id: string, body: { title?: string; description?: string | null; completed?: boolean; sortOrder?: number; recurrence?: Recurrence; pinnedToWeek?: boolean }) =>
       apiRequest<TodoDTO>(`/api/todos/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     reorder: (ids: string[]) =>
       apiRequest<{ success: boolean }>("/api/todos/reorder", { method: "POST", body: JSON.stringify({ ids }) }),
     delete: (id: string) => apiRequest<{ success: boolean }>(`/api/todos/${id}`, { method: "DELETE" }),
+  },
+  subtasks: {
+    list: () => apiRequest<SubtaskDTO[]>("/api/subtasks"),
+    create: (body: { parentId: string; title: string; description?: string; pinnedToWeek?: boolean }) =>
+      apiRequest<SubtaskDTO>("/api/subtasks", { method: "POST", body: JSON.stringify(body) }),
+    update: (id: string, body: { title?: string; description?: string | null; completed?: boolean; sortOrder?: number; pinnedToWeek?: boolean }) =>
+      apiRequest<SubtaskDTO>(`/api/subtasks/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    delete: (id: string) => apiRequest<{ success: boolean }>(`/api/subtasks/${id}`, { method: "DELETE" }),
+    reorder: (parentId: string, ids: string[]) =>
+      apiRequest<{ success: boolean }>("/api/subtasks/reorder", { method: "POST", body: JSON.stringify({ parentId, ids }) }),
   },
 };

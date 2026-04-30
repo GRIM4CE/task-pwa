@@ -25,6 +25,7 @@ export async function GET() {
       isPersonal: schema.todos.isPersonal,
       sortOrder: schema.todos.sortOrder,
       recurrence: schema.todos.recurrence,
+      pinnedToWeek: schema.todos.pinnedToWeek,
       lastCompletedAt: schema.todos.lastCompletedAt,
       createdAt: schema.todos.createdAt,
       updatedAt: schema.todos.updatedAt,
@@ -59,6 +60,7 @@ export async function GET() {
       isPersonal: t.isPersonal,
       sortOrder: t.sortOrder,
       recurrence: t.recurrence,
+      pinnedToWeek: t.pinnedToWeek,
       lastCompletedAt: t.lastCompletedAt ? t.lastCompletedAt.getTime() : null,
       createdAt: t.createdAt.getTime(),
       updatedAt: t.updatedAt.getTime(),
@@ -78,6 +80,7 @@ export async function POST(request: NextRequest) {
     description?: string;
     isPersonal?: boolean;
     recurrence?: "daily" | "weekly" | null;
+    pinnedToWeek?: boolean;
   };
   try {
     const raw = await request.json();
@@ -99,6 +102,7 @@ export async function POST(request: NextRequest) {
       description: body.description ?? null,
       isPersonal: body.isPersonal ?? false,
       recurrence: body.recurrence ?? null,
+      pinnedToWeek: body.pinnedToWeek ?? false,
       sortOrder: (maxOrder[0]?.max ?? -1) + 1,
     })
     .returning();
@@ -112,6 +116,7 @@ export async function POST(request: NextRequest) {
       isPersonal: todo.isPersonal,
       sortOrder: todo.sortOrder,
       recurrence: todo.recurrence,
+      pinnedToWeek: todo.pinnedToWeek,
       lastCompletedAt: todo.lastCompletedAt ? todo.lastCompletedAt.getTime() : null,
       createdAt: todo.createdAt.getTime(),
       updatedAt: todo.updatedAt.getTime(),
