@@ -197,6 +197,20 @@ export const localTodoRepository: TodoRepository = {
     const previous = all[index];
     let effectivePatch: UpdateTodoPatch = parsed.data;
 
+    // Mirror the server invariant: a subtask can never carry a recurrence.
+    // Setting one is only valid when the same patch promotes the row to
+    // top-level (parentId: null).
+    const willBeTopLevel =
+      parsed.data.parentId === null ||
+      (parsed.data.parentId === undefined && previous.parentId === null);
+    if (
+      parsed.data.recurrence !== undefined &&
+      parsed.data.recurrence !== null &&
+      !willBeTopLevel
+    ) {
+      return err("Subtasks cannot have recurrence");
+    }
+
     // Reparenting: validate one-deep hierarchy + matching personal scope, and
     // place the moved row at the end of its new sibling group.
     if (

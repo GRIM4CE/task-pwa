@@ -96,6 +96,24 @@ export async function PATCH(
     }
   }
 
+  // The "subtasks always have recurrence = null" invariant has to hold for
+  // any patch — not just the demote path. Reject attempts to set a recurrence
+  // on a row that's currently a subtask and isn't being promoted to top-level
+  // in the same request.
+  const willBeTopLevel =
+    reparentTo === null ||
+    (reparentTo === undefined && existing[0].parentId === null);
+  if (
+    body.recurrence !== undefined &&
+    body.recurrence !== null &&
+    !willBeTopLevel
+  ) {
+    return NextResponse.json(
+      { error: "Subtasks cannot have recurrence" },
+      { status: 400 }
+    );
+  }
+
   const now = new Date();
   const updateData: Record<string, unknown> = { updatedAt: now };
   if (body.title !== undefined) updateData.title = body.title;

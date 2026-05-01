@@ -308,11 +308,13 @@ export default function TodosPage() {
     if (todos.some((t) => t.parentId === dragged.id)) return;
 
     const previous = todos;
-    // Optimistic: move locally, the API will renormalize sortOrder.
+    // Optimistic: move locally, the API will renormalize sortOrder. Mirror the
+    // server's demote behavior — recurrence is wiped, but pinnedToWeek is
+    // preserved (subtasks still surface in the This Week list when pinned).
     setTodos((prev) =>
       prev.map((t) =>
         t.id === draggedId
-          ? { ...t, parentId: targetParentId, recurrence: null, pinnedToWeek: false }
+          ? { ...t, parentId: targetParentId, recurrence: null }
           : t
       )
     );
