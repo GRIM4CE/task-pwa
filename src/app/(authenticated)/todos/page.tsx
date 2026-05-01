@@ -59,6 +59,7 @@ export default function TodosPage() {
   const pendingToggleRef = useRef<Set<string>>(new Set());
   const expiringRef = useRef<Set<string>>(new Set());
   const completionTimersRef = useRef<Map<string, number>>(new Map());
+  const recentlyToggledRef = useRef(false);
 
   // Delete completed non-recurring rows (top-level or nested) once the user's
   // local clock has crossed midnight after they were completed. Mirrors the
@@ -237,6 +238,18 @@ export default function TodosPage() {
   }
 
   async function handleToggle(todo: Todo) {
+    // Drop toggles that arrive within ~300ms of the previous one. iOS in
+    // standalone-PWA mode can fire a follow-up synthesized "ghost click" after
+    // a legitimate tap; combined with finger drift near a row's edge that
+    // second click lands on the next row's checkbox and completes a task the
+    // user never intended to. `pendingToggleRef` only guards the same id, so
+    // we need a cross-row guard for this case.
+    if (recentlyToggledRef.current) return;
+    recentlyToggledRef.current = true;
+    window.setTimeout(() => {
+      recentlyToggledRef.current = false;
+    }, 300);
+
     if (pendingToggleRef.current.has(todo.id)) return;
     pendingToggleRef.current.add(todo.id);
 
