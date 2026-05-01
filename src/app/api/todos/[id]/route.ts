@@ -126,13 +126,22 @@ export async function PATCH(
     );
   }
 
-  // Daily-recurring todos can't be pinned. Check effective state so we catch
-  // patches that only touch one of the two fields.
+  // Daily-recurring todos can't be pinned. Only reject when the patch is
+  // actively asserting the invalid combination — explicitly setting daily on a
+  // pinned row, or explicitly pinning a daily row. Unrelated patches (title,
+  // completion, sort order) on a legacy daily+pinned row pass through so the
+  // data isn't stranded; the user can clear the pin from the edit modal or via
+  // the row's pin control.
   const effectivePinned =
     body.pinnedToWeek !== undefined
       ? body.pinnedToWeek
       : existing[0].pinnedToWeek;
-  if (effectiveRecurrence === "daily" && effectivePinned) {
+  const settingDaily = body.recurrence === "daily";
+  const settingPin = body.pinnedToWeek === true;
+  if (
+    (settingDaily && effectivePinned) ||
+    (settingPin && effectiveRecurrence === "daily")
+  ) {
     return NextResponse.json(
       { error: "Daily-recurring todos cannot be pinned" },
       { status: 400 }

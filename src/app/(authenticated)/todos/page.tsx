@@ -463,7 +463,9 @@ export default function TodosPage() {
           subtaskDone={subtaskDone}
           onToggle={() => handleToggle(todo)}
           onTogglePin={
-            todo.recurrence === "daily"
+            // Hide the pin control on daily-recurring todos, but keep it for a
+            // legacy daily+pinned row so the user can unpin it.
+            todo.recurrence === "daily" && !todo.pinnedToWeek
               ? undefined
               : () => handleTogglePin(todo)
           }
