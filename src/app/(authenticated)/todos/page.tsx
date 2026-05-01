@@ -72,10 +72,16 @@ export default function TodosPage() {
           !expiringRef.current.has(t.id) &&
           isCompletedTodoExpired(t.lastCompletedAt, now)
       );
+      const expiringParentIds = new Set(todosToDelete.map((t) => t.id));
+      // Skip subtasks whose parent is also being deleted in this pass — both
+      // the DB (onDelete: cascade) and the local repository drop orphan
+      // subtasks for us, so an explicit deleteSubtask would race and return
+      // "Not found", leaving the row stuck in client state until next load.
       const subtasksToDelete = subtaskList.filter(
         (s) =>
           s.completed &&
           !expiringRef.current.has(s.id) &&
+          !expiringParentIds.has(s.parentId) &&
           isCompletedTodoExpired(s.lastCompletedAt, now)
       );
       if (todosToDelete.length === 0 && subtasksToDelete.length === 0) return;
@@ -105,6 +111,9 @@ export default function TodosPage() {
 
       if (deletedTodoIds.size > 0) {
         setTodos((prev) => prev.filter((t) => !deletedTodoIds.has(t.id)));
+        // Drop any subtasks whose parent we just deleted — they were cascaded
+        // server-side, so keeping them in client state would show orphans.
+        setSubtasks((prev) => prev.filter((s) => !deletedTodoIds.has(s.parentId)));
       }
       if (deletedSubtaskIds.size > 0) {
         setSubtasks((prev) => prev.filter((s) => !deletedSubtaskIds.has(s.id)));
