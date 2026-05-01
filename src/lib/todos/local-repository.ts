@@ -258,6 +258,28 @@ export const localTodoRepository: TodoRepository = {
         ...readCompletions(),
         { todoId: id, completedAt: updated.lastCompletedAt ?? Date.now() },
       ]);
+    } else if (
+      parsed.data.completed === false &&
+      previous.completed === true &&
+      previous.recurrence !== null
+    ) {
+      // Mirror the server: drop the most recent completion event for this todo
+      // so analytics don't keep counting an undone toggle.
+      const events = readCompletions();
+      let latestIdx = -1;
+      let latestAt = -Infinity;
+      for (let i = 0; i < events.length; i++) {
+        if (events[i].todoId === id && events[i].completedAt > latestAt) {
+          latestAt = events[i].completedAt;
+          latestIdx = i;
+        }
+      }
+      if (latestIdx !== -1) {
+        writeCompletions([
+          ...events.slice(0, latestIdx),
+          ...events.slice(latestIdx + 1),
+        ]);
+      }
     }
     return ok(updated);
   },

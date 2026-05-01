@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { validateSession } from "@/lib/session";
 import { updateTodoSchema } from "@/lib/validation";
 
@@ -222,6 +222,29 @@ export async function PATCH(
       userId: session.user.id,
       completedAt: now,
     });
+  } else if (
+    body.completed === false &&
+    existing[0].completed === true &&
+    existing[0].recurrence !== null
+  ) {
+    // Undoing a completion: drop the most recent completion event the actor
+    // logged for this todo so analytics don't keep counting the toggle.
+    const latest = await db
+      .select({ id: schema.todoCompletions.id })
+      .from(schema.todoCompletions)
+      .where(
+        and(
+          eq(schema.todoCompletions.todoId, updated.id),
+          eq(schema.todoCompletions.userId, session.user.id)
+        )
+      )
+      .orderBy(desc(schema.todoCompletions.completedAt))
+      .limit(1);
+    if (latest[0]) {
+      await db
+        .delete(schema.todoCompletions)
+        .where(eq(schema.todoCompletions.id, latest[0].id));
+    }
   }
 
   const creator = await db
