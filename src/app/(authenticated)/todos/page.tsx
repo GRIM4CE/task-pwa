@@ -1139,13 +1139,21 @@ function TodoRow({
       {onTogglePin && !done && (
         <button
           onClick={onTogglePin}
-          className={`shrink-0 rounded p-1 text-base leading-none focus:outline-none focus:ring-2 focus:ring-primary ${
-            pinned ? "opacity-100" : "opacity-40 hover:opacity-80"
+          className={`shrink-0 rounded p-1 focus:outline-none focus:ring-2 focus:ring-primary ${
+            pinned ? "text-primary" : "text-on-surface/60 hover:text-on-surface"
           }`}
           aria-label={pinned ? "Unpin from This Week" : "Pin to This Week"}
           aria-pressed={pinned}
         >
-          <span aria-hidden="true">📌</span>
+          {pinned ? (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M8 2h4v2h1v1l1 4h-3v8l-1 1-1-1V9H6l1-4V4h1z" />
+            </svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 2h4v2h1v1l1 4h-3v8l-1 1-1-1V9H6l1-4V4h1z" />
+            </svg>
+          )}
         </button>
       )}
 
@@ -1233,13 +1241,21 @@ function SubtaskRow({
       {!done && (
         <button
           onClick={onTogglePin}
-          className={`shrink-0 rounded p-1 text-base leading-none focus:outline-none focus:ring-2 focus:ring-primary ${
-            pinned ? "opacity-100" : "opacity-40 hover:opacity-80"
+          className={`shrink-0 rounded p-1 focus:outline-none focus:ring-2 focus:ring-primary ${
+            pinned ? "text-primary" : "text-on-surface/60 hover:text-on-surface"
           }`}
           aria-label={pinned ? "Unpin from This Week" : "Pin to This Week"}
           aria-pressed={pinned}
         >
-          <span aria-hidden="true">📌</span>
+          {pinned ? (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M8 2h4v2h1v1l1 4h-3v8l-1 1-1-1V9H6l1-4V4h1z" />
+            </svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 2h4v2h1v1l1 4h-3v8l-1 1-1-1V9H6l1-4V4h1z" />
+            </svg>
+          )}
         </button>
       )}
 
