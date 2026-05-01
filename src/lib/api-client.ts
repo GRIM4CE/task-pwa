@@ -78,7 +78,7 @@ export const api = {
     stats: () => apiRequest<StatsDTO>("/api/todos/stats"),
     create: (body: { title: string; description?: string; isPersonal?: boolean; recurrence?: Recurrence; pinnedToWeek?: boolean; parentId?: string | null }) =>
       apiRequest<TodoDTO>("/api/todos", { method: "POST", body: JSON.stringify(body) }),
-    update: (id: string, body: { title?: string; description?: string | null; completed?: boolean; sortOrder?: number; recurrence?: Recurrence; pinnedToWeek?: boolean; parentId?: string | null }) =>
+    update: (id: string, body: { title?: string; description?: string | null; completed?: boolean; sortOrder?: number; recurrence?: Recurrence; pinnedToWeek?: boolean; parentId?: string | null; autoReset?: boolean }) =>
       apiRequest<TodoDTO>(`/api/todos/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     reorder: (ids: string[], parentId?: string | null) =>
       apiRequest<{ success: boolean }>("/api/todos/reorder", { method: "POST", body: JSON.stringify({ ids, parentId: parentId ?? null }) }),

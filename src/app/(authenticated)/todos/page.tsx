@@ -131,7 +131,12 @@ export default function TodosPage() {
     due.forEach((t) => resettingRef.current.add(t.id));
 
     const results = await Promise.all(
-      due.map((t) => repo.update(t.id, { completed: false }))
+      // autoReset signals the server to keep the prior period's completion
+      // event in todoCompletions. A manual undo would drop the event so the
+      // stats page mirrors the user's intent; an auto-reset is real history.
+      due.map((t) =>
+        repo.update(t.id, { completed: false, autoReset: true })
+      )
     );
 
     setTodos((prev) => {

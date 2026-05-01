@@ -19,6 +19,7 @@ export interface UpdateTodoPatch {
   recurrence?: Recurrence;
   pinnedToWeek?: boolean;
   parentId?: string | null;
+  autoReset?: boolean;
 }
 
 export interface TodoRepository {

@@ -51,6 +51,10 @@ export const updateTodoSchema = z
     // null promotes a subtask to top-level; a string demotes a top-level todo to
     // a subtask of that parent.
     parentId: z.string().min(1).nullable().optional(),
+    // Marks the un-complete as an automatic recurrence reset (next period
+    // crossed midnight) rather than a user-initiated undo. The server keeps
+    // the prior period's completion event intact so analytics retain history.
+    autoReset: z.boolean().optional(),
   })
   // These refinements catch cases where both fields are in the same patch.
   // Cases involving the existing row state are checked in the PATCH handler.

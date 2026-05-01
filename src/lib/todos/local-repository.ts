@@ -261,10 +261,13 @@ export const localTodoRepository: TodoRepository = {
     } else if (
       parsed.data.completed === false &&
       previous.completed === true &&
-      previous.recurrence !== null
+      previous.recurrence !== null &&
+      parsed.data.autoReset !== true
     ) {
       // Mirror the server: drop the most recent completion event for this todo
-      // so analytics don't keep counting an undone toggle.
+      // so analytics don't keep counting an undone toggle. Auto-resets at the
+      // next period boundary skip this so the prior period's tick stays
+      // recorded as real history.
       const events = readCompletions();
       let latestIdx = -1;
       let latestAt = -Infinity;

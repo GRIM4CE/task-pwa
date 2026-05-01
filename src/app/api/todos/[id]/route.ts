@@ -23,6 +23,7 @@ export async function PATCH(
     recurrence?: "daily" | "weekly" | null;
     pinnedToWeek?: boolean;
     parentId?: string | null;
+    autoReset?: boolean;
   };
   try {
     const raw = await request.json();
@@ -238,10 +239,13 @@ export async function PATCH(
     } else if (
       body.completed === false &&
       uncompletedTransition &&
-      current.recurrence !== null
+      current.recurrence !== null &&
+      body.autoReset !== true
     ) {
-      // Undoing a completion: drop the most recent completion event the actor
-      // logged for this todo so analytics don't keep counting the toggle.
+      // User-initiated undo of a same-period completion: drop the most recent
+      // event so analytics don't keep counting the toggle. Auto-resets at the
+      // next period boundary skip this so the prior period's tick stays
+      // recorded as real history.
       const latest = await tx
         .select({ id: schema.todoCompletions.id })
         .from(schema.todoCompletions)
