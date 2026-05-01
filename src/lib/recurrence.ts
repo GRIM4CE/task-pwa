@@ -24,3 +24,24 @@ export function isRecurringResetDue(
   );
   return now >= resetAt.getTime();
 }
+
+// A completed non-recurring todo (or subtask) should be removed once the
+// user's local clock has crossed the next midnight after lastCompletedAt.
+// Mirrors isRecurringResetDue so cleanup honors the browser's IANA timezone.
+export function isCompletedTodoExpired(
+  lastCompletedAt: number | null,
+  now: number = Date.now()
+): boolean {
+  if (lastCompletedAt === null) return false;
+  const last = new Date(lastCompletedAt);
+  const expiresAt = new Date(
+    last.getFullYear(),
+    last.getMonth(),
+    last.getDate() + 1,
+    0,
+    0,
+    0,
+    0
+  );
+  return now >= expiresAt.getTime();
+}

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { type TodoDTO, type Recurrence } from "@/lib/api-client";
-import { isRecurringResetDue } from "@/lib/recurrence";
+import { isCompletedTodoExpired, isRecurringResetDue } from "@/lib/recurrence";
 import {
   cascadeCompleteChildren,
   sortSubtasks,
@@ -57,7 +57,62 @@ export default function TodosPage() {
   const [justCompletedIds, setJustCompletedIds] = useState<Set<string>>(() => new Set());
   const resettingRef = useRef<Set<string>>(new Set());
   const pendingToggleRef = useRef<Set<string>>(new Set());
+  const expiringRef = useRef<Set<string>>(new Set());
   const completionTimersRef = useRef<Map<string, number>>(new Map());
+
+  // Delete completed non-recurring rows (top-level or nested) once the user's
+  // local clock has crossed midnight after they were completed. Mirrors the
+  // server cron's intent but honors the browser's IANA timezone, so a todo
+  // completed at 11pm disappears at 00:00 local rather than 24h after the fact.
+  const expireCompleted = useCallback(
+    async (list: Todo[]) => {
+      const now = Date.now();
+      const eligible = list.filter(
+        (t) =>
+          t.completed &&
+          t.recurrence === null &&
+          !expiringRef.current.has(t.id) &&
+          isCompletedTodoExpired(t.lastCompletedAt, now)
+      );
+      // Skip subtasks whose parent is also expiring in this pass — both the
+      // DB (ON DELETE CASCADE) and the local repo drop orphans for us, so an
+      // explicit delete would race and return "Not found", leaving the row
+      // stuck in client state until next load.
+      const expiringParentIds = new Set(
+        eligible.filter((t) => t.parentId === null).map((t) => t.id)
+      );
+      const toDelete = eligible.filter(
+        (t) => t.parentId === null || !expiringParentIds.has(t.parentId)
+      );
+      if (toDelete.length === 0) return;
+
+      toDelete.forEach((t) => expiringRef.current.add(t.id));
+
+      const results = await Promise.all(
+        toDelete.map((t) =>
+          repo
+            .delete(t.id)
+            .then((r) => ({ id: t.id, ok: r.data?.success === true }))
+        )
+      );
+
+      const deletedIds = new Set(results.filter((r) => r.ok).map((r) => r.id));
+      if (deletedIds.size > 0) {
+        // Also drop any rows whose parent we just deleted — the DB cascaded
+        // them server-side, so keeping them in client state would show orphans.
+        setTodos((prev) =>
+          prev.filter(
+            (t) =>
+              !deletedIds.has(t.id) &&
+              !(t.parentId !== null && deletedIds.has(t.parentId))
+          )
+        );
+      }
+
+      toDelete.forEach((t) => expiringRef.current.delete(t.id));
+    },
+    [repo]
+  );
 
   // Uncomplete any recurring todos whose next local-midnight reset boundary
   // has passed since they were last completed (in the user's browser timezone).
@@ -96,9 +151,10 @@ export default function TodosPage() {
     if (data) {
       setTodos(data);
       resetDueRecurring(data);
+      expireCompleted(data);
     }
     setLoading(false);
-  }, [repo, resetDueRecurring]);
+  }, [repo, resetDueRecurring, expireCompleted]);
 
   function toggleExpanded(id: string) {
     setExpandedIds((prev) => {
@@ -110,6 +166,9 @@ export default function TodosPage() {
   }
 
   useEffect(() => {
+    // loadTodos is async — setState only runs after the awaited fetch resolves,
+    // so the cascading-render concern this rule guards against doesn't apply.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadTodos();
   }, [loadTodos]);
 
@@ -484,7 +543,7 @@ export default function TodosPage() {
           {activeTab === "joined" ? "Joined Todos" : "Personal Todos"}
         </h2>
         <p className="text-sm text-text-muted">
-          {regularActive.length} remaining
+          {thisWeekTodos.length + dailyTodos.length + regularActive.length + thisWeekSubtasks.length} remaining
           {completedTodos.length > 0 ? `, ${completedTodos.length} done` : ""}
         </p>
       </div>
