@@ -114,6 +114,9 @@ export default function TodosPage() {
   }
 
   useEffect(() => {
+    // loadTodos is async — setState only runs after the awaited fetch resolves,
+    // so the cascading-render concern this rule guards against doesn't apply.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadTodos();
   }, [loadTodos]);
 
@@ -516,7 +519,7 @@ export default function TodosPage() {
           {activeTab === "joined" ? "Joined Todos" : "Personal Todos"}
         </h2>
         <p className="text-sm text-text-muted">
-          {regularActive.length} remaining
+          {thisWeekTodos.length + dailyTodos.length + regularActive.length + thisWeekSubtasks.length} remaining
           {completedTodos.length > 0 ? `, ${completedTodos.length} done` : ""}
         </p>
       </div>
