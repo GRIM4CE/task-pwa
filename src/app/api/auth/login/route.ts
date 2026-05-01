@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { verifyTotp } from "@/lib/totp";
 import { createSession } from "@/lib/session";
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
