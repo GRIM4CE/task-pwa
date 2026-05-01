@@ -1,5 +1,5 @@
-import type { SubtaskDTO, TodoDTO } from "@/lib/api-client";
-import type { UpdateSubtaskPatch, UpdateTodoPatch } from "./repository";
+import type { TodoDTO } from "@/lib/api-client";
+import type { UpdateTodoPatch } from "./repository";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -10,13 +10,29 @@ export function sortTodos(list: TodoDTO[]): TodoDTO[] {
   });
 }
 
-export function nextSortOrder(list: TodoDTO[]): number {
-  if (list.length === 0) return 0;
-  return Math.max(...list.map((t) => t.sortOrder)) + 1;
+// For subtasks: oldest-first stable order so newly added subtasks appear at the
+// bottom rather than jumping above older siblings (matches the server's
+// `ORDER BY sort_order ASC, created_at DESC` for top-level, but inverted on
+// the createdAt tiebreak because subtasks don't get the same desc fallback).
+export function sortSubtasks(list: TodoDTO[]): TodoDTO[] {
+  return [...list].sort((a, b) => {
+    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+    return a.createdAt - b.createdAt;
+  });
+}
+
+export function nextSortOrder(
+  list: TodoDTO[],
+  parentId: string | null
+): number {
+  const scope = list.filter((t) => (t.parentId ?? null) === parentId);
+  if (scope.length === 0) return 0;
+  return Math.max(...scope.map((t) => t.sortOrder)) + 1;
 }
 
 // Mirrors the SQL filter in /api/todos GET: hide non-recurring completed todos
 // once 24h have passed since completion. Recurring todos always remain visible.
+// Subtasks behave the same way (they have no recurrence).
 export function filterMainList(list: TodoDTO[], now: number = Date.now()): TodoDTO[] {
   const cutoff = now - DAY_MS;
   return list.filter((t) => {
@@ -26,7 +42,9 @@ export function filterMainList(list: TodoDTO[], now: number = Date.now()): TodoD
   });
 }
 
-// Mirrors /api/todos/archive GET: completed, non-recurring todos.
+// Mirrors /api/todos/archive GET: completed, non-recurring rows. Top-level
+// recurring todos reset rather than archive; subtasks have no recurrence so
+// all completed subtasks are archive candidates.
 export function filterArchive(list: TodoDTO[]): TodoDTO[] {
   return list
     .filter((t) => t.completed && t.recurrence === null)
@@ -46,6 +64,10 @@ export function applyUpdate(
   if (patch.sortOrder !== undefined) next.sortOrder = patch.sortOrder;
   if (patch.recurrence !== undefined) next.recurrence = patch.recurrence;
   if (patch.pinnedToWeek !== undefined) next.pinnedToWeek = patch.pinnedToWeek;
+  if (patch.parentId !== undefined) {
+    next.parentId = patch.parentId;
+    if (patch.parentId !== null) next.recurrence = null;
+  }
   if (patch.completed !== undefined) {
     next.completed = patch.completed;
     next.lastCompletedAt = patch.completed ? now : null;
@@ -74,92 +96,22 @@ export function applyReorder(list: TodoDTO[], ids: string[], now: number = Date.
   );
 }
 
-export function sortSubtasks(list: SubtaskDTO[]): SubtaskDTO[] {
-  return [...list].sort((a, b) => {
-    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
-    return a.createdAt - b.createdAt;
-  });
-}
-
-export function nextSubtaskSortOrder(list: SubtaskDTO[], parentId: string): number {
-  const siblings = list.filter((s) => s.parentId === parentId);
-  if (siblings.length === 0) return 0;
-  return Math.max(...siblings.map((s) => s.sortOrder)) + 1;
-}
-
-export function filterMainListSubtasks(
-  list: SubtaskDTO[],
-  now: number = Date.now()
-): SubtaskDTO[] {
-  const cutoff = now - DAY_MS;
-  return list.filter((s) => {
-    if (!s.completed) return true;
-    return s.lastCompletedAt !== null && s.lastCompletedAt >= cutoff;
-  });
-}
-
-export function filterArchiveSubtasks(list: SubtaskDTO[]): SubtaskDTO[] {
-  return list
-    .filter((s) => s.completed)
-    .sort((a, b) => (b.lastCompletedAt ?? 0) - (a.lastCompletedAt ?? 0));
-}
-
-export function applySubtaskUpdate(
-  subtask: SubtaskDTO,
-  patch: UpdateSubtaskPatch,
-  now: number = Date.now()
-): SubtaskDTO {
-  const next: SubtaskDTO = { ...subtask, updatedAt: now };
-  if (patch.title !== undefined) next.title = patch.title;
-  if (patch.description !== undefined) next.description = patch.description;
-  if (patch.sortOrder !== undefined) next.sortOrder = patch.sortOrder;
-  if (patch.pinnedToWeek !== undefined) next.pinnedToWeek = patch.pinnedToWeek;
-  if (patch.completed !== undefined) {
-    next.completed = patch.completed;
-    next.lastCompletedAt = patch.completed ? now : null;
-    if (patch.completed) next.pinnedToWeek = false;
-  }
-  return next;
-}
-
-export function applySubtaskReorder(
-  list: SubtaskDTO[],
-  parentId: string,
-  ids: string[],
-  now: number = Date.now()
-): SubtaskDTO[] {
-  const idSet = new Set(ids);
-  const sortedValues = list
-    .filter((s) => s.parentId === parentId && idSet.has(s.id))
-    .map((s) => s.sortOrder)
-    .sort((a, b) => a - b);
-  const assigned: Record<string, number> = {};
-  ids.forEach((id, i) => {
-    assigned[id] = sortedValues[i];
-  });
-  return list.map((s) =>
-    assigned[s.id] !== undefined
-      ? { ...s, sortOrder: assigned[s.id], updatedAt: now }
-      : s
-  );
-}
-
-// Cascade-complete every open subtask of a parent. Mirrors the server-side
+// Cascade-complete every open child of a parent. Mirrors the server-side
 // transaction performed when a parent todo is checked complete.
-export function cascadeCompleteSubtasks(
-  list: SubtaskDTO[],
+export function cascadeCompleteChildren(
+  list: TodoDTO[],
   parentId: string,
   now: number = Date.now()
-): SubtaskDTO[] {
-  return list.map((s) =>
-    s.parentId === parentId && !s.completed
+): TodoDTO[] {
+  return list.map((t) =>
+    t.parentId === parentId && !t.completed
       ? {
-          ...s,
+          ...t,
           completed: true,
           lastCompletedAt: now,
           pinnedToWeek: false,
           updatedAt: now,
         }
-      : s
+      : t
   );
 }

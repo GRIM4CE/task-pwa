@@ -19,6 +19,7 @@ export async function GET() {
   const todoList = await db
     .select({
       id: schema.todos.id,
+      parentId: schema.todos.parentId,
       title: schema.todos.title,
       description: schema.todos.description,
       completed: schema.todos.completed,
@@ -54,6 +55,7 @@ export async function GET() {
   return NextResponse.json(
     todoList.map((t) => ({
       id: t.id,
+      parentId: t.parentId,
       title: t.title,
       description: t.description,
       completed: t.completed,
@@ -81,6 +83,7 @@ export async function POST(request: NextRequest) {
     isPersonal?: boolean;
     recurrence?: "daily" | "weekly" | null;
     pinnedToWeek?: boolean;
+    parentId?: string | null;
   };
   try {
     const raw = await request.json();
@@ -89,27 +92,56 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  // Get the next sort order
-  const maxOrder = await db
+  // If a parent is supplied, the new row is a subtask: it must be ≤1 level deep
+  // (the parent itself must be top-level), inherits isPersonal from the parent,
+  // and gets sort_order scoped to that parent.
+  let parentRow: typeof schema.todos.$inferSelect | null = null;
+  if (body.parentId) {
+    const rows = await db
+      .select()
+      .from(schema.todos)
+      .where(eq(schema.todos.id, body.parentId))
+      .limit(1);
+    if (rows.length === 0) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    parentRow = rows[0];
+    if (parentRow.parentId !== null) {
+      return NextResponse.json({ error: "Parent must be a top-level todo" }, { status: 400 });
+    }
+    if (parentRow.isPersonal && parentRow.userId !== session.user.id) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+  }
+
+  const maxOrderRow = await db
     .select({ max: sql<number>`coalesce(max(sort_order), -1)` })
-    .from(schema.todos);
+    .from(schema.todos)
+    .where(
+      parentRow
+        ? eq(schema.todos.parentId, parentRow.id)
+        : isNull(schema.todos.parentId)
+    );
+  const nextSortOrder = (maxOrderRow[0]?.max ?? -1) + 1;
 
   const [todo] = await db
     .insert(schema.todos)
     .values({
       userId: session.user.id,
+      parentId: parentRow?.id ?? null,
       title: body.title,
       description: body.description ?? null,
-      isPersonal: body.isPersonal ?? false,
-      recurrence: body.recurrence ?? null,
+      isPersonal: parentRow ? parentRow.isPersonal : (body.isPersonal ?? false),
+      recurrence: parentRow ? null : (body.recurrence ?? null),
       pinnedToWeek: body.pinnedToWeek ?? false,
-      sortOrder: (maxOrder[0]?.max ?? -1) + 1,
+      sortOrder: nextSortOrder,
     })
     .returning();
 
   return NextResponse.json(
     {
       id: todo.id,
+      parentId: todo.parentId,
       title: todo.title,
       description: todo.description,
       completed: todo.completed,

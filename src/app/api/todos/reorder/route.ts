@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { ids: string[] };
+  let body: { ids: string[]; parentId?: string | null };
   try {
     const raw = await request.json();
     body = reorderTodosSchema.parse(raw);
@@ -32,10 +32,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Personal todos are only modifiable by their owner.
+  // All ids in a single reorder must share the same parent scope (the client
+  // only ever reorders within one section at a time). null = top-level.
+  const scopeParentId = body.parentId ?? null;
   for (const todo of existing) {
     if (todo.isPersonal && todo.userId !== session.user.id) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if ((todo.parentId ?? null) !== scopeParentId) {
+      return NextResponse.json({ error: "Mixed parent scopes" }, { status: 400 });
     }
   }
 

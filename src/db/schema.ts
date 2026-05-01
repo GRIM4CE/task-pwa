@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, uniqueIndex, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, uniqueIndex, index, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
 // ============================================
@@ -138,6 +138,11 @@ export const todos = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    // Self-FK: when set, this todo is a subtask of parentId. NULL means top-level.
+    // Recurrence is meaningless for subtasks and is dropped on demote.
+    parentId: text("parent_id").references((): AnySQLiteColumn => todos.id, {
+      onDelete: "cascade",
+    }),
     title: text("title").notNull(),
     description: text("description"),
     completed: integer("completed", { mode: "boolean" }).notNull().default(false),
@@ -155,6 +160,7 @@ export const todos = sqliteTable(
   },
   (table) => [
     index("idx_todos_user").on(table.userId, table.completed, table.sortOrder),
+    index("idx_todos_parent").on(table.parentId, table.sortOrder),
   ]
 );
 
@@ -190,34 +196,3 @@ export const todoCompletions = sqliteTable(
   ]
 );
 
-export const subtasks = sqliteTable(
-  "subtasks",
-  {
-    id: text("id")
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    parentId: text("parent_id")
-      .notNull()
-      .references(() => todos.id, { onDelete: "cascade" }),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    title: text("title").notNull(),
-    description: text("description"),
-    completed: integer("completed", { mode: "boolean" }).notNull().default(false),
-    isPersonal: integer("is_personal", { mode: "boolean" }).notNull().default(false),
-    pinnedToWeek: integer("pinned_to_week", { mode: "boolean" }).notNull().default(false),
-    sortOrder: integer("sort_order").notNull().default(0),
-    lastCompletedAt: integer("last_completed_at", { mode: "timestamp" }),
-    createdAt: integer("created_at", { mode: "timestamp" })
-      .notNull()
-      .default(sql`(unixepoch())`),
-    updatedAt: integer("updated_at", { mode: "timestamp" })
-      .notNull()
-      .default(sql`(unixepoch())`),
-  },
-  (table) => [
-    index("idx_subtasks_parent").on(table.parentId, table.sortOrder),
-    index("idx_subtasks_user").on(table.userId, table.completed),
-  ]
-);

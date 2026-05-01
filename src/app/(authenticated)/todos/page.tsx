@@ -1,23 +1,27 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { type TodoDTO, type Recurrence, type SubtaskDTO } from "@/lib/api-client";
+import { type TodoDTO, type Recurrence } from "@/lib/api-client";
 import { isRecurringResetDue } from "@/lib/recurrence";
-import { cascadeCompleteSubtasks, sortSubtasks } from "@/lib/todos/domain";
+import {
+  cascadeCompleteChildren,
+  sortSubtasks,
+  sortTodos,
+} from "@/lib/todos/domain";
 import { useTodoRepository } from "@/lib/todos/use-todo-repository";
 
 type Todo = TodoDTO;
-type Subtask = SubtaskDTO;
 
 const LONG_PRESS_MS = 400;
 const MOVE_CANCEL_PX = 10;
-
-function sortTodos(list: Todo[]): Todo[] {
-  return [...list].sort((a, b) => {
-    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
-    return b.createdAt - a.createdAt;
-  });
-}
+// Pointer must be inside the middle ~50% of a row (vertically) to count as a
+// "drop into" target rather than a "drop between" reorder. Tuned to make the
+// nesting gesture intentional without forcing pixel precision.
+const NEST_BAND_RATIO = 0.5;
+// Pixels above the top / below the bottom of the subtask container that
+// trigger "promote out" feedback. Small enough to feel responsive, large
+// enough to absorb finger jitter.
+const PROMOTE_MARGIN_PX = 20;
 
 function formatRelativeDate(timestamp: number): string {
   const now = new Date();
@@ -44,13 +48,11 @@ type TabKey = "joined" | "personal";
 export default function TodosPage() {
   const repo = useTodoRepository();
   const [todos, setTodos] = useState<Todo[]>([]);
-  const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [newTitle, setNewTitle] = useState("");
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Todo | null>(null);
-  const [editingSubtask, setEditingSubtask] = useState<Subtask | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("joined");
   const [justCompletedIds, setJustCompletedIds] = useState<Set<string>>(() => new Set());
   const resettingRef = useRef<Set<string>>(new Set());
@@ -90,16 +92,10 @@ export default function TodosPage() {
   }, [repo]);
 
   const loadTodos = useCallback(async () => {
-    const [todosResult, subtasksResult] = await Promise.all([
-      repo.list(),
-      repo.listSubtasks(),
-    ]);
-    if (todosResult.data) {
-      setTodos(todosResult.data);
-      resetDueRecurring(todosResult.data);
-    }
-    if (subtasksResult.data) {
-      setSubtasks(subtasksResult.data);
+    const { data } = await repo.list();
+    if (data) {
+      setTodos(data);
+      resetDueRecurring(data);
     }
     setLoading(false);
   }, [repo, resetDueRecurring]);
@@ -186,26 +182,20 @@ export default function TodosPage() {
     pendingToggleRef.current.add(todo.id);
 
     const next = !todo.completed;
-    const previous = {
-      completed: todo.completed,
-      lastCompletedAt: todo.lastCompletedAt,
-    };
-    const previousSubtasks = subtasks;
+    const previousTodos = todos;
 
-    setTodos((prev) =>
-      prev.map((t) =>
+    setTodos((prev) => {
+      let updated = prev.map((t) =>
         t.id === todo.id
           ? { ...t, completed: next, lastCompletedAt: next ? Date.now() : null }
           : t
-      )
-    );
-
-    // Mirror the server-side cascade-complete transaction locally so subtasks
-    // disappear from the active view immediately. Cascaded subtasks settle
-    // without animation — only the directly-tapped row animates.
-    if (next) {
-      setSubtasks((prev) => cascadeCompleteSubtasks(prev, todo.id));
-    }
+      );
+      // Mirror the server-side cascade: completing a parent completes its open children.
+      if (next && todo.parentId === null) {
+        updated = cascadeCompleteChildren(updated, todo.id);
+      }
+      return updated;
+    });
 
     markJustCompleted(todo.id, next);
 
@@ -213,165 +203,21 @@ export default function TodosPage() {
     pendingToggleRef.current.delete(todo.id);
 
     if (error) {
-      setTodos((prev) =>
-        prev.map((t) => (t.id === todo.id ? { ...t, ...previous } : t))
-      );
-      if (next) setSubtasks(previousSubtasks);
+      setTodos(previousTodos);
       return;
     }
 
     if (data) {
       setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
-    }
-  }
-
-  async function handleToggleSubtask(subtask: Subtask) {
-    if (pendingToggleRef.current.has(subtask.id)) return;
-    pendingToggleRef.current.add(subtask.id);
-
-    const next = !subtask.completed;
-    const previous = {
-      completed: subtask.completed,
-      lastCompletedAt: subtask.lastCompletedAt,
-    };
-
-    setSubtasks((prev) =>
-      prev.map((s) =>
-        s.id === subtask.id
-          ? { ...s, completed: next, lastCompletedAt: next ? Date.now() : null }
-          : s
-      )
-    );
-
-    markJustCompleted(subtask.id, next);
-
-    const { data, error } = await repo.updateSubtask(subtask.id, { completed: next });
-    pendingToggleRef.current.delete(subtask.id);
-
-    if (error) {
-      setSubtasks((prev) =>
-        prev.map((s) => (s.id === subtask.id ? { ...s, ...previous } : s))
-      );
-      return;
-    }
-
-    if (data) {
-      setSubtasks((prev) => prev.map((s) => (s.id === data.id ? data : s)));
     }
   }
 
   async function handleAddSubtask(parentId: string, title: string) {
     const trimmed = title.trim();
     if (!trimmed) return;
-    const { data } = await repo.createSubtask({ parentId, title: trimmed });
+    const { data } = await repo.create({ parentId, title: trimmed });
     if (data) {
-      setSubtasks((prev) => [...prev, data]);
-    }
-  }
-
-  async function handleTogglePinSubtask(subtask: Subtask) {
-    const next = !subtask.pinnedToWeek;
-    setSubtasks((prev) =>
-      prev.map((s) => (s.id === subtask.id ? { ...s, pinnedToWeek: next } : s))
-    );
-    const { data, error } = await repo.updateSubtask(subtask.id, { pinnedToWeek: next });
-    if (error) {
-      setSubtasks((prev) =>
-        prev.map((s) => (s.id === subtask.id ? { ...s, pinnedToWeek: !next } : s))
-      );
-      return;
-    }
-    if (data) {
-      setSubtasks((prev) => prev.map((s) => (s.id === data.id ? data : s)));
-    }
-  }
-
-  async function handleEditSubtaskSave(
-    id: string,
-    patch: { title: string; description: string | null; pinnedToWeek: boolean }
-  ) {
-    const { data } = await repo.updateSubtask(id, patch);
-    if (data) {
-      setSubtasks((prev) => prev.map((s) => (s.id === data.id ? data : s)));
-      setEditingSubtask(null);
-    }
-  }
-
-  async function handleDeleteSubtask(id: string) {
-    const { data } = await repo.deleteSubtask(id);
-    if (data?.success) {
-      setSubtasks((prev) => prev.filter((s) => s.id !== id));
-      if (editingSubtask?.id === id) setEditingSubtask(null);
-    }
-  }
-
-  async function handleSubtaskReorder(parentId: string, newIds: string[]) {
-    const prev = subtasks;
-    setSubtasks((current) => {
-      const inSet = new Set(newIds);
-      const values = current
-        .filter((s) => s.parentId === parentId && inSet.has(s.id))
-        .map((s) => s.sortOrder)
-        .sort((a, b) => a - b);
-      const assigned: Record<string, number> = {};
-      newIds.forEach((id, i) => {
-        assigned[id] = values[i];
-      });
-      return current.map((s) =>
-        assigned[s.id] !== undefined ? { ...s, sortOrder: assigned[s.id] } : s
-      );
-    });
-
-    const { error } = await repo.reorderSubtasks(parentId, newIds);
-    if (error) {
-      setSubtasks(prev);
-    }
-  }
-
-  async function handleDelete(id: string) {
-    const { data } = await repo.delete(id);
-    if (data?.success) {
-      setTodos((prev) => prev.filter((t) => t.id !== id));
-      if (editing?.id === id) setEditing(null);
-    }
-  }
-
-  async function handleReorder(newIds: string[]) {
-    // Mirror the server's reassignment so the local order updates immediately
-    // without a refetch. The server sorts the existing sortOrder values of
-    // these ids ascending and reassigns them in payload order.
-    const prev = todos;
-    setTodos((current) => {
-      const inSet = new Set(newIds);
-      const values = current
-        .filter((t) => inSet.has(t.id))
-        .map((t) => t.sortOrder)
-        .sort((a, b) => a - b);
-      const assigned: Record<string, number> = {};
-      newIds.forEach((id, i) => {
-        assigned[id] = values[i];
-      });
-      return sortTodos(
-        current.map((t) =>
-          assigned[t.id] !== undefined ? { ...t, sortOrder: assigned[t.id] } : t
-        )
-      );
-    });
-
-    const { error } = await repo.reorder(newIds);
-    if (error) {
-      setTodos(prev);
-    }
-  }
-
-  async function handleEditSave(
-    id: string,
-    patch: { title: string; description: string | null; recurrence: Recurrence; pinnedToWeek: boolean }
-  ) {
-    const { data } = await repo.update(id, patch);
-    if (data) {
-      setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
-      setEditing(null);
+      setTodos((prev) => [...prev, data]);
     }
   }
 
@@ -392,38 +238,151 @@ export default function TodosPage() {
     }
   }
 
+  async function handleEditSave(
+    id: string,
+    patch: { title: string; description: string | null; recurrence: Recurrence; pinnedToWeek: boolean }
+  ) {
+    const { data } = await repo.update(id, patch);
+    if (data) {
+      setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
+      setEditing(null);
+    }
+  }
+
+  async function handleSubtaskEditSave(
+    id: string,
+    patch: { title: string; description: string | null; pinnedToWeek: boolean }
+  ) {
+    const { data } = await repo.update(id, patch);
+    if (data) {
+      setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
+      setEditing(null);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    const { data } = await repo.delete(id);
+    if (data?.success) {
+      // Cascade-delete children locally to mirror ON DELETE CASCADE.
+      setTodos((prev) => prev.filter((t) => t.id !== id && t.parentId !== id));
+      if (editing?.id === id) setEditing(null);
+    }
+  }
+
+  async function handleReorder(parentId: string | null, newIds: string[]) {
+    // Mirror the server's reassignment locally so the order updates without a
+    // refetch. The server takes the existing sortOrder values of the targeted
+    // ids (sorted ascending) and reassigns them in payload order.
+    const prev = todos;
+    setTodos((current) => {
+      const inSet = new Set(newIds);
+      const values = current
+        .filter((t) => inSet.has(t.id))
+        .map((t) => t.sortOrder)
+        .sort((a, b) => a - b);
+      const assigned: Record<string, number> = {};
+      newIds.forEach((id, i) => {
+        assigned[id] = values[i];
+      });
+      return current.map((t) =>
+        assigned[t.id] !== undefined ? { ...t, sortOrder: assigned[t.id] } : t
+      );
+    });
+
+    const { error } = await repo.reorder(newIds, parentId);
+    if (error) {
+      setTodos(prev);
+    }
+  }
+
+  async function handleNestUnder(draggedId: string, targetParentId: string) {
+    const dragged = todos.find((t) => t.id === draggedId);
+    const target = todos.find((t) => t.id === targetParentId);
+    if (!dragged || !target) return;
+    // Guard: only nest a top-level todo under another top-level todo. Same
+    // isPersonal scope. No self-nesting. No nesting a parent (with kids) under
+    // someone else.
+    if (dragged.parentId !== null || target.parentId !== null) return;
+    if (dragged.id === target.id) return;
+    if (dragged.isPersonal !== target.isPersonal) return;
+    if (todos.some((t) => t.parentId === dragged.id)) return;
+
+    const previous = todos;
+    // Optimistic: move locally, the API will renormalize sortOrder.
+    setTodos((prev) =>
+      prev.map((t) =>
+        t.id === draggedId
+          ? { ...t, parentId: targetParentId, recurrence: null, pinnedToWeek: false }
+          : t
+      )
+    );
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      next.add(targetParentId);
+      return next;
+    });
+    const { data, error } = await repo.update(draggedId, {
+      parentId: targetParentId,
+    });
+    if (error) {
+      setTodos(previous);
+      return;
+    }
+    if (data) {
+      setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
+    }
+  }
+
+  async function handlePromoteOut(subtaskId: string) {
+    const sub = todos.find((t) => t.id === subtaskId);
+    if (!sub || sub.parentId === null) return;
+    const previous = todos;
+    setTodos((prev) =>
+      prev.map((t) => (t.id === subtaskId ? { ...t, parentId: null } : t))
+    );
+    const { data, error } = await repo.update(subtaskId, { parentId: null });
+    if (error) {
+      setTodos(previous);
+      return;
+    }
+    if (data) {
+      setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
+    }
+  }
+
   const visibleTodos = todos.filter((t) =>
     activeTab === "personal" ? t.isPersonal : !t.isPersonal
   );
+  const topLevel = visibleTodos.filter((t) => t.parentId === null);
   // A todo that was just completed stays in its active section until the
   // animation finishes, so the user sees the confirmation where they tapped
-  // before the row settles into the Complete section.
+  // before the row settles into Complete.
   const isActiveSlot = (t: Todo) => !t.completed || justCompletedIds.has(t.id);
-  const thisWeekTodos = visibleTodos.filter(
+  const thisWeekTodos = topLevel.filter(
     (t) => isActiveSlot(t) && (t.recurrence === "weekly" || t.pinnedToWeek)
   );
-  const dailyTodos = visibleTodos.filter(
+  const dailyTodos = topLevel.filter(
     (t) => isActiveSlot(t) && t.recurrence === "daily" && !t.pinnedToWeek
   );
-  const regularActive = visibleTodos.filter(
+  const regularActive = topLevel.filter(
     (t) => isActiveSlot(t) && t.recurrence === null && !t.pinnedToWeek
   );
-  const completedTodos = visibleTodos.filter((t) => t.completed && !justCompletedIds.has(t.id));
+  const completedTodos = topLevel.filter((t) => t.completed && !justCompletedIds.has(t.id));
 
   // Subtasks pinned to This Week. Subtasks inherit isPersonal from their parent
   // at create-time, so this filter mirrors the per-tab visibleTodos rule.
   const thisWeekSubtasks = sortSubtasks(
-    subtasks.filter(
-      (s) =>
-        s.pinnedToWeek &&
-        (!s.completed || justCompletedIds.has(s.id)) &&
-        s.isPersonal === (activeTab === "personal")
+    visibleTodos.filter(
+      (t) =>
+        t.parentId !== null &&
+        t.pinnedToWeek &&
+        (!t.completed || justCompletedIds.has(t.id))
     )
   );
 
-  function renderTopLevelTodo(todo: Todo, isDragging?: boolean) {
+  function renderTopLevelTodo(todo: Todo, isDragging?: boolean, isNestTarget?: boolean) {
     const done = todo.completed;
-    const childSubtasks = subtasks.filter((s) => s.parentId === todo.id);
+    const childSubtasks = visibleTodos.filter((s) => s.parentId === todo.id);
     const subtaskTotal = childSubtasks.length;
     const subtaskDone = childSubtasks.filter((s) => s.completed).length;
     const expanded = expandedIds.has(todo.id);
@@ -437,6 +396,7 @@ export default function TodosPage() {
           todo={todo}
           done={done}
           lifted={isDragging}
+          nestTarget={isNestTarget}
           justCompleted={justCompletedIds.has(todo.id)}
           expanded={done ? undefined : expanded}
           subtaskTotal={subtaskTotal}
@@ -456,15 +416,17 @@ export default function TodosPage() {
             {activeSubtasks.length > 0 && (
               <DraggableLongPressList
                 items={activeSubtasks}
-                onReorder={(ids) => handleSubtaskReorder(todo.id, ids)}
-                renderItem={(s, isSubDragging) => (
+                onReorder={(ids) => handleReorder(todo.id, ids)}
+                onPromoteOut={handlePromoteOut}
+                renderItem={(s, isSubDragging, willPromote) => (
                   <SubtaskRow
                     subtask={s}
                     lifted={isSubDragging}
+                    promoting={willPromote}
                     justCompleted={justCompletedIds.has(s.id)}
-                    onToggle={() => handleToggleSubtask(s)}
-                    onTogglePin={() => handleTogglePinSubtask(s)}
-                    onOpen={() => setEditingSubtask(s)}
+                    onToggle={() => handleToggle(s)}
+                    onTogglePin={() => handleTogglePin(s)}
+                    onOpen={() => setEditing(s)}
                   />
                 )}
               />
@@ -483,6 +445,10 @@ export default function TodosPage() {
       </div>
     );
   }
+
+  // For drag-to-nest validation: a todo with children can't be nested under
+  // another. We pass the predicate down so highlights only show for legal drops.
+  const hasChildren = (id: string) => visibleTodos.some((t) => t.parentId === id);
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
@@ -555,9 +521,9 @@ export default function TodosPage() {
                   subtask={s}
                   parentTitle={parent?.title ?? "—"}
                   justCompleted={justCompletedIds.has(s.id)}
-                  onToggle={() => handleToggleSubtask(s)}
-                  onTogglePin={() => handleTogglePinSubtask(s)}
-                  onOpen={() => setEditingSubtask(s)}
+                  onToggle={() => handleToggle(s)}
+                  onTogglePin={() => handleTogglePin(s)}
+                  onOpen={() => setEditing(s)}
                 />
               );
             })}
@@ -569,9 +535,15 @@ export default function TodosPage() {
       {dailyTodos.length > 0 && (
         <Section title="Daily" hint="Resets at local midnight">
           <DraggableLongPressList
-            items={dailyTodos}
-            onReorder={handleReorder}
-            renderItem={(todo, isDragging) => renderTopLevelTodo(todo, isDragging)}
+            items={sortTodos(dailyTodos)}
+            onReorder={(ids) => handleReorder(null, ids)}
+            onNestUnder={handleNestUnder}
+            canNestUnder={(draggedId, targetId) =>
+              draggedId !== targetId && !hasChildren(draggedId)
+            }
+            renderItem={(todo, isDragging, _willPromote, isNestTarget) =>
+              renderTopLevelTodo(todo, isDragging, isNestTarget)
+            }
           />
         </Section>
       )}
@@ -580,9 +552,15 @@ export default function TodosPage() {
       {regularActive.length > 0 && (
         <Section title="General">
           <DraggableLongPressList
-            items={regularActive}
-            onReorder={handleReorder}
-            renderItem={(todo, isDragging) => renderTopLevelTodo(todo, isDragging)}
+            items={sortTodos(regularActive)}
+            onReorder={(ids) => handleReorder(null, ids)}
+            onNestUnder={handleNestUnder}
+            canNestUnder={(draggedId, targetId) =>
+              draggedId !== targetId && !hasChildren(draggedId)
+            }
+            renderItem={(todo, isDragging, _willPromote, isNestTarget) =>
+              renderTopLevelTodo(todo, isDragging, isNestTarget)
+            }
           />
         </Section>
       )}
@@ -599,7 +577,7 @@ export default function TodosPage() {
       )}
 
       {/* Empty state */}
-      {visibleTodos.length === 0 && thisWeekSubtasks.length === 0 && (
+      {visibleTodos.length === 0 && (
         <div className="py-12 text-center">
           <p className="text-text-muted">
             {activeTab === "personal"
@@ -609,7 +587,7 @@ export default function TodosPage() {
         </div>
       )}
 
-      {editing && (
+      {editing && editing.parentId === null && (
         <EditTodoModal
           todo={editing}
           onCancel={() => setEditing(null)}
@@ -618,12 +596,12 @@ export default function TodosPage() {
         />
       )}
 
-      {editingSubtask && (
+      {editing && editing.parentId !== null && (
         <EditSubtaskModal
-          subtask={editingSubtask}
-          onCancel={() => setEditingSubtask(null)}
-          onDelete={() => handleDeleteSubtask(editingSubtask.id)}
-          onSave={(patch) => handleEditSubtaskSave(editingSubtask.id, patch)}
+          subtask={editing}
+          onCancel={() => setEditing(null)}
+          onDelete={() => handleDelete(editing.id)}
+          onSave={(patch) => handleSubtaskEditSave(editing.id, patch)}
         />
       )}
     </div>
@@ -659,19 +637,37 @@ type DragState = {
   startPointerY: number;
   heights: number[];
   tops: number[];
+  // For drag-to-nest in top-level lists: id of the row currently in
+  // "drop into" range, or null when the gesture would just reorder.
+  nestTargetId: string | null;
+  // For drag-to-promote in subtask lists: pointer is outside the container
+  // by enough to trigger a promote-out on release.
+  willPromote: boolean;
 };
 
 function DraggableLongPressList<T extends { id: string }>({
   items,
   onReorder,
+  onNestUnder,
+  canNestUnder,
+  onPromoteOut,
   renderItem,
 }: {
   items: T[];
   onReorder: (ids: string[]) => void | Promise<void>;
-  renderItem: (item: T, isDragging: boolean) => React.ReactNode;
+  onNestUnder?: (draggedId: string, targetId: string) => void | Promise<void>;
+  canNestUnder?: (draggedId: string, targetId: string) => boolean;
+  onPromoteOut?: (id: string) => void | Promise<void>;
+  renderItem: (
+    item: T,
+    isDragging: boolean,
+    willPromote: boolean,
+    isNestTarget: boolean
+  ) => React.ReactNode;
 }) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const pendingRef = useRef<{
     id: string;
     pointerId: number;
@@ -719,6 +715,8 @@ function DraggableLongPressList<T extends { id: string }>({
         startPointerY,
         heights,
         tops,
+        nestTargetId: null,
+        willPromote: false,
       });
     },
     [items]
@@ -748,7 +746,8 @@ function DraggableLongPressList<T extends { id: string }>({
     };
   }, [cancelPending]);
 
-  // Active drag: track pointer, compute target index, commit on release.
+  // Active drag: track pointer, compute target index + nest/promote intent,
+  // commit on release.
   useEffect(() => {
     if (!drag) return;
     const current = drag;
@@ -771,13 +770,58 @@ function DraggableLongPressList<T extends { id: string }>({
       return next;
     }
 
+    function computeNestTarget(pointerY: number): string | null {
+      if (!onNestUnder) return null;
+      const dragged = items[current.startIndex];
+      if (!dragged) return null;
+      // Only highlight the row directly under the pointer, and only when the
+      // pointer is in the row's middle band — the edges still mean "reorder".
+      for (let i = 0; i < current.tops.length; i++) {
+        if (i === current.startIndex) continue;
+        const top = current.tops[i];
+        const height = current.heights[i];
+        const bandHalf = (height * NEST_BAND_RATIO) / 2;
+        const centerY = top + height / 2;
+        if (pointerY >= centerY - bandHalf && pointerY <= centerY + bandHalf) {
+          const targetId = items[i].id;
+          if (canNestUnder && !canNestUnder(dragged.id, targetId)) return null;
+          return targetId;
+        }
+      }
+      return null;
+    }
+
+    function computeWillPromote(pointerY: number): boolean {
+      if (!onPromoteOut || !containerRef.current) return false;
+      const rect = containerRef.current.getBoundingClientRect();
+      return (
+        pointerY < rect.top - PROMOTE_MARGIN_PX ||
+        pointerY > rect.bottom + PROMOTE_MARGIN_PX
+      );
+    }
+
     function onMove(e: PointerEvent) {
       if (e.pointerId !== current.pointerId) return;
       e.preventDefault();
       const deltaY = e.clientY - current.startPointerY;
-      const nextIndex = computeIndex(e.clientY);
+      const willPromote = computeWillPromote(e.clientY);
+      // Promote takes precedence over nest/reorder — once the user has dragged
+      // outside the container they're committing to "out", not to a new slot.
+      const nestTargetId = willPromote ? null : computeNestTarget(e.clientY);
+      const nextIndex =
+        willPromote || nestTargetId !== null
+          ? current.startIndex
+          : computeIndex(e.clientY);
       setDrag((prev) =>
-        prev ? { ...prev, deltaY, currentIndex: nextIndex } : prev
+        prev
+          ? {
+              ...prev,
+              deltaY,
+              currentIndex: nextIndex,
+              nestTargetId,
+              willPromote,
+            }
+          : prev
       );
     }
 
@@ -785,7 +829,12 @@ function DraggableLongPressList<T extends { id: string }>({
       if (e.pointerId !== current.pointerId) return;
       setDrag((prev) => {
         if (!prev) return prev;
-        if (prev.startIndex !== prev.currentIndex) {
+        const dragged = items[prev.startIndex];
+        if (prev.willPromote && onPromoteOut && dragged) {
+          onPromoteOut(dragged.id);
+        } else if (prev.nestTargetId && onNestUnder && dragged) {
+          onNestUnder(dragged.id, prev.nestTargetId);
+        } else if (prev.startIndex !== prev.currentIndex) {
           const ids = items.map((t) => t.id);
           const [moved] = ids.splice(prev.startIndex, 1);
           ids.splice(prev.currentIndex, 0, moved);
@@ -817,7 +866,7 @@ function DraggableLongPressList<T extends { id: string }>({
       window.removeEventListener("pointercancel", onEnd);
       window.removeEventListener("touchmove", onTouchMove);
     };
-  }, [drag, items, onReorder]);
+  }, [drag, items, onReorder, onNestUnder, canNestUnder, onPromoteOut]);
 
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>, id: string) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
@@ -849,6 +898,9 @@ function DraggableLongPressList<T extends { id: string }>({
     if (index === drag.startIndex) {
       return `translate3d(0, ${drag.deltaY}px, 0)`;
     }
+    // While the pointer is inside a nest band or beyond the promote threshold,
+    // freeze siblings in place — there's no reorder pending.
+    if (drag.nestTargetId !== null || drag.willPromote) return undefined;
     if (drag.currentIndex > drag.startIndex) {
       if (index > drag.startIndex && index <= drag.currentIndex) {
         return `translate3d(0, ${-drag.heights[drag.startIndex] - 8}px, 0)`;
@@ -863,11 +915,14 @@ function DraggableLongPressList<T extends { id: string }>({
 
   return (
     <div
+      ref={containerRef}
       className={`space-y-2 ${drag ? "select-none touch-none" : ""}`}
       onClickCapture={handleClickCapture}
     >
       {items.map((item, index) => {
         const isDragging = drag?.id === item.id;
+        const isNestTarget = drag?.nestTargetId === item.id;
+        const willPromote = !!(drag && isDragging && drag.willPromote);
         const transform = transformFor(index);
         return (
           <div
@@ -889,7 +944,7 @@ function DraggableLongPressList<T extends { id: string }>({
             }}
             className={isDragging ? "shadow-lg shadow-black/40" : ""}
           >
-            {renderItem(item, isDragging)}
+            {renderItem(item, isDragging, willPromote, isNestTarget)}
           </div>
         );
       })}
@@ -901,6 +956,7 @@ function TodoRow({
   todo,
   done,
   lifted,
+  nestTarget,
   justCompleted,
   expanded,
   subtaskTotal,
@@ -913,6 +969,7 @@ function TodoRow({
   todo: Todo;
   done?: boolean;
   lifted?: boolean;
+  nestTarget?: boolean;
   justCompleted?: boolean;
   expanded?: boolean;
   subtaskTotal?: number;
@@ -930,11 +987,13 @@ function TodoRow({
   return (
     <div
       className={`flex items-center gap-3 rounded-lg border px-4 py-3 ${
-        lifted
-          ? "border-focus bg-surface-hover ring-2 ring-focus/40"
-          : done
-            ? "border-border-on-surface bg-surface-hover"
-            : "border-border-on-surface bg-surface"
+        nestTarget
+          ? "border-primary bg-primary/15 ring-2 ring-primary/60"
+          : lifted
+            ? "border-focus bg-surface-hover ring-2 ring-focus/40"
+            : done
+              ? "border-border-on-surface bg-surface-hover"
+              : "border-border-on-surface bg-surface"
       }${justCompleted ? " animate-complete-row" : ""}`}
     >
       <button
@@ -973,6 +1032,11 @@ function TodoRow({
         <span className={`text-xs ${done ? "text-on-surface/40" : "text-on-surface/60"}`}>
           {todo.createdBy} &middot; {formatRelativeDate(todo.createdAt)}
         </span>
+        {nestTarget && (
+          <span className="mt-0.5 block text-xs font-medium text-primary">
+            Release to nest as subtask
+          </span>
+        )}
       </div>
 
       {onToggleExpand && (
@@ -1023,14 +1087,16 @@ function SubtaskRow({
   subtask,
   parentTitle,
   lifted,
+  promoting,
   justCompleted,
   onToggle,
   onTogglePin,
   onOpen,
 }: {
-  subtask: Subtask;
+  subtask: Todo;
   parentTitle?: string;
   lifted?: boolean;
+  promoting?: boolean;
   justCompleted?: boolean;
   onToggle: () => void;
   onTogglePin: () => void;
@@ -1044,11 +1110,13 @@ function SubtaskRow({
   return (
     <div
       className={`flex items-center gap-3 rounded-lg border px-3 py-2 ${
-        lifted
-          ? "border-focus bg-surface-hover ring-2 ring-focus/40"
-          : done
-            ? "border-border-on-surface bg-surface-hover"
-            : "border-border-on-surface bg-surface"
+        promoting
+          ? "border-focus bg-focus/15 ring-2 ring-focus/60"
+          : lifted
+            ? "border-focus bg-surface-hover ring-2 ring-focus/40"
+            : done
+              ? "border-border-on-surface bg-surface-hover"
+              : "border-border-on-surface bg-surface"
       }${justCompleted ? " animate-complete-row" : ""}`}
     >
       <button
@@ -1074,6 +1142,11 @@ function SubtaskRow({
         {parentTitle && (
           <span className={`mt-0.5 block break-words text-xs ${done ? "text-on-surface/40" : "text-on-surface/60"}`}>
             ↳ under {parentTitle}
+          </span>
+        )}
+        {promoting && (
+          <span className="mt-0.5 block text-xs font-medium text-focus">
+            Release to promote to top-level
           </span>
         )}
       </div>
@@ -1265,7 +1338,7 @@ function EditSubtaskModal({
   onSave,
   onDelete,
 }: {
-  subtask: Subtask;
+  subtask: Todo;
   onCancel: () => void;
   onSave: (patch: { title: string; description: string | null; pinnedToWeek: boolean }) => void | Promise<void>;
   onDelete: () => void;
