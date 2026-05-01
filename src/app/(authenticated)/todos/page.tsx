@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { type TodoDTO, type Recurrence, type SubtaskDTO } from "@/lib/api-client";
-import { isRecurringResetDue } from "@/lib/recurrence";
+import { isCompletedTodoExpired, isRecurringResetDue } from "@/lib/recurrence";
 import { cascadeCompleteSubtasks, sortSubtasks } from "@/lib/todos/domain";
 import { useTodoRepository } from "@/lib/todos/use-todo-repository";
 
@@ -55,7 +55,66 @@ export default function TodosPage() {
   const [justCompletedIds, setJustCompletedIds] = useState<Set<string>>(() => new Set());
   const resettingRef = useRef<Set<string>>(new Set());
   const pendingToggleRef = useRef<Set<string>>(new Set());
+  const expiringRef = useRef<Set<string>>(new Set());
   const completionTimersRef = useRef<Map<string, number>>(new Map());
+
+  // Delete completed non-recurring todos and completed subtasks once the user's
+  // local clock has crossed midnight after they were completed. Mirrors the
+  // server cron's intent but honors the browser's IANA timezone, so a todo
+  // completed at 11pm disappears at 00:00 local rather than 24h after the fact.
+  const expireCompleted = useCallback(
+    async (todoList: Todo[], subtaskList: Subtask[]) => {
+      const now = Date.now();
+      const todosToDelete = todoList.filter(
+        (t) =>
+          t.completed &&
+          t.recurrence === null &&
+          !expiringRef.current.has(t.id) &&
+          isCompletedTodoExpired(t.lastCompletedAt, now)
+      );
+      const subtasksToDelete = subtaskList.filter(
+        (s) =>
+          s.completed &&
+          !expiringRef.current.has(s.id) &&
+          isCompletedTodoExpired(s.lastCompletedAt, now)
+      );
+      if (todosToDelete.length === 0 && subtasksToDelete.length === 0) return;
+
+      todosToDelete.forEach((t) => expiringRef.current.add(t.id));
+      subtasksToDelete.forEach((s) => expiringRef.current.add(s.id));
+
+      const todoResults = await Promise.all(
+        todosToDelete.map((t) =>
+          repo.delete(t.id).then((r) => ({ id: t.id, ok: r.data?.success === true }))
+        )
+      );
+      const subtaskResults = await Promise.all(
+        subtasksToDelete.map((s) =>
+          repo
+            .deleteSubtask(s.id)
+            .then((r) => ({ id: s.id, ok: r.data?.success === true }))
+        )
+      );
+
+      const deletedTodoIds = new Set(
+        todoResults.filter((r) => r.ok).map((r) => r.id)
+      );
+      const deletedSubtaskIds = new Set(
+        subtaskResults.filter((r) => r.ok).map((r) => r.id)
+      );
+
+      if (deletedTodoIds.size > 0) {
+        setTodos((prev) => prev.filter((t) => !deletedTodoIds.has(t.id)));
+      }
+      if (deletedSubtaskIds.size > 0) {
+        setSubtasks((prev) => prev.filter((s) => !deletedSubtaskIds.has(s.id)));
+      }
+
+      todosToDelete.forEach((t) => expiringRef.current.delete(t.id));
+      subtasksToDelete.forEach((s) => expiringRef.current.delete(s.id));
+    },
+    [repo]
+  );
 
   // Uncomplete any recurring todos whose next local-midnight reset boundary
   // has passed since they were last completed (in the user's browser timezone).
@@ -101,8 +160,11 @@ export default function TodosPage() {
     if (subtasksResult.data) {
       setSubtasks(subtasksResult.data);
     }
+    if (todosResult.data || subtasksResult.data) {
+      expireCompleted(todosResult.data ?? [], subtasksResult.data ?? []);
+    }
     setLoading(false);
-  }, [repo, resetDueRecurring]);
+  }, [repo, resetDueRecurring, expireCompleted]);
 
   function toggleExpanded(id: string) {
     setExpandedIds((prev) => {
