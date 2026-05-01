@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { validateSession } from "@/lib/session";
-import type { ArchiveItem } from "@/lib/api-client";
 
 export async function GET() {
   const session = await validateSession();
@@ -10,9 +9,13 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const todoList = await db
+  // Top-level recurring todos reset rather than archive; subtasks have null
+  // recurrence so they always pass the (recurrence IS NULL OR parent_id IS NOT
+  // NULL) filter.
+  const rows = await db
     .select({
       id: schema.todos.id,
+      parentId: schema.todos.parentId,
       title: schema.todos.title,
       description: schema.todos.description,
       completed: schema.todos.completed,
@@ -30,7 +33,10 @@ export async function GET() {
     .where(
       and(
         eq(schema.todos.completed, true),
-        isNull(schema.todos.recurrence),
+        or(
+          isNull(schema.todos.recurrence),
+          isNotNull(schema.todos.parentId)
+        ),
         or(
           eq(schema.todos.isPersonal, false),
           and(
@@ -41,45 +47,26 @@ export async function GET() {
       )
     );
 
-  const subtaskList = await db
-    .select({
-      id: schema.subtasks.id,
-      parentId: schema.subtasks.parentId,
-      title: schema.subtasks.title,
-      description: schema.subtasks.description,
-      completed: schema.subtasks.completed,
-      isPersonal: schema.subtasks.isPersonal,
-      pinnedToWeek: schema.subtasks.pinnedToWeek,
-      sortOrder: schema.subtasks.sortOrder,
-      lastCompletedAt: schema.subtasks.lastCompletedAt,
-      createdAt: schema.subtasks.createdAt,
-      updatedAt: schema.subtasks.updatedAt,
-      createdBy: schema.users.username,
-      parentTitle: schema.todos.title,
-    })
-    .from(schema.subtasks)
-    .innerJoin(schema.users, eq(schema.subtasks.userId, schema.users.id))
-    .innerJoin(schema.todos, eq(schema.subtasks.parentId, schema.todos.id))
-    .where(
-      and(
-        eq(schema.subtasks.completed, true),
-        // Privacy is enforced in SQL (not in JS) so the DB doesn't return rows
-        // belonging to other users' personal todos in the first place.
-        or(
-          eq(schema.todos.isPersonal, false),
-          and(
-            eq(schema.todos.isPersonal, true),
-            eq(schema.todos.userId, session.user.id)
-          )
-        )
-      )
-    );
+  // Look up parent titles in a single follow-up query so we can attach
+  // "↳ under {parent}" context to archived subtasks. Two short queries are
+  // simpler than a self-join here.
+  const parentIds = Array.from(
+    new Set(rows.map((r) => r.parentId).filter((id): id is string => id !== null))
+  );
+  const parentTitles = new Map<string, string>();
+  if (parentIds.length > 0) {
+    const parents = await db
+      .select({ id: schema.todos.id, title: schema.todos.title })
+      .from(schema.todos)
+      .where(inArray(schema.todos.id, parentIds));
+    for (const p of parents) parentTitles.set(p.id, p.title);
+  }
 
-  const items: ArchiveItem[] = [
-    ...todoList.map<ArchiveItem>((t) => ({
-      kind: "todo",
-      data: {
+  const items = rows
+    .map((t) => ({
+      todo: {
         id: t.id,
+        parentId: t.parentId,
         title: t.title,
         description: t.description,
         completed: t.completed,
@@ -92,30 +79,11 @@ export async function GET() {
         updatedAt: t.updatedAt.getTime(),
         createdBy: t.createdBy,
       },
-    })),
-    ...subtaskList.map<ArchiveItem>((s) => ({
-      kind: "subtask",
-      parentTitle: s.parentTitle,
-      data: {
-        id: s.id,
-        parentId: s.parentId,
-        title: s.title,
-        description: s.description,
-        completed: s.completed,
-        isPersonal: s.isPersonal,
-        pinnedToWeek: s.pinnedToWeek,
-        sortOrder: s.sortOrder,
-        lastCompletedAt: s.lastCompletedAt
-          ? s.lastCompletedAt.getTime()
-          : null,
-        createdAt: s.createdAt.getTime(),
-        updatedAt: s.updatedAt.getTime(),
-        createdBy: s.createdBy,
-      },
-    })),
-  ].sort(
-    (a, b) => (b.data.lastCompletedAt ?? 0) - (a.data.lastCompletedAt ?? 0)
-  );
+      parentTitle: t.parentId ? parentTitles.get(t.parentId) ?? null : null,
+    }))
+    .sort(
+      (a, b) => (b.todo.lastCompletedAt ?? 0) - (a.todo.lastCompletedAt ?? 0)
+    );
 
   return NextResponse.json({ items });
 }

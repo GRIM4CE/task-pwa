@@ -1,38 +1,27 @@
-import type { ArchiveDTO, StatsDTO, SubtaskDTO, TodoDTO } from "@/lib/api-client";
+import type { ArchiveDTO, StatsDTO, TodoDTO } from "@/lib/api-client";
 import {
-  createSubtaskSchema,
   createTodoSchema,
-  reorderSubtasksSchema,
   reorderTodosSchema,
-  updateSubtaskSchema,
   updateTodoSchema,
 } from "@/lib/validation";
 import {
   applyReorder,
-  applySubtaskReorder,
-  applySubtaskUpdate,
   applyUpdate,
-  cascadeCompleteSubtasks,
+  cascadeCompleteChildren,
   filterArchive,
-  filterArchiveSubtasks,
   filterMainList,
-  filterMainListSubtasks,
   nextSortOrder,
-  nextSubtaskSortOrder,
-  sortSubtasks,
   sortTodos,
 } from "./domain";
 import type {
-  CreateSubtaskInput,
   CreateTodoInput,
   RepoResult,
   TodoRepository,
-  UpdateSubtaskPatch,
   UpdateTodoPatch,
 } from "./repository";
 
 const STORAGE_KEY = "todo-pwa:guest:todos";
-const SUBTASKS_KEY = "todo-pwa:guest:subtasks";
+const LEGACY_SUBTASKS_KEY = "todo-pwa:guest:subtasks";
 const COMPLETIONS_KEY = "todo-pwa:guest:completions";
 const COMPLETIONS_RETENTION_MS = 120 * 24 * 60 * 60 * 1000;
 export const GUEST_USERNAME = "Guest";
@@ -50,40 +39,54 @@ function err<T>(error: string): RepoResult<T> {
 function readAll(): TodoDTO[] {
   if (typeof window === "undefined") return [];
   const raw = window.localStorage.getItem(STORAGE_KEY);
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    // Backfill pinnedToWeek for stored guest todos created before the field existed.
-    return (parsed as TodoDTO[]).map((t) => ({
-      ...t,
-      pinnedToWeek: t.pinnedToWeek ?? false,
-    }));
-  } catch {
-    return [];
+  let todos: TodoDTO[] = [];
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        todos = (parsed as TodoDTO[]).map((t) => ({
+          ...t,
+          pinnedToWeek: t.pinnedToWeek ?? false,
+          parentId: t.parentId ?? null,
+        }));
+      }
+    } catch {
+      todos = [];
+    }
   }
+
+  // One-time migration: fold legacy subtask localStorage into the unified list,
+  // then remove the legacy key. New writes always use STORAGE_KEY only.
+  const legacy = window.localStorage.getItem(LEGACY_SUBTASKS_KEY);
+  if (legacy !== null) {
+    try {
+      const parsed = JSON.parse(legacy);
+      if (Array.isArray(parsed)) {
+        const migrated = (parsed as Array<TodoDTO & { parentId: string }>)
+          .filter((s) => todos.some((t) => t.id === s.parentId))
+          .map<TodoDTO>((s) => ({
+            ...s,
+            recurrence: null,
+            parentId: s.parentId,
+            pinnedToWeek: s.pinnedToWeek ?? false,
+          }));
+        if (migrated.length > 0) {
+          todos = [...todos, ...migrated];
+          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
+        }
+      }
+    } catch {
+      // ignore — legacy data was malformed
+    }
+    window.localStorage.removeItem(LEGACY_SUBTASKS_KEY);
+  }
+
+  return todos;
 }
 
 function writeAll(list: TodoDTO[]): void {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-}
-
-function readSubtasks(): SubtaskDTO[] {
-  if (typeof window === "undefined") return [];
-  const raw = window.localStorage.getItem(SUBTASKS_KEY);
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as SubtaskDTO[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeSubtasks(list: SubtaskDTO[]): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(SUBTASKS_KEY, JSON.stringify(list));
 }
 
 function readCompletions(): CompletionEvent[] {
@@ -113,18 +116,13 @@ export const localTodoRepository: TodoRepository = {
   },
 
   async archive() {
-    const todos = readAll();
-    const subtasks = readSubtasks();
-    const subtaskTitles = new Map(todos.map((t) => [t.id, t.title]));
-    const items: ArchiveDTO["items"] = [
-      ...filterArchive(todos).map((t) => ({ kind: "todo" as const, data: t })),
-      ...filterArchiveSubtasks(subtasks).map((s) => ({
-        kind: "subtask" as const,
-        data: s,
-        parentTitle: subtaskTitles.get(s.parentId) ?? null,
-      })),
-    ].sort((a, b) => (b.data.lastCompletedAt ?? 0) - (a.data.lastCompletedAt ?? 0));
-    return ok({ items });
+    const all = readAll();
+    const titlesById = new Map(all.map((t) => [t.id, t.title]));
+    const items = filterArchive(all).map((t) => ({
+      todo: t,
+      parentTitle: t.parentId ? titlesById.get(t.parentId) ?? null : null,
+    }));
+    return ok({ items } satisfies ArchiveDTO);
   },
 
   async stats() {
@@ -138,7 +136,7 @@ export const localTodoRepository: TodoRepository = {
       byTodo.set(e.todoId, list);
     }
     const todos: StatsDTO["todos"] = all
-      .filter((t) => t.recurrence !== null)
+      .filter((t) => t.recurrence !== null && t.parentId === null)
       .map((t) => ({
         id: t.id,
         title: t.title,
@@ -155,15 +153,29 @@ export const localTodoRepository: TodoRepository = {
     if (!parsed.success) return err("Invalid request");
 
     const all = readAll();
+    const parentId = parsed.data.parentId ?? null;
+
+    // Subtasks inherit isPersonal from the parent and can't have recurrence.
+    let isPersonal = parsed.data.isPersonal ?? false;
+    let recurrence = parsed.data.recurrence ?? null;
+    if (parentId !== null) {
+      const parent = all.find((t) => t.id === parentId);
+      if (!parent) return err("Not found");
+      if (parent.parentId !== null) return err("Parent must be top-level");
+      isPersonal = parent.isPersonal;
+      recurrence = null;
+    }
+
     const now = Date.now();
     const todo: TodoDTO = {
       id: crypto.randomUUID(),
+      parentId,
       title: parsed.data.title,
       description: parsed.data.description ?? null,
       completed: false,
-      isPersonal: parsed.data.isPersonal ?? false,
-      sortOrder: nextSortOrder(all),
-      recurrence: parsed.data.recurrence ?? null,
+      isPersonal,
+      sortOrder: nextSortOrder(all, parentId),
+      recurrence,
       pinnedToWeek: parsed.data.pinnedToWeek ?? false,
       lastCompletedAt: null,
       createdAt: now,
@@ -183,19 +195,59 @@ export const localTodoRepository: TodoRepository = {
     if (index === -1) return err("Not found");
 
     const previous = all[index];
-    const updated = applyUpdate(previous, parsed.data);
-    const next = [...all];
+    let effectivePatch: UpdateTodoPatch = parsed.data;
+
+    // Mirror the server invariant: a subtask can never carry a recurrence.
+    // Setting one is only valid when the same patch promotes the row to
+    // top-level (parentId: null).
+    const willBeTopLevel =
+      parsed.data.parentId === null ||
+      (parsed.data.parentId === undefined && previous.parentId === null);
+    if (
+      parsed.data.recurrence !== undefined &&
+      parsed.data.recurrence !== null &&
+      !willBeTopLevel
+    ) {
+      return err("Subtasks cannot have recurrence");
+    }
+
+    // Reparenting: validate one-deep hierarchy + matching personal scope, and
+    // place the moved row at the end of its new sibling group.
+    if (
+      parsed.data.parentId !== undefined &&
+      parsed.data.parentId !== previous.parentId
+    ) {
+      if (parsed.data.parentId !== null) {
+        if (parsed.data.parentId === id) return err("Cannot parent to self");
+        const hasChildren = all.some((t) => t.parentId === id);
+        if (hasChildren) {
+          return err("A todo with subtasks cannot itself become a subtask");
+        }
+        const parent = all.find((t) => t.id === parsed.data.parentId);
+        if (!parent) return err("Not found");
+        if (parent.parentId !== null) return err("Parent must be top-level");
+        if (parent.isPersonal !== previous.isPersonal) {
+          return err("Cannot mix personal and joined");
+        }
+      }
+      effectivePatch = {
+        ...parsed.data,
+        sortOrder: nextSortOrder(all, parsed.data.parentId),
+      };
+    }
+
+    const updated = applyUpdate(previous, effectivePatch);
+    let next = [...all];
     next[index] = updated;
-    writeAll(next);
 
     // Mirror the server-side cascade: completing a parent completes its open subtasks.
     if (
       parsed.data.completed === true &&
       previous.completed === false
     ) {
-      const subs = readSubtasks();
-      writeSubtasks(cascadeCompleteSubtasks(subs, id));
+      next = cascadeCompleteChildren(next, id);
     }
+    writeAll(next);
 
     if (
       parsed.data.completed === true &&
@@ -213,93 +265,28 @@ export const localTodoRepository: TodoRepository = {
   async delete(id: string) {
     const all = readAll();
     if (!all.some((t) => t.id === id)) return err("Not found");
-    writeAll(all.filter((t) => t.id !== id));
-    // Cascade-delete subtasks attached to this todo (mirrors ON DELETE CASCADE).
-    const subs = readSubtasks();
-    writeSubtasks(subs.filter((s) => s.parentId !== id));
+    // Cascade-delete children to mirror ON DELETE CASCADE in SQLite.
+    writeAll(all.filter((t) => t.id !== id && t.parentId !== id));
     return ok({ success: true as const });
   },
 
-  async reorder(ids: string[]) {
-    const parsed = reorderTodosSchema.safeParse({ ids });
+  async reorder(ids: string[], parentId: string | null) {
+    const parsed = reorderTodosSchema.safeParse({ ids, parentId });
     if (!parsed.success) return err("Invalid request");
     const unique = Array.from(new Set(parsed.data.ids));
     if (unique.length !== parsed.data.ids.length) return err("Invalid request");
 
     const all = readAll();
-    if (!unique.every((id) => all.some((t) => t.id === id))) return err("Not found");
-
-    writeAll(applyReorder(all, unique));
-    return ok({ success: true as const });
-  },
-
-  async listSubtasks() {
-    const subs = readSubtasks();
-    return ok(sortSubtasks(filterMainListSubtasks(subs)));
-  },
-
-  async createSubtask(input: CreateSubtaskInput) {
-    const parsed = createSubtaskSchema.safeParse(input);
-    if (!parsed.success) return err("Invalid request");
-
-    const todos = readAll();
-    const parent = todos.find((t) => t.id === parsed.data.parentId);
-    if (!parent) return err("Not found");
-
-    const subs = readSubtasks();
-    const now = Date.now();
-    const subtask: SubtaskDTO = {
-      id: crypto.randomUUID(),
-      parentId: parsed.data.parentId,
-      title: parsed.data.title,
-      description: parsed.data.description ?? null,
-      completed: false,
-      isPersonal: parent.isPersonal,
-      pinnedToWeek: parsed.data.pinnedToWeek ?? false,
-      sortOrder: nextSubtaskSortOrder(subs, parsed.data.parentId),
-      lastCompletedAt: null,
-      createdAt: now,
-      updatedAt: now,
-      createdBy: GUEST_USERNAME,
-    };
-    writeSubtasks([...subs, subtask]);
-    return ok(subtask);
-  },
-
-  async updateSubtask(id: string, patch: UpdateSubtaskPatch) {
-    const parsed = updateSubtaskSchema.safeParse(patch);
-    if (!parsed.success) return err("Invalid request");
-
-    const subs = readSubtasks();
-    const index = subs.findIndex((s) => s.id === id);
-    if (index === -1) return err("Not found");
-
-    const updated = applySubtaskUpdate(subs[index], parsed.data);
-    const next = [...subs];
-    next[index] = updated;
-    writeSubtasks(next);
-    return ok(updated);
-  },
-
-  async deleteSubtask(id: string) {
-    const subs = readSubtasks();
-    if (!subs.some((s) => s.id === id)) return err("Not found");
-    writeSubtasks(subs.filter((s) => s.id !== id));
-    return ok({ success: true as const });
-  },
-
-  async reorderSubtasks(parentId: string, ids: string[]) {
-    const parsed = reorderSubtasksSchema.safeParse({ parentId, ids });
-    if (!parsed.success) return err("Invalid request");
-    const unique = Array.from(new Set(parsed.data.ids));
-    if (unique.length !== parsed.data.ids.length) return err("Invalid request");
-
-    const subs = readSubtasks();
-    if (!unique.every((id) => subs.some((s) => s.id === id && s.parentId === parentId))) {
+    const scope = parsed.data.parentId ?? null;
+    if (
+      !unique.every((id) =>
+        all.some((t) => t.id === id && (t.parentId ?? null) === scope)
+      )
+    ) {
       return err("Not found");
     }
 
-    writeSubtasks(applySubtaskReorder(subs, parentId, unique));
+    writeAll(applyReorder(all, unique));
     return ok({ success: true as const });
   },
 };
@@ -307,6 +294,6 @@ export const localTodoRepository: TodoRepository = {
 export function clearGuestTodos(): void {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(STORAGE_KEY);
-  window.localStorage.removeItem(SUBTASKS_KEY);
+  window.localStorage.removeItem(LEGACY_SUBTASKS_KEY);
   window.localStorage.removeItem(COMPLETIONS_KEY);
 }

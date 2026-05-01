@@ -1,9 +1,7 @@
 import { api } from "@/lib/api-client";
 import type {
-  CreateSubtaskInput,
   CreateTodoInput,
   TodoRepository,
-  UpdateSubtaskPatch,
   UpdateTodoPatch,
 } from "./repository";
 
@@ -19,24 +17,8 @@ export const apiTodoRepository: TodoRepository = {
     if (!data?.success) return { data: null, error: "Delete failed" };
     return { data: { success: true as const }, error: null };
   },
-  reorder: async (ids: string[]) => {
-    const { data, error } = await api.todos.reorder(ids);
-    if (error) return { data: null, error };
-    if (!data?.success) return { data: null, error: "Reorder failed" };
-    return { data: { success: true as const }, error: null };
-  },
-  listSubtasks: () => api.subtasks.list(),
-  createSubtask: (input: CreateSubtaskInput) => api.subtasks.create(input),
-  updateSubtask: (id: string, patch: UpdateSubtaskPatch) =>
-    api.subtasks.update(id, patch),
-  deleteSubtask: async (id: string) => {
-    const { data, error } = await api.subtasks.delete(id);
-    if (error) return { data: null, error };
-    if (!data?.success) return { data: null, error: "Delete failed" };
-    return { data: { success: true as const }, error: null };
-  },
-  reorderSubtasks: async (parentId: string, ids: string[]) => {
-    const { data, error } = await api.subtasks.reorder(parentId, ids);
+  reorder: async (ids: string[], parentId: string | null) => {
+    const { data, error } = await api.todos.reorder(ids, parentId);
     if (error) return { data: null, error };
     if (!data?.success) return { data: null, error: "Reorder failed" };
     return { data: { success: true as const }, error: null };

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { eq, and, lt, isNull } from "drizzle-orm";
+import { eq, and, lt, isNull, isNotNull, or } from "drizzle-orm";
 
 export async function GET(request: NextRequest) {
   // Verify the caller (e.g. EventBridge Scheduler) presents the shared secret
@@ -9,7 +9,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Delete completed todos that were completed more than 24 hours ago
+  // Delete completed todos and subtasks (rows with parent_id) that were
+  // completed more than 24 hours ago. Top-level recurring todos reset rather
+  // than archive, so they're skipped via the recurrence-IS-NULL check; subtasks
+  // never have recurrence so they're always eligible.
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
   const deleted = await db
@@ -17,21 +20,11 @@ export async function GET(request: NextRequest) {
     .where(
       and(
         eq(schema.todos.completed, true),
-        isNull(schema.todos.recurrence),
+        or(isNull(schema.todos.recurrence), isNotNull(schema.todos.parentId)),
         lt(schema.todos.updatedAt, cutoff)
       )
     )
     .returning({ id: schema.todos.id });
-
-  const deletedSubtasks = await db
-    .delete(schema.subtasks)
-    .where(
-      and(
-        eq(schema.subtasks.completed, true),
-        lt(schema.subtasks.updatedAt, cutoff)
-      )
-    )
-    .returning({ id: schema.subtasks.id });
 
   // Also clean up old TOTP used codes (older than 5 minutes)
   const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
@@ -48,7 +41,6 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     success: true,
     deletedTodos: deleted.length,
-    deletedSubtasks: deletedSubtasks.length,
     timestamp: new Date().toISOString(),
   });
 }

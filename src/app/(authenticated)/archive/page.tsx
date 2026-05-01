@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { type ArchiveItem } from "@/lib/api-client";
+import { type ArchiveDTO } from "@/lib/api-client";
 import { useTodoRepository } from "@/lib/todos/use-todo-repository";
+
+type ArchiveItem = ArchiveDTO["items"][number];
 
 function formatCompletedDate(timestamp: number): string {
   const now = new Date();
@@ -46,12 +48,9 @@ export default function ArchivePage() {
     const q = search.trim().toLowerCase();
     if (!q) return items;
     return items.filter((item) => {
-      const inTitle = item.data.title.toLowerCase().includes(q);
-      const inDesc = item.data.description?.toLowerCase().includes(q) ?? false;
-      const inParent =
-        item.kind === "subtask"
-          ? item.parentTitle?.toLowerCase().includes(q) ?? false
-          : false;
+      const inTitle = item.todo.title.toLowerCase().includes(q);
+      const inDesc = item.todo.description?.toLowerCase().includes(q) ?? false;
+      const inParent = item.parentTitle?.toLowerCase().includes(q) ?? false;
       return inTitle || inDesc || inParent;
     });
   }, [search, items]);
@@ -92,51 +91,54 @@ export default function ArchivePage() {
         </div>
       ) : (
         <ul className="space-y-2">
-          {filtered.map((item) => (
-            <li
-              key={`${item.kind}:${item.data.id}`}
-              className="flex items-start gap-3 rounded-lg border border-border-on-surface bg-surface px-4 py-3"
-            >
-              <div
-                aria-hidden
-                className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 border-success bg-success/20"
+          {filtered.map((item) => {
+            const isSubtask = item.todo.parentId !== null;
+            return (
+              <li
+                key={item.todo.id}
+                className="flex items-start gap-3 rounded-lg border border-border-on-surface bg-surface px-4 py-3"
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-3 w-3 text-success"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
+                <div
+                  aria-hidden
+                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 border-success bg-success/20"
                 >
-                  <path
-                    fillRule="evenodd"
-                    d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-on-surface/60 line-through">{item.data.title}</p>
-                {item.kind === "subtask" && item.parentTitle && (
-                  <p className="mt-0.5 truncate text-xs text-on-surface/50">
-                    ↳ under {item.parentTitle}
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-3 w-3 text-success"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-on-surface/60 line-through">{item.todo.title}</p>
+                  {isSubtask && item.parentTitle && (
+                    <p className="mt-0.5 truncate text-xs text-on-surface/50">
+                      ↳ under {item.parentTitle}
+                    </p>
+                  )}
+                  {item.todo.description && (
+                    <p className="mt-0.5 truncate text-xs text-on-surface/40">
+                      {item.todo.description}
+                    </p>
+                  )}
+                  <p className="mt-1 text-xs text-on-surface/50">
+                    {item.todo.createdBy}
+                    {item.todo.isPersonal ? " · Personal" : " · Joined"}
+                    {isSubtask ? " · Subtask" : ""}
+                    {item.todo.lastCompletedAt
+                      ? ` · Completed ${formatCompletedDate(item.todo.lastCompletedAt)}`
+                      : ""}
                   </p>
-                )}
-                {item.data.description && (
-                  <p className="mt-0.5 truncate text-xs text-on-surface/40">
-                    {item.data.description}
-                  </p>
-                )}
-                <p className="mt-1 text-xs text-on-surface/50">
-                  {item.data.createdBy}
-                  {item.data.isPersonal ? " · Personal" : " · Joined"}
-                  {item.kind === "subtask" ? " · Subtask" : ""}
-                  {item.data.lastCompletedAt
-                    ? ` · Completed ${formatCompletedDate(item.data.lastCompletedAt)}`
-                    : ""}
-                </p>
-              </div>
-            </li>
-          ))}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

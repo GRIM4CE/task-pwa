@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { validateSession } from "@/lib/session";
 import { updateTodoSchema } from "@/lib/validation";
 
@@ -22,6 +22,7 @@ export async function PATCH(
     sortOrder?: number;
     recurrence?: "daily" | "weekly" | null;
     pinnedToWeek?: boolean;
+    parentId?: string | null;
   };
   try {
     const raw = await request.json();
@@ -46,6 +47,73 @@ export async function PATCH(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  // Reparenting requires extra validation: the only legal hierarchy is exactly
+  // one level deep. So a row with children can't itself become a subtask, and a
+  // new parent must be top-level. We also rebase isPersonal/sortOrder/recurrence.
+  let reparentTo: typeof schema.todos.$inferSelect | null | undefined = undefined;
+  if (body.parentId !== undefined && body.parentId !== existing[0].parentId) {
+    if (body.parentId === null) {
+      reparentTo = null;
+    } else {
+      if (body.parentId === id) {
+        return NextResponse.json({ error: "Cannot parent to self" }, { status: 400 });
+      }
+      const childCount = await db
+        .select({ n: sql<number>`count(*)` })
+        .from(schema.todos)
+        .where(eq(schema.todos.parentId, id));
+      if ((childCount[0]?.n ?? 0) > 0) {
+        return NextResponse.json(
+          { error: "A todo with subtasks cannot itself become a subtask" },
+          { status: 400 }
+        );
+      }
+      const parentRows = await db
+        .select()
+        .from(schema.todos)
+        .where(eq(schema.todos.id, body.parentId))
+        .limit(1);
+      if (parentRows.length === 0) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      const parent = parentRows[0];
+      if (parent.parentId !== null) {
+        return NextResponse.json(
+          { error: "Parent must be a top-level todo" },
+          { status: 400 }
+        );
+      }
+      if (parent.isPersonal && parent.userId !== session.user.id) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      if (parent.isPersonal !== existing[0].isPersonal) {
+        return NextResponse.json(
+          { error: "Cannot mix personal and joined" },
+          { status: 400 }
+        );
+      }
+      reparentTo = parent;
+    }
+  }
+
+  // The "subtasks always have recurrence = null" invariant has to hold for
+  // any patch — not just the demote path. Reject attempts to set a recurrence
+  // on a row that's currently a subtask and isn't being promoted to top-level
+  // in the same request.
+  const willBeTopLevel =
+    reparentTo === null ||
+    (reparentTo === undefined && existing[0].parentId === null);
+  if (
+    body.recurrence !== undefined &&
+    body.recurrence !== null &&
+    !willBeTopLevel
+  ) {
+    return NextResponse.json(
+      { error: "Subtasks cannot have recurrence" },
+      { status: 400 }
+    );
+  }
+
   const now = new Date();
   const updateData: Record<string, unknown> = { updatedAt: now };
   if (body.title !== undefined) updateData.title = body.title;
@@ -61,6 +129,22 @@ export async function PATCH(
     if (body.completed) updateData.pinnedToWeek = false;
   }
 
+  if (reparentTo !== undefined) {
+    updateData.parentId = reparentTo === null ? null : reparentTo.id;
+    // Subtasks have no recurrence; wipe it silently on demote.
+    if (reparentTo !== null) updateData.recurrence = null;
+    // Place the moved row at the end of its new sibling group.
+    const maxOrderRow = await db
+      .select({ max: sql<number>`coalesce(max(sort_order), -1)` })
+      .from(schema.todos)
+      .where(
+        reparentTo === null
+          ? isNull(schema.todos.parentId)
+          : eq(schema.todos.parentId, reparentTo.id)
+      );
+    updateData.sortOrder = (maxOrderRow[0]?.max ?? -1) + 1;
+  }
+
   // Wrap the parent update + subtask cascade in a single transaction so a
   // crash between the two writes can't leave a completed parent next to
   // still-open subtasks.
@@ -73,7 +157,7 @@ export async function PATCH(
 
     if (body.completed === true && existing[0].completed === false) {
       await tx
-        .update(schema.subtasks)
+        .update(schema.todos)
         .set({
           completed: true,
           lastCompletedAt: now,
@@ -82,8 +166,8 @@ export async function PATCH(
         })
         .where(
           and(
-            eq(schema.subtasks.parentId, id),
-            eq(schema.subtasks.completed, false)
+            eq(schema.todos.parentId, id),
+            eq(schema.todos.completed, false)
           )
         );
     }
@@ -116,6 +200,7 @@ export async function PATCH(
 
   return NextResponse.json({
     id: updated.id,
+    parentId: updated.parentId,
     title: updated.title,
     description: updated.description,
     completed: updated.completed,
