@@ -114,6 +114,31 @@ export async function PATCH(
     );
   }
 
+  // Recurring todos can't be subtasks. Block demoting a row whose effective
+  // recurrence (after this patch) is non-null. This used to silently wipe
+  // recurrence on demote; now it's an explicit rejection.
+  const effectiveRecurrence =
+    body.recurrence !== undefined ? body.recurrence : existing[0].recurrence;
+  if (reparentTo && effectiveRecurrence !== null) {
+    return NextResponse.json(
+      { error: "Recurring todos cannot be subtasks" },
+      { status: 400 }
+    );
+  }
+
+  // Daily-recurring todos can't be pinned. Check effective state so we catch
+  // patches that only touch one of the two fields.
+  const effectivePinned =
+    body.pinnedToWeek !== undefined
+      ? body.pinnedToWeek
+      : existing[0].pinnedToWeek;
+  if (effectiveRecurrence === "daily" && effectivePinned) {
+    return NextResponse.json(
+      { error: "Daily-recurring todos cannot be pinned" },
+      { status: 400 }
+    );
+  }
+
   const now = new Date();
   const updateData: Record<string, unknown> = { updatedAt: now };
   if (body.title !== undefined) updateData.title = body.title;
@@ -131,8 +156,6 @@ export async function PATCH(
 
   if (reparentTo !== undefined) {
     updateData.parentId = reparentTo === null ? null : reparentTo.id;
-    // Subtasks have no recurrence; wipe it silently on demote.
-    if (reparentTo !== null) updateData.recurrence = null;
     // Place the moved row at the end of its new sibling group.
     const maxOrderRow = await db
       .select({ max: sql<number>`coalesce(max(sort_order), -1)` })

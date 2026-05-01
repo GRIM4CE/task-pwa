@@ -22,26 +22,46 @@ export const recoveryLoginSchema = z.object({
 
 export const recurrenceSchema = z.enum(["daily", "weekly"]).nullable();
 
-export const createTodoSchema = z.object({
-  title: z.string().min(1, "Title is required").max(500, "Title too long"),
-  description: z.string().max(5000, "Description too long").optional(),
-  isPersonal: z.boolean().optional(),
-  recurrence: recurrenceSchema.optional(),
-  pinnedToWeek: z.boolean().optional(),
-  parentId: z.string().min(1).nullable().optional(),
-});
+export const createTodoSchema = z
+  .object({
+    title: z.string().min(1, "Title is required").max(500, "Title too long"),
+    description: z.string().max(5000, "Description too long").optional(),
+    isPersonal: z.boolean().optional(),
+    recurrence: recurrenceSchema.optional(),
+    pinnedToWeek: z.boolean().optional(),
+    parentId: z.string().min(1).nullable().optional(),
+  })
+  .refine((v) => !(v.recurrence === "daily" && v.pinnedToWeek === true), {
+    message: "Daily-recurring todos cannot be pinned",
+    path: ["pinnedToWeek"],
+  })
+  .refine((v) => !(v.recurrence != null && v.parentId != null), {
+    message: "Recurring todos cannot be subtasks",
+    path: ["parentId"],
+  });
 
-export const updateTodoSchema = z.object({
-  title: z.string().min(1, "Title is required").max(500, "Title too long").optional(),
-  description: z.string().max(5000, "Description too long").nullable().optional(),
-  completed: z.boolean().optional(),
-  sortOrder: z.number().int().optional(),
-  recurrence: recurrenceSchema.optional(),
-  pinnedToWeek: z.boolean().optional(),
-  // null promotes a subtask to top-level; a string demotes a top-level todo to
-  // a subtask of that parent.
-  parentId: z.string().min(1).nullable().optional(),
-});
+export const updateTodoSchema = z
+  .object({
+    title: z.string().min(1, "Title is required").max(500, "Title too long").optional(),
+    description: z.string().max(5000, "Description too long").nullable().optional(),
+    completed: z.boolean().optional(),
+    sortOrder: z.number().int().optional(),
+    recurrence: recurrenceSchema.optional(),
+    pinnedToWeek: z.boolean().optional(),
+    // null promotes a subtask to top-level; a string demotes a top-level todo to
+    // a subtask of that parent.
+    parentId: z.string().min(1).nullable().optional(),
+  })
+  // These refinements catch cases where both fields are in the same patch.
+  // Cases involving the existing row state are checked in the PATCH handler.
+  .refine((v) => !(v.recurrence === "daily" && v.pinnedToWeek === true), {
+    message: "Daily-recurring todos cannot be pinned",
+    path: ["pinnedToWeek"],
+  })
+  .refine((v) => !(v.recurrence != null && v.parentId != null), {
+    message: "Recurring todos cannot be subtasks",
+    path: ["parentId"],
+  });
 
 export const reorderTodosSchema = z.object({
   ids: z.array(z.string().min(1)).min(1, "At least one id required"),

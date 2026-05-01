@@ -360,21 +360,20 @@ export default function TodosPage() {
     if (!dragged || !target) return;
     // Guard: only nest a top-level todo under another top-level todo. Same
     // isPersonal scope. No self-nesting. No nesting a parent (with kids) under
-    // someone else.
+    // someone else. Recurring todos can't become subtasks.
     if (dragged.parentId !== null || target.parentId !== null) return;
     if (dragged.id === target.id) return;
     if (dragged.isPersonal !== target.isPersonal) return;
     if (todos.some((t) => t.parentId === dragged.id)) return;
+    if (dragged.recurrence !== null) return;
 
     const previous = todos;
-    // Optimistic: move locally, the API will renormalize sortOrder. Mirror the
-    // server's demote behavior — recurrence is wiped, but pinnedToWeek is
-    // preserved (subtasks still surface in the This Week list when pinned).
+    // Optimistic: move locally, the API will renormalize sortOrder.
+    // pinnedToWeek is preserved on demote (subtasks still surface in This Week
+    // when pinned).
     setTodos((prev) =>
       prev.map((t) =>
-        t.id === draggedId
-          ? { ...t, parentId: targetParentId, recurrence: null }
-          : t
+        t.id === draggedId ? { ...t, parentId: targetParentId } : t
       )
     );
     setExpandedIds((prev) => {
@@ -463,7 +462,11 @@ export default function TodosPage() {
           subtaskTotal={subtaskTotal}
           subtaskDone={subtaskDone}
           onToggle={() => handleToggle(todo)}
-          onTogglePin={() => handleTogglePin(todo)}
+          onTogglePin={
+            todo.recurrence === "daily"
+              ? undefined
+              : () => handleTogglePin(todo)
+          }
           onToggleExpand={done ? undefined : () => toggleExpanded(todo.id)}
           onOpen={() => setEditing(todo)}
         />
@@ -1289,6 +1292,11 @@ function EditTodoModal({
   const [pinnedToWeek, setPinnedToWeek] = useState(todo.pinnedToWeek);
   const [saving, setSaving] = useState(false);
 
+  // Daily-recurring todos can't be pinned. Force the pin off when the user
+  // picks daily; the API would reject the combination otherwise.
+  const pinDisabled = recurrence === "daily";
+  const effectivePinned = pinDisabled ? false : pinnedToWeek;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
@@ -1297,7 +1305,7 @@ function EditTodoModal({
       title: title.trim(),
       description: description.trim() ? description.trim() : null,
       recurrence,
-      pinnedToWeek,
+      pinnedToWeek: effectivePinned,
     });
     setSaving(false);
   }
@@ -1365,14 +1373,20 @@ function EditTodoModal({
               </select>
             </label>
 
-            <label className="mb-4 flex items-center gap-2">
+            <label className={`mb-4 flex items-center gap-2 ${pinDisabled ? "opacity-50" : ""}`}>
               <input
                 type="checkbox"
-                checked={pinnedToWeek}
+                checked={effectivePinned}
+                disabled={pinDisabled}
                 onChange={(e) => setPinnedToWeek(e.target.checked)}
-                className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-focus"
+                className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-focus disabled:cursor-not-allowed"
               />
               <span className="text-sm text-text">Pin to This Week</span>
+              {pinDisabled && (
+                <span className="text-xs text-text-muted">
+                  (not available for daily todos)
+                </span>
+              )}
             </label>
           </div>
         </div>
