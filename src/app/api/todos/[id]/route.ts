@@ -126,24 +126,26 @@ export async function PATCH(
     );
   }
 
-  // Daily-recurring todos can't be pinned. Only reject when the patch is
-  // actively asserting the invalid combination — explicitly setting daily on a
-  // pinned row, or explicitly pinning a daily row. Unrelated patches (title,
-  // completion, sort order) on a legacy daily+pinned row pass through so the
-  // data isn't stranded; the user can clear the pin from the edit modal or via
-  // the row's pin control.
+  // Recurring todos can't be pinned: daily ones are excluded from This Week,
+  // and weekly ones already surface there by virtue of recurrence. Only reject
+  // when the patch is actively asserting the invalid combination — explicitly
+  // setting a recurrence on a pinned row, or explicitly pinning a recurring
+  // row. Unrelated patches (title, completion, sort order) on a legacy
+  // recurring+pinned row pass through so the data isn't stranded; the user can
+  // clear the pin from the edit modal or via the row's pin control.
   const effectivePinned =
     body.pinnedToWeek !== undefined
       ? body.pinnedToWeek
       : existing[0].pinnedToWeek;
-  const settingDaily = body.recurrence === "daily";
+  const settingRecurring =
+    body.recurrence !== undefined && body.recurrence !== null;
   const settingPin = body.pinnedToWeek === true;
   if (
-    (settingDaily && effectivePinned) ||
-    (settingPin && effectiveRecurrence === "daily")
+    (settingRecurring && effectivePinned) ||
+    (settingPin && effectiveRecurrence !== null)
   ) {
     return NextResponse.json(
-      { error: "Daily-recurring todos cannot be pinned" },
+      { error: "Recurring todos cannot be pinned" },
       { status: 400 }
     );
   }

@@ -31,8 +31,8 @@ export const createTodoSchema = z
     pinnedToWeek: z.boolean().optional(),
     parentId: z.string().min(1).nullable().optional(),
   })
-  .refine((v) => !(v.recurrence === "daily" && v.pinnedToWeek === true), {
-    message: "Daily-recurring todos cannot be pinned",
+  .refine((v) => !(v.recurrence != null && v.pinnedToWeek === true), {
+    message: "Recurring todos cannot be pinned",
     path: ["pinnedToWeek"],
   })
   .refine((v) => !(v.recurrence != null && v.parentId != null), {
@@ -54,8 +54,8 @@ export const updateTodoSchema = z
   })
   // These refinements catch cases where both fields are in the same patch.
   // Cases involving the existing row state are checked in the PATCH handler.
-  .refine((v) => !(v.recurrence === "daily" && v.pinnedToWeek === true), {
-    message: "Daily-recurring todos cannot be pinned",
+  .refine((v) => !(v.recurrence != null && v.pinnedToWeek === true), {
+    message: "Recurring todos cannot be pinned",
     path: ["pinnedToWeek"],
   })
   .refine((v) => !(v.recurrence != null && v.parentId != null), {
