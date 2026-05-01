@@ -476,9 +476,10 @@ export default function TodosPage() {
           subtaskDone={subtaskDone}
           onToggle={() => handleToggle(todo)}
           onTogglePin={
-            // Hide the pin control on daily-recurring todos, but keep it for a
-            // legacy daily+pinned row so the user can unpin it.
-            todo.recurrence === "daily" && !todo.pinnedToWeek
+            // Hide the pin control on recurring todos (daily are excluded from
+            // This Week, weekly already live there), but keep it for a legacy
+            // recurring+pinned row so the user can unpin it.
+            todo.recurrence !== null && !todo.pinnedToWeek
               ? undefined
               : () => handleTogglePin(todo)
           }
@@ -1307,9 +1308,10 @@ function EditTodoModal({
   const [pinnedToWeek, setPinnedToWeek] = useState(todo.pinnedToWeek);
   const [saving, setSaving] = useState(false);
 
-  // Daily-recurring todos can't be pinned. Force the pin off when the user
-  // picks daily; the API would reject the combination otherwise.
-  const pinDisabled = recurrence === "daily";
+  // Recurring todos can't be pinned: daily are excluded from This Week, and
+  // weekly already surface there. Force the pin off when the user picks any
+  // recurrence; the API would reject the combination otherwise.
+  const pinDisabled = recurrence !== null;
   const effectivePinned = pinDisabled ? false : pinnedToWeek;
 
   async function handleSubmit(e: React.FormEvent) {
@@ -1399,7 +1401,7 @@ function EditTodoModal({
               <span className="text-sm text-text">Pin to This Week</span>
               {pinDisabled && (
                 <span className="text-xs text-text-muted">
-                  (not available for daily todos)
+                  (not available for recurring todos)
                 </span>
               )}
             </label>
