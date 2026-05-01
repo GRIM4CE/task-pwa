@@ -177,17 +177,35 @@ export async function PATCH(
     updateData.sortOrder = (maxOrderRow[0]?.max ?? -1) + 1;
   }
 
-  // Wrap the parent update + subtask cascade in a single transaction so a
-  // crash between the two writes can't leave a completed parent next to
-  // still-open subtasks.
+  // Wrap the parent update, subtask cascade, and analytics adjustment in a
+  // single transaction so a crash between writes can't leave the row, its
+  // subtasks, and the completion log out of sync. The completion read inside
+  // the transaction is what makes the analytics adjustment race-safe: under
+  // libSQL's serialized write transactions, two concurrent toggle requests
+  // observe each other's committed state when deciding whether the completion
+  // actually transitioned, so we never double-insert or double-delete events.
   const updated = await db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({
+        completed: schema.todos.completed,
+        recurrence: schema.todos.recurrence,
+      })
+      .from(schema.todos)
+      .where(eq(schema.todos.id, id))
+      .limit(1);
+
+    if (!current) return null;
+
     const [row] = await tx
       .update(schema.todos)
       .set(updateData)
       .where(eq(schema.todos.id, id))
       .returning();
 
-    if (body.completed === true && existing[0].completed === false) {
+    const completedTransition = current.completed === false;
+    const uncompletedTransition = current.completed === true;
+
+    if (body.completed === true && completedTransition) {
       await tx
         .update(schema.todos)
         .set({
@@ -204,47 +222,49 @@ export async function PATCH(
         );
     }
 
+    // Only recurring todos surface in stats, so non-recurring completions
+    // aren't logged. Attribution is to the actor (session user) — joined
+    // todos are editable by anyone, and stats are per-user.
+    if (
+      body.completed === true &&
+      completedTransition &&
+      current.recurrence !== null
+    ) {
+      await tx.insert(schema.todoCompletions).values({
+        todoId: row.id,
+        userId: session.user.id,
+        completedAt: now,
+      });
+    } else if (
+      body.completed === false &&
+      uncompletedTransition &&
+      current.recurrence !== null
+    ) {
+      // Undoing a completion: drop the most recent completion event the actor
+      // logged for this todo so analytics don't keep counting the toggle.
+      const latest = await tx
+        .select({ id: schema.todoCompletions.id })
+        .from(schema.todoCompletions)
+        .where(
+          and(
+            eq(schema.todoCompletions.todoId, row.id),
+            eq(schema.todoCompletions.userId, session.user.id)
+          )
+        )
+        .orderBy(desc(schema.todoCompletions.completedAt))
+        .limit(1);
+      if (latest[0]) {
+        await tx
+          .delete(schema.todoCompletions)
+          .where(eq(schema.todoCompletions.id, latest[0].id));
+      }
+    }
+
     return row;
   });
 
-  // Record an immutable completion event so analytics can reconstruct history
-  // even after a recurring todo resets and overwrites lastCompletedAt. Only
-  // recurring todos surface in stats, so non-recurring completions aren't
-  // logged. Attribution is to the actor (session user) — joined todos are
-  // editable by anyone, and stats are per-user.
-  if (
-    body.completed === true &&
-    existing[0].completed === false &&
-    existing[0].recurrence !== null
-  ) {
-    await db.insert(schema.todoCompletions).values({
-      todoId: updated.id,
-      userId: session.user.id,
-      completedAt: now,
-    });
-  } else if (
-    body.completed === false &&
-    existing[0].completed === true &&
-    existing[0].recurrence !== null
-  ) {
-    // Undoing a completion: drop the most recent completion event the actor
-    // logged for this todo so analytics don't keep counting the toggle.
-    const latest = await db
-      .select({ id: schema.todoCompletions.id })
-      .from(schema.todoCompletions)
-      .where(
-        and(
-          eq(schema.todoCompletions.todoId, updated.id),
-          eq(schema.todoCompletions.userId, session.user.id)
-        )
-      )
-      .orderBy(desc(schema.todoCompletions.completedAt))
-      .limit(1);
-    if (latest[0]) {
-      await db
-        .delete(schema.todoCompletions)
-        .where(eq(schema.todoCompletions.id, latest[0].id));
-    }
+  if (!updated) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   const creator = await db
