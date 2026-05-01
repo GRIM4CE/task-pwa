@@ -1031,6 +1031,37 @@ function DraggableLongPressList<T extends { id: string }>({
   );
 }
 
+function PinIcon({ filled }: { filled: boolean }) {
+  const path = "M8 2h4v2h1v1l1 4h-3v8l-1 1-1-1V9H6l1-4V4h1z";
+  return filled ? (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-4 w-4"
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d={path} />
+    </svg>
+  ) : (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-4 w-4"
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d={path} />
+    </svg>
+  );
+}
+
 function TodoRow({
   todo,
   done,
@@ -1145,15 +1176,7 @@ function TodoRow({
           aria-label={pinned ? "Unpin from This Week" : "Pin to This Week"}
           aria-pressed={pinned}
         >
-          {pinned ? (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M8 2h4v2h1v1l1 4h-3v8l-1 1-1-1V9H6l1-4V4h1z" />
-            </svg>
-          ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M8 2h4v2h1v1l1 4h-3v8l-1 1-1-1V9H6l1-4V4h1z" />
-            </svg>
-          )}
+          <PinIcon filled={pinned} />
         </button>
       )}
 
@@ -1247,15 +1270,7 @@ function SubtaskRow({
           aria-label={pinned ? "Unpin from This Week" : "Pin to This Week"}
           aria-pressed={pinned}
         >
-          {pinned ? (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M8 2h4v2h1v1l1 4h-3v8l-1 1-1-1V9H6l1-4V4h1z" />
-            </svg>
-          ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M8 2h4v2h1v1l1 4h-3v8l-1 1-1-1V9H6l1-4V4h1z" />
-            </svg>
-          )}
+          <PinIcon filled={pinned} />
         </button>
       )}
 
