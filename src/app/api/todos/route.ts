@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { and, asc, eq, desc, gte, or, isNull, isNotNull, not } from "drizzle-orm";
+import { and, asc, eq, desc, gte, or, isNull, isNotNull, inArray, not } from "drizzle-orm";
 import { validateSession } from "@/lib/session";
 import { createTodoSchema } from "@/lib/validation";
 import { sql } from "drizzle-orm";
@@ -12,8 +12,14 @@ export async function GET() {
   }
 
   // Non-recurring completed todos are kept in the DB so the archive can show
-  // them, but are hidden from the main list 24h after completion.
+  // them, but are hidden from the main list 24h after completion. Subtasks of
+  // recurring parents are exempt from that cutoff because they ride the
+  // parent's reset cycle and need to remain visible across it.
   const recentCompletedCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const recurringParentIds = db
+    .select({ id: schema.todos.id })
+    .from(schema.todos)
+    .where(and(isNull(schema.todos.parentId), isNotNull(schema.todos.recurrence)));
 
   // Joined todos are visible to everyone; personal todos are visible only to their owner.
   const todoList = await db
@@ -46,7 +52,8 @@ export async function GET() {
           and(
             isNull(schema.todos.recurrence),
             gte(schema.todos.lastCompletedAt, recentCompletedCutoff)
-          )
+          ),
+          inArray(schema.todos.parentId, recurringParentIds)
         )
       )
     )

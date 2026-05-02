@@ -224,6 +224,31 @@ export async function PATCH(
         );
     }
 
+    // Recurring parents: when the parent resets (manual uncomplete or the
+    // client-driven midnight reset sending completed:false), the subtasks ride
+    // along. Without this, completed subtasks would either linger past the
+    // parent's reset or get nuked by the cleanup cron, leaving the recurring
+    // task without its subtasks on the next cycle.
+    if (
+      body.completed === false &&
+      uncompletedTransition &&
+      current.recurrence !== null
+    ) {
+      await tx
+        .update(schema.todos)
+        .set({
+          completed: false,
+          lastCompletedAt: null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(schema.todos.parentId, id),
+            eq(schema.todos.completed, true)
+          )
+        );
+    }
+
     // Only recurring todos surface in stats, so non-recurring completions
     // aren't logged. Attribution is to the actor (session user) — joined
     // todos are editable by anyone, and stats are per-user.
