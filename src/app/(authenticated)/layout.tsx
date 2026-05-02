@@ -53,7 +53,8 @@ export default function AuthenticatedLayout({
     );
   }
 
-  const archiveActive = pathname?.startsWith("/archive");
+  const joinedActive = pathname === "/todos" || pathname?.startsWith("/todos/joined");
+  const personalActive = pathname?.startsWith("/todos/personal");
   const statsActive = pathname?.startsWith("/stats");
   const settingsActive = pathname?.startsWith("/settings");
 
@@ -66,36 +67,42 @@ export default function AuthenticatedLayout({
           paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)",
         }}
       >
-        <div className="mx-auto flex max-w-2xl items-center justify-between px-4 pb-3">
-          <Link href="/todos" className="text-lg font-semibold text-on-surface hover:text-primary">
+        <div className="mx-auto flex max-w-2xl items-center justify-between gap-3 px-4 pb-3">
+          <Link
+            href="/todos/joined"
+            className="shrink-0 text-lg font-semibold text-on-surface hover:text-primary"
+          >
             Todo
           </Link>
-          <nav className="flex items-center gap-1" aria-label="Primary">
-            <ThemeSwitcher />
+          <nav
+            className="flex min-w-0 flex-1 items-center justify-center gap-1"
+            aria-label="Todo scope"
+          >
             <Link
-              href="/archive"
-              aria-label="Completed todos archive"
-              aria-current={archiveActive ? "page" : undefined}
-              className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
-                archiveActive
-                  ? "bg-surface-hover text-on-surface"
-                  : "text-on-surface/60 hover:bg-surface-hover hover:text-on-surface"
+              href="/todos/joined"
+              aria-current={joinedActive ? "page" : undefined}
+              className={`rounded-md px-3 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
+                joinedActive
+                  ? "bg-primary font-semibold text-white shadow-md"
+                  : "font-medium text-on-surface/60 hover:bg-surface-hover hover:text-on-surface"
               }`}
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path d="M2.5 4.75A1.75 1.75 0 014.25 3h11.5a1.75 1.75 0 011.75 1.75v1.5A1.75 1.75 0 0115.75 8H4.25A1.75 1.75 0 012.5 6.25v-1.5z" />
-                <path
-                  fillRule="evenodd"
-                  d="M3.5 9.5h13v5.75A1.75 1.75 0 0114.75 17h-9.5A1.75 1.75 0 013.5 15.25V9.5zm4 2.25a.75.75 0 01.75-.75h3.5a.75.75 0 010 1.5h-3.5a.75.75 0 01-.75-.75z"
-                  clipRule="evenodd"
-                />
-              </svg>
+              Joined
             </Link>
+            <Link
+              href="/todos/personal"
+              aria-current={personalActive ? "page" : undefined}
+              className={`rounded-md px-3 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
+                personalActive
+                  ? "bg-primary font-semibold text-white shadow-md"
+                  : "font-medium text-on-surface/60 hover:bg-surface-hover hover:text-on-surface"
+              }`}
+            >
+              Personal
+            </Link>
+          </nav>
+          <nav className="flex shrink-0 items-center gap-1" aria-label="Primary">
+            <ThemeSwitcher />
             <Link
               href="/stats"
               aria-label="Repeat task stats"
