@@ -483,15 +483,20 @@ function SlipHeatCell({
         ? "bg-warning/60"
         : "bg-danger/80";
   const ring = isToday ? " ring-1 ring-focus" : "";
-  const title = new Date(date).toLocaleDateString(undefined, {
+  const dateLabel = new Date(date).toLocaleDateString(undefined, {
     weekday: "short",
     month: "short",
     day: "numeric",
   });
+  const label = `${dateLabel}${
+    slips > 0 ? ` — ${slips} slip${slips === 1 ? "" : "s"}` : " — no slips"
+  }`;
   return (
     <div
       className={`h-3 rounded-sm ${tone}${ring}`}
-      title={`${title}${slips > 0 ? ` — ${slips} slip${slips === 1 ? "" : "s"}` : ""}`}
+      role="img"
+      aria-label={label}
+      title={label}
     />
   );
 }

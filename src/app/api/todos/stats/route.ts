@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { and, asc, eq, gte, isNotNull, or } from "drizzle-orm";
+import { and, asc, eq, gte, isNotNull, isNull, or } from "drizzle-orm";
 import { validateSession } from "@/lib/session";
 
 // Raw completion timestamps per tracked todo (recurring + avoid). The client
@@ -31,6 +31,9 @@ export async function GET() {
     .from(schema.todos)
     .where(
       and(
+        // Top-level only — current validation rejects avoid/recurring on
+        // subtasks, but legacy rows could still slip through and pollute stats.
+        isNull(schema.todos.parentId),
         or(
           isNotNull(schema.todos.recurrence),
           eq(schema.todos.kind, "avoid")

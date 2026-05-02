@@ -1400,13 +1400,12 @@ function AvoidRow({
     todo.limitCount,
     todo.limitPeriod
   );
-  // Days since the last slip — null when there's never been one. Shown as a
-  // streak badge when no slip exists in the rolling window so you can see
-  // momentum building.
+  // Days since the last slip — null when there's never been one. Anchored to
+  // `lastCompletedAt` (which has no retention cap) rather than `recentSlips`
+  // (30-day window) so a 31+ day clean streak still renders the badge.
   const daysClean = (() => {
-    if (todo.recentSlips.length === 0) return null;
-    const last = Math.max(...todo.recentSlips);
-    const lastDay = new Date(last);
+    if (todo.lastCompletedAt === null) return null;
+    const lastDay = new Date(todo.lastCompletedAt);
     const today = new Date();
     const lastStart = new Date(
       lastDay.getFullYear(),

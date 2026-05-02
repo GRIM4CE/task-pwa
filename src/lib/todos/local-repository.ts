@@ -298,7 +298,9 @@ export const localTodoRepository: TodoRepository = {
     if (effectiveKind === "avoid" && effectiveRecurrenceForKind !== null) {
       return err("Avoid todos cannot be recurring");
     }
-    if (parsed.data.recordSlip === true && effectiveKind !== "avoid") {
+    // Require the persisted row to already be avoid — see the matching guard
+    // in /api/todos/[id]/route.ts for why a same-patch kind switch is rejected.
+    if (parsed.data.recordSlip === true && previous.kind !== "avoid") {
       return err("Slips can only be recorded on avoid todos");
     }
     if (effectiveKind !== "avoid") {

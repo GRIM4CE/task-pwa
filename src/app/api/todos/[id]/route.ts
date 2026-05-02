@@ -178,10 +178,12 @@ export async function PATCH(
       { status: 400 }
     );
   }
-  if (
-    body.recordSlip === true &&
-    effectiveKind !== "avoid"
-  ) {
+  // Require the persisted row to already be "avoid" — not just the post-patch
+  // shape. Otherwise `{ kind: "avoid", recordSlip: true }` on a "do" row would
+  // pass the effectiveKind check but the slip insert below (gated on
+  // `current.kind`) would silently no-op, leaving lastCompletedAt advanced
+  // without a logged event.
+  if (body.recordSlip === true && existing[0].kind !== "avoid") {
     return NextResponse.json(
       { error: "Slips can only be recorded on avoid todos" },
       { status: 400 }
