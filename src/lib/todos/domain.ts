@@ -30,24 +30,44 @@ export function nextSortOrder(
   return Math.max(...scope.map((t) => t.sortOrder)) + 1;
 }
 
+// Subtasks of recurring parents ride the parent's reset cycle, so visibility,
+// archive, and expire filters all need to look up "which top-level todos are
+// recurring." Centralized so all three stay in sync.
+export function getRecurringParentIds(list: TodoDTO[]): Set<string> {
+  return new Set(
+    list
+      .filter((t) => t.parentId === null && t.recurrence !== null)
+      .map((t) => t.id)
+  );
+}
+
 // Mirrors the SQL filter in /api/todos GET: hide non-recurring completed todos
-// once 24h have passed since completion. Recurring todos always remain visible.
-// Subtasks behave the same way (they have no recurrence).
+// once 24h have passed since completion. Recurring todos always remain visible,
+// and so do subtasks of recurring parents — those ride the parent's reset
+// cycle and need to stay visible across it.
 export function filterMainList(list: TodoDTO[], now: number = Date.now()): TodoDTO[] {
   const cutoff = now - DAY_MS;
+  const recurringParentIds = getRecurringParentIds(list);
   return list.filter((t) => {
     if (!t.completed) return true;
     if (t.recurrence !== null) return true;
+    if (t.parentId !== null && recurringParentIds.has(t.parentId)) return true;
     return t.lastCompletedAt !== null && t.lastCompletedAt >= cutoff;
   });
 }
 
-// Mirrors /api/todos/archive GET: completed, non-recurring rows. Top-level
-// recurring todos reset rather than archive; subtasks have no recurrence so
-// all completed subtasks are archive candidates.
+// Mirrors /api/todos/archive GET: completed, non-recurring rows, excluding
+// subtasks of recurring parents (those reset with the parent rather than
+// archiving).
 export function filterArchive(list: TodoDTO[]): TodoDTO[] {
+  const recurringParentIds = getRecurringParentIds(list);
   return list
-    .filter((t) => t.completed && t.recurrence === null)
+    .filter(
+      (t) =>
+        t.completed &&
+        t.recurrence === null &&
+        !(t.parentId !== null && recurringParentIds.has(t.parentId))
+    )
     .sort((a, b) => (b.lastCompletedAt ?? 0) - (a.lastCompletedAt ?? 0));
 }
 
@@ -110,6 +130,26 @@ export function cascadeCompleteChildren(
           completed: true,
           lastCompletedAt: now,
           pinnedToWeek: false,
+          updatedAt: now,
+        }
+      : t
+  );
+}
+
+// Cascade-uncomplete every closed child of a parent. Mirrors the server-side
+// transaction performed when a recurring parent is uncompleted (manual undo
+// or the client-driven midnight reset).
+export function cascadeUncompleteChildren(
+  list: TodoDTO[],
+  parentId: string,
+  now: number = Date.now()
+): TodoDTO[] {
+  return list.map((t) =>
+    t.parentId === parentId && t.completed
+      ? {
+          ...t,
+          completed: false,
+          lastCompletedAt: null,
           updatedAt: now,
         }
       : t

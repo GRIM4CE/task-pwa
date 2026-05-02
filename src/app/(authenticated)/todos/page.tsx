@@ -5,6 +5,8 @@ import { type TodoDTO, type Recurrence } from "@/lib/api-client";
 import { isCompletedTodoExpired, isRecurringResetDue } from "@/lib/recurrence";
 import {
   cascadeCompleteChildren,
+  cascadeUncompleteChildren,
+  getRecurringParentIds,
   sortSubtasks,
   sortTodos,
 } from "@/lib/todos/domain";
@@ -68,10 +70,14 @@ export default function TodosPage() {
   const expireCompleted = useCallback(
     async (list: Todo[]) => {
       const now = Date.now();
+      // Subtasks of recurring parents reset with the parent each cycle, so
+      // they must not be expired by the local 24h cleanup.
+      const recurringParentIds = getRecurringParentIds(list);
       const eligible = list.filter(
         (t) =>
           t.completed &&
           t.recurrence === null &&
+          !(t.parentId !== null && recurringParentIds.has(t.parentId)) &&
           !expiringRef.current.has(t.id) &&
           isCompletedTodoExpired(t.lastCompletedAt, now)
       );
@@ -140,11 +146,15 @@ export default function TodosPage() {
     );
 
     setTodos((prev) => {
-      const next = [...prev];
+      let next = [...prev];
       for (const { data } of results) {
         if (!data) continue;
         const i = next.findIndex((t) => t.id === data.id);
         if (i !== -1) next[i] = data;
+        // Mirror the server-side cascade-uncomplete so subtasks of the
+        // recurring parent reset with it. Without this, subtasks would stay
+        // completed in client state until the next refetch.
+        next = cascadeUncompleteChildren(next, data.id);
       }
       return next;
     });
@@ -270,6 +280,12 @@ export default function TodosPage() {
       // Mirror the server-side cascade: completing a parent completes its open children.
       if (next && todo.parentId === null) {
         updated = cascadeCompleteChildren(updated, todo.id);
+      }
+      // And the symmetric reset for recurring parents: uncompleting a
+      // recurring parent uncompletes its completed subtasks, mirroring the
+      // server transaction so the next cycle starts clean.
+      if (!next && todo.parentId === null && todo.recurrence !== null) {
+        updated = cascadeUncompleteChildren(updated, todo.id);
       }
       return updated;
     });
