@@ -147,9 +147,21 @@ function readVacations(): VacationPeriod[] {
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return (parsed as VacationPeriod[]).filter(
-      (v) => typeof v?.id === "string" && typeof v?.startsAt === "number"
-    );
+    return (parsed as VacationPeriod[]).filter((v) => {
+      if (typeof v?.id !== "string") return false;
+      if (typeof v.startsAt !== "number" || !Number.isFinite(v.startsAt)) {
+        return false;
+      }
+      // endsAt is null while active, otherwise a finite epoch ms. Anything
+      // else (NaN, Infinity, "yesterday") would silently misclassify
+      // vacation overlap downstream.
+      if (v.endsAt !== null && v.endsAt !== undefined) {
+        if (typeof v.endsAt !== "number" || !Number.isFinite(v.endsAt)) {
+          return false;
+        }
+      }
+      return true;
+    });
   } catch {
     return [];
   }
@@ -444,14 +456,14 @@ export const localTodoRepository: TodoRepository = {
         ];
       }
     } else {
-      if (open) {
-        next = periods.map((p) =>
-          p.id === open.id ? { ...p, endsAt: now } : p
-        );
-      }
+      // Defensive: close *every* open row, mirroring the server's UPDATE
+      // and protecting against historical data that predates this guard.
+      next = periods.map((p) =>
+        p.endsAt === null ? { ...p, endsAt: now } : p
+      );
     }
-    writeVacations(next);
-    const sorted = next.sort((a, b) => a.startsAt - b.startsAt);
+    const sorted = [...next].sort((a, b) => a.startsAt - b.startsAt);
+    writeVacations(sorted);
     const active = sorted.find((p) => p.endsAt === null) ?? null;
     return ok<VacationDTO>({ periods: sorted, active });
   },

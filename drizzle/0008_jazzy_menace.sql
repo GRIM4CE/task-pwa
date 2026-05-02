@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `idx_vacations_one_open_per_user` ON `vacations` (`user_id`) WHERE ends_at IS NULL;

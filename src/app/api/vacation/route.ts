@@ -54,31 +54,32 @@ export async function POST(request: Request) {
   }
 
   const now = new Date();
-  const open = await db
-    .select({ id: schema.vacations.id })
-    .from(schema.vacations)
-    .where(
-      and(
-        eq(schema.vacations.userId, session.user.id),
-        isNull(schema.vacations.endsAt)
-      )
-    )
-    .limit(1);
-
   if (action === "start") {
-    if (open.length === 0) {
+    // The schema's partial unique index ensures at most one open row per
+    // user, so two concurrent starts can race safely: the loser's insert
+    // hits the constraint and we treat it as a no-op (the user is already
+    // on vacation).
+    try {
       await db.insert(schema.vacations).values({
         userId: session.user.id,
         startsAt: now,
       });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (!/UNIQUE|constraint/i.test(message)) throw e;
     }
   } else {
-    if (open.length > 0) {
-      await db
-        .update(schema.vacations)
-        .set({ endsAt: now })
-        .where(eq(schema.vacations.id, open[0].id));
-    }
+    // Close every open row in a single statement. Defensive against
+    // historical data that predates the partial unique index.
+    await db
+      .update(schema.vacations)
+      .set({ endsAt: now })
+      .where(
+        and(
+          eq(schema.vacations.userId, session.user.id),
+          isNull(schema.vacations.endsAt)
+        )
+      );
   }
 
   const rows = await db

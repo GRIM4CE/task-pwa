@@ -195,6 +195,12 @@ export const vacations = sqliteTable(
   },
   (table) => [
     index("idx_vacations_user").on(table.userId, table.startsAt),
+    // Partial unique index: at most one open (currently-active) vacation
+    // per user. Lets concurrent toggle-on requests race safely — the
+    // second insert hits the constraint instead of creating a duplicate.
+    uniqueIndex("idx_vacations_one_open_per_user")
+      .on(table.userId)
+      .where(sql`ends_at IS NULL`),
   ]
 );
 

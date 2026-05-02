@@ -209,32 +209,42 @@ function GlobalCard({
     stats.prevMonthCompletedWeeks,
     stats.prevMonthEligibleWeeks
   );
+  // When every day in the window is a vacation miss, the denominator
+  // collapses to 0 even though the user has daily todos. Show "—" with a
+  // vacation-aware subtitle rather than "0 / 0" / "0%", which reads like
+  // failure. Same for weekly.
+  const weekHasEligible = stats.dailyCount > 0 && stats.weekTotalDays > 0;
+  const monthHasEligible = stats.weeklyCount > 0 && stats.monthTotalWeeks > 0;
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <Tile
         label="Daily this week"
-        value={stats.dailyCount === 0 ? "—" : `${weekPct}%`}
+        value={weekHasEligible ? `${weekPct}%` : "—"}
         sub={
           stats.dailyCount === 0
             ? "No daily repeats"
-            : `${stats.weekCompletedDays} / ${stats.weekTotalDays} day-completions`
+            : !weekHasEligible
+              ? "On vacation this week"
+              : `${stats.weekCompletedDays} / ${stats.weekTotalDays} day-completions`
         }
         delta={
-          stats.prevWeekEligibleDays === 0
+          stats.prevWeekEligibleDays === 0 || !weekHasEligible
             ? null
             : { current: weekPct, previous: prevWeekPct, label: "vs last week" }
         }
       />
       <Tile
         label="Weekly this month"
-        value={stats.weeklyCount === 0 ? "—" : `${monthPct}%`}
+        value={monthHasEligible ? `${monthPct}%` : "—"}
         sub={
           stats.weeklyCount === 0
             ? "No weekly repeats"
-            : `${stats.monthCompletedWeeks} / ${stats.monthTotalWeeks} week-completions`
+            : !monthHasEligible
+              ? "On vacation this month"
+              : `${stats.monthCompletedWeeks} / ${stats.monthTotalWeeks} week-completions`
         }
         delta={
-          stats.prevMonthEligibleWeeks === 0
+          stats.prevMonthEligibleWeeks === 0 || !monthHasEligible
             ? null
             : {
                 current: monthPct,
