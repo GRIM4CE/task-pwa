@@ -4,7 +4,7 @@ const SW_SOURCE = `const CACHE_NAME = "todo-${buildId}";
 const PRECACHE_URLS = [
   "/",
   "/login",
-  "/todos",
+  "/todos/joined",
   "/manifest.json",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
