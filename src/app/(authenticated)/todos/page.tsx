@@ -1394,7 +1394,10 @@ function EditTodoModal({
       aria-label="Edit todo"
       className="fixed inset-0 z-50 bg-background"
     >
-      <form onSubmit={handleSubmit} className="flex h-full flex-col">
+      <form
+        onSubmit={handleSubmit}
+        className="flex h-full flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
+      >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <button
             type="button"
@@ -1519,7 +1522,10 @@ function EditSubtaskModal({
       aria-label="Edit subtask"
       className="fixed inset-0 z-50 bg-background"
     >
-      <form onSubmit={handleSubmit} className="flex h-full flex-col">
+      <form
+        onSubmit={handleSubmit}
+        className="flex h-full flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
+      >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <button
             type="button"
