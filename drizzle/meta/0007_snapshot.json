@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "652cec86-a19d-47d9-8c63-32d3e489ec49",
+  "id": "e36c2d1a-103c-4da5-ac82-479dd1316053",
   "prevId": "7490b7ad-69fd-4626-9c8b-79c19c7ee3fc",
   "tables": {
     "audit_log": {
@@ -479,6 +479,14 @@
           "notNull": false,
           "autoincrement": false
         },
+        "once_per_day": {
+          "name": "once_per_day",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
         "last_completed_at": {
           "name": "last_completed_at",
           "type": "integer",
@@ -738,75 +746,6 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "vacations": {
-      "name": "vacations",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "starts_at": {
-          "name": "starts_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "ends_at": {
-          "name": "ends_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(unixepoch())"
-        }
-      },
-      "indexes": {
-        "idx_vacations_user": {
-          "name": "idx_vacations_user",
-          "columns": [
-            "user_id",
-            "starts_at"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "vacations_user_id_users_id_fk": {
-          "name": "vacations_user_id_users_id_fk",
-          "tableFrom": "vacations",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}

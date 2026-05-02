@@ -38,6 +38,7 @@ export async function GET() {
       kind: schema.todos.kind,
       limitCount: schema.todos.limitCount,
       limitPeriod: schema.todos.limitPeriod,
+      oncePerDay: schema.todos.oncePerDay,
       lastCompletedAt: schema.todos.lastCompletedAt,
       createdAt: schema.todos.createdAt,
       updatedAt: schema.todos.updatedAt,
@@ -64,14 +65,15 @@ export async function GET() {
     )
     .orderBy(asc(schema.todos.sortOrder), desc(schema.todos.createdAt));
 
-  // Avoid-todos need a 30-day slip history so the card can compute its
-  // rolling-window warning state locally without a /stats round-trip.
+  // Avoid-todos need a 35-day slip history so the card can compute its
+  // calendar-window warning state locally without a /stats round-trip — long
+  // enough to cover a 31-day month plus a small buffer.
   const avoidIds = todoList
     .filter((t) => t.kind === "avoid")
     .map((t) => t.id);
   const slipsByTodo = new Map<string, number[]>();
   if (avoidIds.length > 0) {
-    const slipCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const slipCutoff = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000);
     const slips = await db
       .select({
         todoId: schema.todoCompletions.todoId,
@@ -84,7 +86,11 @@ export async function GET() {
           inArray(schema.todoCompletions.todoId, avoidIds),
           gte(schema.todoCompletions.completedAt, slipCutoff)
         )
-      );
+      )
+      // Ascending so the latest slip is always at the end of each todo's
+      // array. Lets clients identify "the most recent" by index without
+      // re-sorting on every render.
+      .orderBy(asc(schema.todoCompletions.completedAt));
     for (const s of slips) {
       const list = slipsByTodo.get(s.todoId) ?? [];
       list.push(s.completedAt.getTime());
@@ -106,6 +112,7 @@ export async function GET() {
       kind: t.kind,
       limitCount: t.limitCount,
       limitPeriod: t.limitPeriod,
+      oncePerDay: t.oncePerDay,
       recentSlips:
         t.kind === "avoid" ? slipsByTodo.get(t.id) ?? [] : [],
       lastCompletedAt: t.lastCompletedAt ? t.lastCompletedAt.getTime() : null,
@@ -132,6 +139,7 @@ export async function POST(request: NextRequest) {
     kind?: "do" | "avoid";
     limitCount?: number | null;
     limitPeriod?: "week" | "month" | null;
+    oncePerDay?: boolean;
   };
   try {
     const raw = await request.json();
@@ -178,6 +186,7 @@ export async function POST(request: NextRequest) {
   const kind = parentRow ? "do" : (body.kind ?? "do");
   const limitCount = kind === "avoid" ? body.limitCount ?? null : null;
   const limitPeriod = kind === "avoid" ? body.limitPeriod ?? null : null;
+  const oncePerDay = kind === "avoid" ? body.oncePerDay ?? false : false;
 
   const [todo] = await db
     .insert(schema.todos)
@@ -192,6 +201,7 @@ export async function POST(request: NextRequest) {
       kind,
       limitCount,
       limitPeriod,
+      oncePerDay,
       sortOrder: nextSortOrder,
     })
     .returning();
@@ -210,6 +220,7 @@ export async function POST(request: NextRequest) {
       kind: todo.kind,
       limitCount: todo.limitCount,
       limitPeriod: todo.limitPeriod,
+      oncePerDay: todo.oncePerDay,
       recentSlips: [],
       lastCompletedAt: todo.lastCompletedAt ? todo.lastCompletedAt.getTime() : null,
       createdAt: todo.createdAt.getTime(),

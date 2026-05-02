@@ -54,15 +54,15 @@
     {
       "idx": 7,
       "version": "6",
-      "when": 1777734539205,
-      "tag": "0007_sleepy_bromley",
+      "when": 1777733989901,
+      "tag": "0007_avoid_once_per_day",
       "breakpoints": true
     },
     {
       "idx": 8,
       "version": "6",
-      "when": 1777735513226,
-      "tag": "0008_jazzy_menace",
+      "when": 1777736061403,
+      "tag": "0008_rich_squadron_sinister",
       "breakpoints": true
     }
   ]

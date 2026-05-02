@@ -20,6 +20,7 @@ export interface CreateTodoInput {
   kind?: TodoKind;
   limitCount?: number | null;
   limitPeriod?: LimitPeriod;
+  oncePerDay?: boolean;
 }
 
 export interface UpdateTodoPatch {
@@ -34,7 +35,9 @@ export interface UpdateTodoPatch {
   kind?: TodoKind;
   limitCount?: number | null;
   limitPeriod?: LimitPeriod;
+  oncePerDay?: boolean;
   recordSlip?: boolean;
+  undoLastSlip?: boolean;
 }
 
 export interface TodoRepository {

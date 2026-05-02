@@ -25,6 +25,7 @@ export async function GET() {
       kind: schema.todos.kind,
       limitCount: schema.todos.limitCount,
       limitPeriod: schema.todos.limitPeriod,
+      oncePerDay: schema.todos.oncePerDay,
       isPersonal: schema.todos.isPersonal,
       createdAt: schema.todos.createdAt,
     })
@@ -111,6 +112,7 @@ export async function GET() {
       createdAt: t.createdAt.getTime(),
       limitCount: t.limitCount,
       limitPeriod: t.limitPeriod,
+      oncePerDay: t.oncePerDay,
       completions: byTodo.get(t.id) ?? [],
     })),
     vacations: vacationRows.map((v) => ({

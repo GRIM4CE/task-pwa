@@ -7,7 +7,11 @@ import {
   type TodoDTO,
   type TodoKind,
 } from "@/lib/api-client";
-import { avoidStatusForTodo, type AvoidStatus } from "@/lib/analytics";
+import {
+  avoidStatusForTodo,
+  hasSlipToday,
+  type AvoidStatus,
+} from "@/lib/analytics";
 import { isCompletedTodoExpired, isRecurringResetDue } from "@/lib/recurrence";
 import { notifyStatsMayHaveChanged } from "@/lib/stats-events";
 import {
@@ -63,6 +67,12 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Todo | null>(null);
   const [justCompletedIds, setJustCompletedIds] = useState<Set<string>>(() => new Set());
+  // After a slip is logged successfully, surface a transient undo toast so a
+  // mis-tap can be reverted without diving into the edit modal. A single
+  // pending undo at a time is enough — a follow-up slip on a different todo
+  // dismisses the previous toast.
+  const [pendingUndo, setPendingUndo] = useState<{ id: string; title: string } | null>(null);
+  const undoTimerRef = useRef<number | null>(null);
   const resettingRef = useRef<Set<string>>(new Set());
   const pendingToggleRef = useRef<Set<string>>(new Set());
   const expiringRef = useRef<Set<string>>(new Set());
@@ -322,6 +332,27 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
     }
   }
 
+  function clearUndoTimer() {
+    if (undoTimerRef.current !== null) {
+      window.clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = null;
+    }
+  }
+
+  function showUndo(id: string, title: string) {
+    clearUndoTimer();
+    setPendingUndo({ id, title });
+    undoTimerRef.current = window.setTimeout(() => {
+      undoTimerRef.current = null;
+      setPendingUndo((prev) => (prev?.id === id ? null : prev));
+    }, 5000);
+  }
+
+  function dismissUndo() {
+    clearUndoTimer();
+    setPendingUndo(null);
+  }
+
   async function handleRecordSlip(todo: Todo) {
     if (todo.kind !== "avoid") return;
     if (pendingToggleRef.current.has(todo.id)) return;
@@ -348,11 +379,71 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
     }
     if (data) {
       setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
+      showUndo(data.id, data.title);
       // The slip touches the completion log, which feeds /stats. Notify so a
       // mounted stats page picks it up without needing a visibility change.
       notifyStatsMayHaveChanged();
     }
   }
+
+  async function handleUndoSlip(id: string) {
+    const target = todos.find((t) => t.id === id);
+    if (!target || target.kind !== "avoid") return;
+    dismissUndo();
+    if (pendingToggleRef.current.has(id)) return;
+    pendingToggleRef.current.add(id);
+
+    const previousTodos = todos;
+    setTodos((prev) =>
+      prev.map((t) => {
+        if (t.id !== id) return t;
+        // Optimistically drop the most recent slip by max-timestamp rather
+        // than array position so the result is correct regardless of how
+        // recentSlips happens to be ordered. Rebase lastCompletedAt onto
+        // the new latest (or null); the server confirms the authoritative
+        // state below.
+        if (t.recentSlips.length === 0) {
+          return { ...t, lastCompletedAt: null };
+        }
+        let maxIdx = 0;
+        for (let i = 1; i < t.recentSlips.length; i++) {
+          if (t.recentSlips[i] > t.recentSlips[maxIdx]) maxIdx = i;
+        }
+        const remaining = [
+          ...t.recentSlips.slice(0, maxIdx),
+          ...t.recentSlips.slice(maxIdx + 1),
+        ];
+        const nextLast =
+          remaining.length === 0 ? null : Math.max(...remaining);
+        return {
+          ...t,
+          recentSlips: remaining,
+          lastCompletedAt: nextLast,
+        };
+      })
+    );
+
+    const { data, error } = await repo.update(id, { undoLastSlip: true });
+    pendingToggleRef.current.delete(id);
+    if (error) {
+      setTodos(previousTodos);
+      return;
+    }
+    if (data) {
+      setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
+      notifyStatsMayHaveChanged();
+    }
+  }
+
+  // Stop the undo timer on unmount so it can't fire after navigation.
+  useEffect(() => {
+    return () => {
+      if (undoTimerRef.current !== null) {
+        window.clearTimeout(undoTimerRef.current);
+        undoTimerRef.current = null;
+      }
+    };
+  }, []);
 
   async function handleAddSubtask(parentId: string, title: string) {
     const trimmed = title.trim();
@@ -390,6 +481,7 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
       kind: TodoKind;
       limitCount: number | null;
       limitPeriod: LimitPeriod;
+      oncePerDay: boolean;
     }
   ) {
     const { data } = await repo.update(id, patch);
@@ -741,6 +833,14 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
             ))}
           </div>
         </Section>
+      )}
+
+      {pendingUndo && (
+        <UndoSlipToast
+          title={pendingUndo.title}
+          onUndo={() => handleUndoSlip(pendingUndo.id)}
+          onDismiss={dismissUndo}
+        />
       )}
 
       {/* Complete todos (any recurrence) */}
@@ -1400,9 +1500,13 @@ function AvoidRow({
     todo.limitCount,
     todo.limitPeriod
   );
+  // Once-per-day mode: a slip already logged today disables the +1 button
+  // until midnight. Multi-tap mode (the default) leaves it always enabled.
+  const slippedToday = todo.oncePerDay && hasSlipToday(todo.recentSlips);
+  const buttonDisabled = slippedToday;
   // Days since the last slip — null when there's never been one. Anchored to
   // `lastCompletedAt` (which has no retention cap) rather than `recentSlips`
-  // (30-day window) so a 31+ day clean streak still renders the badge.
+  // (35-day window) so a 36+ day clean streak still renders the badge.
   const daysClean = (() => {
     if (todo.lastCompletedAt === null) return null;
     const lastDay = new Date(todo.lastCompletedAt);
@@ -1437,10 +1541,11 @@ function AvoidRow({
     >
       <button
         onClick={onSlip}
-        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-focus ${tone.button}`}
-        aria-label="Record a slip"
+        disabled={buttonDisabled}
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-focus disabled:cursor-not-allowed disabled:opacity-50 ${tone.button}`}
+        aria-label={slippedToday ? "Already logged today" : "Record a slip"}
       >
-        +1
+        {slippedToday ? "✓" : "+1"}
       </button>
       <div className="min-w-0 flex-1">
         <span className="block break-words text-on-surface">{todo.title}</span>
@@ -1468,6 +1573,9 @@ function AvoidRow({
                   : `${daysClean} days clean`}
             </span>
           )}
+          {todo.oncePerDay && (
+            <span className="text-on-surface/50">Once per day</span>
+          )}
           {status === "warn" && (
             <span className="font-medium text-warning">Close to limit</span>
           )}
@@ -1488,6 +1596,52 @@ function AvoidRow({
           fill="currentColor"
         >
           <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+function UndoSlipToast({
+  title,
+  onUndo,
+  onDismiss,
+}: {
+  title: string;
+  onUndo: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed inset-x-0 bottom-4 z-40 mx-auto flex max-w-sm items-center gap-3 rounded-lg border border-border-on-surface bg-surface px-4 py-3 shadow-lg shadow-black/40"
+      style={{ marginBottom: "env(safe-area-inset-bottom)" }}
+    >
+      <span className="min-w-0 flex-1 truncate text-sm text-on-surface">
+        Slip logged for {title}
+      </span>
+      <button
+        type="button"
+        onClick={onUndo}
+        className="shrink-0 rounded px-2 py-1 text-sm font-medium text-primary hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary"
+      >
+        Undo
+      </button>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        className="shrink-0 rounded p-1 text-on-surface/60 hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-focus"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className="h-4 w-4"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
         </svg>
       </button>
     </div>
@@ -1571,6 +1725,7 @@ function EditTodoModal({
     kind: TodoKind;
     limitCount: number | null;
     limitPeriod: LimitPeriod;
+    oncePerDay: boolean;
   }) => void | Promise<void>;
   onDelete: () => void;
 }) {
@@ -1585,6 +1740,7 @@ function EditTodoModal({
   const [limitPeriod, setLimitPeriod] = useState<LimitPeriod>(
     todo.limitPeriod ?? "week"
   );
+  const [oncePerDay, setOncePerDay] = useState(todo.oncePerDay);
   const [saving, setSaving] = useState(false);
 
   const isAvoid = kind === "avoid";
@@ -1619,6 +1775,7 @@ function EditTodoModal({
       kind,
       limitCount: isAvoid ? parsedLimit : null,
       limitPeriod: isAvoid && parsedLimit !== null ? limitPeriod : null,
+      oncePerDay: isAvoid ? oncePerDay : false,
     });
     setSaving(false);
   }
@@ -1759,7 +1916,7 @@ function EditTodoModal({
                     placeholder="No limit"
                     className="w-24 rounded-lg border border-border bg-input px-3 py-2 text-input-text placeholder-input-placeholder focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
                   />
-                  <span className="text-sm text-text-muted">times in the last</span>
+                  <span className="text-sm text-text-muted">times per</span>
                   <select
                     value={limitPeriod ?? "week"}
                     onChange={(e) =>
@@ -1767,14 +1924,30 @@ function EditTodoModal({
                     }
                     className="rounded-lg border border-border bg-input px-3 py-2 text-input-text focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
                   >
-                    <option value="week">7 days</option>
-                    <option value="month">30 days</option>
+                    <option value="week">week (Mon–Sun)</option>
+                    <option value="month">calendar month</option>
                   </select>
                 </div>
                 <p className="mt-1 text-xs text-text-muted">
-                  Leave blank to track without a limit.
+                  Leave blank to track without a limit. Counter resets at the
+                  start of each calendar period.
                 </p>
               </fieldset>
+            )}
+
+            {isAvoid && (
+              <label className="mb-4 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={oncePerDay}
+                  onChange={(e) => setOncePerDay(e.target.checked)}
+                  className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-focus"
+                />
+                <span className="text-sm text-text">Limit to once per day</span>
+                <span className="text-xs text-text-muted">
+                  (button disables until midnight after each slip)
+                </span>
+              </label>
             )}
 
             <label className={`mb-4 flex items-center gap-2 ${pinDisabled ? "opacity-50" : ""}`}>

@@ -583,9 +583,9 @@ function WeekPill({
 function AvoidStatRow({ stat }: { stat: AvoidStat }) {
   const periodLabel =
     stat.limitPeriod === "week"
-      ? "this week"
+      ? "this week (Mon–Sun)"
       : stat.limitPeriod === "month"
-        ? "this month"
+        ? "this calendar month"
         : `last ${stat.windowDays}d`;
   const tone =
     stat.status === "over"
