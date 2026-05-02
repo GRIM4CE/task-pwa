@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { StatsDTO } from "@/lib/api-client";
 import {
   computeStats,
@@ -8,6 +8,7 @@ import {
   type DailyStat,
   type WeeklyStat,
 } from "@/lib/analytics";
+import { subscribeStatsMayHaveChanged } from "@/lib/stats-events";
 import { useTodoRepository } from "@/lib/todos/use-todo-repository";
 
 const WEEKDAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
@@ -16,9 +17,17 @@ export default function StatsPage() {
   const repo = useTodoRepository();
   const [data, setData] = useState<StatsDTO | null>(null);
   const [loading, setLoading] = useState(true);
+  // Monotonic id so overlapping refreshes (rapid toggles, visibility +
+  // event subscriber firing back-to-back) can't reorder a stale response
+  // over a fresh one. Only the most recently issued fetch's data is
+  // returned; older in-flight ones resolve to null and the call sites
+  // skip them.
+  const refreshIdRef = useRef(0);
 
   const refresh = useCallback(async () => {
+    const myId = ++refreshIdRef.current;
     const { data } = await repo.stats();
+    if (myId !== refreshIdRef.current) return null;
     return data;
   }, [repo]);
 
@@ -26,7 +35,7 @@ export default function StatsPage() {
     let cancelled = false;
     refresh().then((data) => {
       if (cancelled) return;
-      setData(data);
+      if (data) setData(data);
       setLoading(false);
     });
     return () => {
@@ -53,6 +62,25 @@ export default function StatsPage() {
     return () => {
       cancelled = true;
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refresh]);
+
+  // Refetch when the todos page signals a recurring toggle has committed.
+  // The mount-time fetch above can race with an in-flight PATCH from the
+  // previous route — visibility doesn't change during intra-app nav, so this
+  // is the only refetch the user sees in that flow. Same null-data guard as
+  // the visibility handler: don't blank the page on a transient blip.
+  useEffect(() => {
+    let cancelled = false;
+    const unsubscribe = subscribeStatsMayHaveChanged(() => {
+      refresh().then((data) => {
+        if (cancelled) return;
+        if (data) setData(data);
+      });
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
     };
   }, [refresh]);
 

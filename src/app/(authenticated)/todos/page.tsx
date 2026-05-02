@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { type TodoDTO, type Recurrence } from "@/lib/api-client";
 import { isCompletedTodoExpired, isRecurringResetDue } from "@/lib/recurrence";
+import { notifyStatsMayHaveChanged } from "@/lib/stats-events";
 import {
   cascadeCompleteChildren,
   cascadeUncompleteChildren,
@@ -302,6 +303,17 @@ export default function TodosPage() {
 
     if (data) {
       setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
+      // Recurring toggles change the completion log, which feeds /stats. We
+      // can't rely on `visibilitychange` to refresh a stats page reached via
+      // intra-app nav — the document never goes hidden — so signal explicitly
+      // here, after the server's response, so any mounted stats page refetches
+      // post-commit instead of trusting its mount-race snapshot. Read the
+      // recurrence/parent fields off the committed row rather than the
+      // pre-request `todo` so a stale optimistic snapshot can't suppress a
+      // notify the server actually warranted.
+      if (data.recurrence !== null && data.parentId === null) {
+        notifyStatsMayHaveChanged();
+      }
     }
   }
 
