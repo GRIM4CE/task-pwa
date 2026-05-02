@@ -23,4 +23,6 @@ export const apiTodoRepository: TodoRepository = {
     if (!data?.success) return { data: null, error: "Reorder failed" };
     return { data: { success: true as const }, error: null };
   },
+  vacation: () => api.vacation.get(),
+  setVacation: (action: "start" | "end") => api.vacation.set(action),
 };

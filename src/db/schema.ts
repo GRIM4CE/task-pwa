@@ -177,6 +177,38 @@ export const todos = sqliteTable(
   ]
 );
 
+// Vacation periods. While a row's [startsAt, endsAt) interval covers a
+// given day, recurring "do" misses and avoid slips on that day count as
+// neutral in analytics rather than as failures. endsAt is null while a
+// vacation is currently active. Only days *after* a vacation row's
+// startsAt are affected — toggling on does not retroactively neutralize
+// prior misses.
+export const vacations = sqliteTable(
+  "vacations",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    startsAt: integer("starts_at", { mode: "timestamp" }).notNull(),
+    endsAt: integer("ends_at", { mode: "timestamp" }),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    index("idx_vacations_user").on(table.userId, table.startsAt),
+    // Partial unique index: at most one open (currently-active) vacation
+    // per user. Lets concurrent toggle-on requests race safely — the
+    // second insert hits the constraint instead of creating a duplicate.
+    uniqueIndex("idx_vacations_one_open_per_user")
+      .on(table.userId)
+      .where(sql`ends_at IS NULL`),
+  ]
+);
+
 // One row per completion event for a recurring todo. Lets analytics
 // reconstruct history that would otherwise be lost when a recurring reset
 // overwrites lastCompletedAt. Non-recurring completions are not recorded.

@@ -75,6 +75,27 @@ export async function GET() {
   const recurring = trackedTodos.filter((t) => t.recurrence !== null);
   const avoid = trackedTodos.filter((t) => t.kind === "avoid");
 
+  // Vacation periods: include the trailing 120-day window (matching the
+  // completions cutoff) plus any currently-active period regardless of
+  // its start. Closed-and-old periods are omitted.
+  const vacationRows = await db
+    .select({
+      id: schema.vacations.id,
+      startsAt: schema.vacations.startsAt,
+      endsAt: schema.vacations.endsAt,
+    })
+    .from(schema.vacations)
+    .where(
+      and(
+        eq(schema.vacations.userId, session.user.id),
+        or(
+          isNull(schema.vacations.endsAt),
+          gte(schema.vacations.endsAt, cutoff)
+        )
+      )
+    )
+    .orderBy(asc(schema.vacations.startsAt));
+
   return NextResponse.json({
     todos: recurring.map((t) => ({
       id: t.id,
@@ -93,6 +114,11 @@ export async function GET() {
       limitPeriod: t.limitPeriod,
       oncePerDay: t.oncePerDay,
       completions: byTodo.get(t.id) ?? [],
+    })),
+    vacations: vacationRows.map((v) => ({
+      id: v.id,
+      startsAt: v.startsAt.getTime(),
+      endsAt: v.endsAt ? v.endsAt.getTime() : null,
     })),
   });
 }

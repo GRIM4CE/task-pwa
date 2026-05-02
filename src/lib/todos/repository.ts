@@ -5,6 +5,7 @@ import type {
   StatsDTO,
   TodoDTO,
   TodoKind,
+  VacationDTO,
 } from "@/lib/api-client";
 
 export type RepoResult<T> = { data: T; error: null } | { data: null; error: string };
@@ -47,4 +48,6 @@ export interface TodoRepository {
   update(id: string, patch: UpdateTodoPatch): Promise<RepoResult<TodoDTO>>;
   delete(id: string): Promise<RepoResult<{ success: true }>>;
   reorder(ids: string[], parentId: string | null): Promise<RepoResult<{ success: true }>>;
+  vacation(): Promise<RepoResult<VacationDTO>>;
+  setVacation(action: "start" | "end"): Promise<RepoResult<VacationDTO>>;
 }
