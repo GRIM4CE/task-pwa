@@ -76,9 +76,9 @@ export interface GlobalStats {
   // Same partial-window logic applied to last week (e.g. Mon..Sat last
   // week if today is Saturday) so the "vs last week" delta is apples to
   // apples. Null when last week's window has no countable days (all
-  // habits were created this week).
-  lastWeekCompletedDays: number | null;
-  lastWeekTotalDays: number | null;
+  // habits were created this week) — the two values are always set or
+  // cleared together, so a single nullable bag keeps that invariant.
+  lastWeek: { completed: number; total: number } | null;
   // Weekly-this-month over elapsed weeks (including the in-progress one),
   // restricted to weeks at or after each habit's first active week.
   monthCompletedWeeks: number;
@@ -336,8 +336,7 @@ export function computeStats(
       weeklyCount: weekly.length,
       weekCompletedDays,
       weekTotalDays,
-      lastWeekCompletedDays: lastWeek.total > 0 ? lastWeek.completed : null,
-      lastWeekTotalDays: lastWeek.total > 0 ? lastWeek.total : null,
+      lastWeek: lastWeek.total > 0 ? lastWeek : null,
       monthCompletedWeeks,
       monthTotalWeeks,
     },

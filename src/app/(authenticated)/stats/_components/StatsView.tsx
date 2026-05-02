@@ -172,10 +172,9 @@ function GlobalCard({
   const monthPct = hasMonthData
     ? percent(stats.monthCompletedWeeks, stats.monthTotalWeeks)
     : null;
-  const lastWeekPct =
-    stats.lastWeekTotalDays !== null && stats.lastWeekCompletedDays !== null
-      ? percent(stats.lastWeekCompletedDays, stats.lastWeekTotalDays)
-      : null;
+  const lastWeekPct = stats.lastWeek
+    ? percent(stats.lastWeek.completed, stats.lastWeek.total)
+    : null;
   const weekDelta =
     weekPct !== null && lastWeekPct !== null ? weekPct - lastWeekPct : null;
   return (
