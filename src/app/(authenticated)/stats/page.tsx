@@ -38,15 +38,22 @@ export default function StatsPage() {
   // todos page (or via PWA app-switch) is reflected here without a manual
   // reload. Mirrors the same handler on /todos.
   useEffect(() => {
+    let cancelled = false;
     function handleVisibilityChange() {
       if (document.visibilityState !== "visible") return;
       refresh().then((data) => {
+        if (cancelled) return;
+        // Keep the previous render on a transient failure rather than
+        // blanking the page; a network blip during a refresh shouldn't
+        // collapse the analytics into the empty state.
         if (data) setData(data);
       });
     }
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () =>
+    return () => {
+      cancelled = true;
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [refresh]);
 
   if (loading) {
