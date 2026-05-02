@@ -1,4 +1,11 @@
-import type { ArchiveDTO, StatsDTO, TodoDTO } from "@/lib/api-client";
+import type {
+  ArchiveDTO,
+  StatsDTO,
+  TodoDTO,
+  VacationDTO,
+  VacationPeriod,
+} from "@/lib/api-client";
+import { hasSlipToday } from "@/lib/analytics";
 import {
   createTodoSchema,
   reorderTodosSchema,
@@ -24,6 +31,7 @@ import type {
 const STORAGE_KEY = "todo-pwa:guest:todos";
 const LEGACY_SUBTASKS_KEY = "todo-pwa:guest:subtasks";
 const COMPLETIONS_KEY = "todo-pwa:guest:completions";
+const VACATIONS_KEY = "todo-pwa:guest:vacations";
 const COMPLETIONS_RETENTION_MS = 120 * 24 * 60 * 60 * 1000;
 export const GUEST_USERNAME = "Guest";
 
@@ -35,6 +43,24 @@ function ok<T>(data: T): RepoResult<T> {
 
 function err<T>(error: string): RepoResult<T> {
   return { data: null, error };
+}
+
+const SLIP_WINDOW_MS = 35 * 24 * 60 * 60 * 1000;
+
+// Filter the persisted completion log down to the last 35 days for a given
+// todo (long enough to cover a 31-day calendar month plus buffer). Mirrors
+// the avoid-todo `recentSlips` field the server returns on the
+// list/POST/PATCH responses.
+function recentSlipsFor(todoId: string, events: CompletionEvent[]): number[] {
+  const cutoff = Date.now() - SLIP_WINDOW_MS;
+  return events
+    .filter((e) => e.todoId === todoId && e.completedAt >= cutoff)
+    .map((e) => e.completedAt);
+}
+
+function withRecentSlips(todo: TodoDTO, events: CompletionEvent[]): TodoDTO {
+  if (todo.kind !== "avoid") return { ...todo, recentSlips: [] };
+  return { ...todo, recentSlips: recentSlipsFor(todo.id, events) };
 }
 
 function readAll(): TodoDTO[] {
@@ -49,6 +75,13 @@ function readAll(): TodoDTO[] {
           ...t,
           pinnedToWeek: t.pinnedToWeek ?? false,
           parentId: t.parentId ?? null,
+          // Backfill kind/limit fields for guest data written before the
+          // avoid-habit feature shipped.
+          kind: t.kind ?? "do",
+          limitCount: t.limitCount ?? null,
+          limitPeriod: t.limitPeriod ?? null,
+          oncePerDay: t.oncePerDay ?? false,
+          recentSlips: t.recentSlips ?? [],
         }));
       }
     } catch {
@@ -110,10 +143,45 @@ function writeCompletions(events: CompletionEvent[]): void {
   window.localStorage.setItem(COMPLETIONS_KEY, JSON.stringify(pruned));
 }
 
+function readVacations(): VacationPeriod[] {
+  if (typeof window === "undefined") return [];
+  const raw = window.localStorage.getItem(VACATIONS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return (parsed as VacationPeriod[]).filter((v) => {
+      if (typeof v?.id !== "string") return false;
+      if (typeof v.startsAt !== "number" || !Number.isFinite(v.startsAt)) {
+        return false;
+      }
+      // endsAt is null while active, otherwise a finite epoch ms. Anything
+      // else (NaN, Infinity, "yesterday") would silently misclassify
+      // vacation overlap downstream.
+      if (v.endsAt !== null && v.endsAt !== undefined) {
+        if (typeof v.endsAt !== "number" || !Number.isFinite(v.endsAt)) {
+          return false;
+        }
+      }
+      return true;
+    });
+  } catch {
+    return [];
+  }
+}
+
+function writeVacations(periods: VacationPeriod[]): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(VACATIONS_KEY, JSON.stringify(periods));
+}
+
 export const localTodoRepository: TodoRepository = {
   async list() {
     const all = readAll();
-    return ok(sortTodos(filterMainList(all)));
+    const events = readCompletions();
+    return ok(
+      sortTodos(filterMainList(all)).map((t) => withRecentSlips(t, events))
+    );
   },
 
   async archive() {
@@ -146,7 +214,22 @@ export const localTodoRepository: TodoRepository = {
         createdAt: t.createdAt,
         completions: (byTodo.get(t.id) ?? []).sort((a, b) => a - b),
       }));
-    return ok({ todos });
+    const avoid: StatsDTO["avoid"] = all
+      .filter((t) => t.kind === "avoid" && t.parentId === null)
+      .map((t) => ({
+        id: t.id,
+        title: t.title,
+        isPersonal: t.isPersonal,
+        createdAt: t.createdAt,
+        limitCount: t.limitCount,
+        limitPeriod: t.limitPeriod,
+        oncePerDay: t.oncePerDay,
+        completions: (byTodo.get(t.id) ?? []).sort((a, b) => a - b),
+      }));
+    const vacations = readVacations()
+      .filter((v) => v.endsAt === null || v.endsAt >= cutoff)
+      .sort((a, b) => a.startsAt - b.startsAt);
+    return ok({ todos, avoid, vacations });
   },
 
   async create(input: CreateTodoInput) {
@@ -156,15 +239,18 @@ export const localTodoRepository: TodoRepository = {
     const all = readAll();
     const parentId = parsed.data.parentId ?? null;
 
-    // Subtasks inherit isPersonal from the parent and can't have recurrence.
+    // Subtasks inherit isPersonal from the parent and can't have recurrence
+    // or be avoid-tracked (avoid-todos can't be subtasks at all).
     let isPersonal = parsed.data.isPersonal ?? false;
     let recurrence = parsed.data.recurrence ?? null;
+    let kind = parsed.data.kind ?? "do";
     if (parentId !== null) {
       const parent = all.find((t) => t.id === parentId);
       if (!parent) return err("Not found");
       if (parent.parentId !== null) return err("Parent must be top-level");
       isPersonal = parent.isPersonal;
       recurrence = null;
+      kind = "do";
     }
 
     const now = Date.now();
@@ -178,6 +264,11 @@ export const localTodoRepository: TodoRepository = {
       sortOrder: nextSortOrder(all, parentId),
       recurrence,
       pinnedToWeek: parsed.data.pinnedToWeek ?? false,
+      kind,
+      limitCount: kind === "avoid" ? parsed.data.limitCount ?? null : null,
+      limitPeriod: kind === "avoid" ? parsed.data.limitPeriod ?? null : null,
+      oncePerDay: kind === "avoid" ? parsed.data.oncePerDay ?? false : false,
+      recentSlips: [],
       lastCompletedAt: null,
       createdAt: now,
       updatedAt: now,
@@ -237,6 +328,43 @@ export const localTodoRepository: TodoRepository = {
       };
     }
 
+    // Cross-field invariants involving the persisted row state — schema-level
+    // refinements only see the request body. Mirrors the server PATCH guards.
+    const effectiveKind = parsed.data.kind ?? previous.kind;
+    const effectiveParentId =
+      parsed.data.parentId !== undefined
+        ? parsed.data.parentId
+        : previous.parentId;
+    const effectiveRecurrenceForKind =
+      parsed.data.recurrence !== undefined
+        ? parsed.data.recurrence
+        : previous.recurrence;
+    if (effectiveKind === "avoid" && effectiveParentId !== null) {
+      return err("Avoid todos cannot be subtasks");
+    }
+    if (effectiveKind === "avoid" && effectiveRecurrenceForKind !== null) {
+      return err("Avoid todos cannot be recurring");
+    }
+    // Require the persisted row to already be avoid — see the matching guard
+    // in /api/todos/[id]/route.ts for why a same-patch kind switch is rejected.
+    if (
+      (parsed.data.recordSlip === true || parsed.data.undoLastSlip === true) &&
+      previous.kind !== "avoid"
+    ) {
+      return err("Slip operations only apply to avoid todos");
+    }
+    if (effectiveKind !== "avoid") {
+      if (
+        (parsed.data.limitCount !== undefined && parsed.data.limitCount !== null) ||
+        (parsed.data.limitPeriod !== undefined && parsed.data.limitPeriod !== null)
+      ) {
+        return err("Limits only apply to avoid todos");
+      }
+      if (parsed.data.oncePerDay === true) {
+        return err("Once-per-day only applies to avoid todos");
+      }
+    }
+
     const updated = applyUpdate(previous, effectivePatch);
     let next = [...all];
     next[index] = updated;
@@ -259,6 +387,70 @@ export const localTodoRepository: TodoRepository = {
       next = cascadeUncompleteChildren(next, id);
     }
     writeAll(next);
+
+    // Avoid todos: each slip is logged as a completion event without
+    // flipping `completed`. Mirror the server's recordSlip handling.
+    if (parsed.data.recordSlip === true && previous.kind === "avoid") {
+      // Local repo can use the precise local-calendar-day check (vs. the
+      // server's 24h rolling fallback) since we have the user's timezone
+      // available client-side. Idempotent: a duplicate slip on the same
+      // local day is a no-op rather than an error so the optimistic UI
+      // doesn't roll back.
+      if (previous.oncePerDay) {
+        const existingEvents = readCompletions();
+        const todaySlip = existingEvents.some(
+          (e) => e.todoId === id && hasSlipToday([e.completedAt])
+        );
+        if (todaySlip) {
+          return ok(withRecentSlips(updated, existingEvents));
+        }
+      }
+      const slipAt = Date.now();
+      next[index] = { ...updated, lastCompletedAt: slipAt };
+      writeAll(next);
+      const events = [
+        ...readCompletions(),
+        { todoId: id, completedAt: slipAt },
+      ];
+      writeCompletions(events);
+      return ok(withRecentSlips(next[index], events));
+    }
+
+    // Undo the most recent slip. Mirrors the server transaction: drop the
+    // latest event and rebase lastCompletedAt onto the new latest (or null).
+    if (parsed.data.undoLastSlip === true && previous.kind === "avoid") {
+      const events = readCompletions();
+      let latestIdx = -1;
+      let latestAt = -Infinity;
+      for (let i = 0; i < events.length; i++) {
+        if (events[i].todoId === id && events[i].completedAt > latestAt) {
+          latestAt = events[i].completedAt;
+          latestIdx = i;
+        }
+      }
+      if (latestIdx === -1) {
+        // No slip to undo — return the row as-is.
+        writeAll(next);
+        return ok(withRecentSlips(updated, events));
+      }
+      const remaining = [
+        ...events.slice(0, latestIdx),
+        ...events.slice(latestIdx + 1),
+      ];
+      writeCompletions(remaining);
+      let nextLastCompletedAt: number | null = null;
+      for (const e of remaining) {
+        if (
+          e.todoId === id &&
+          (nextLastCompletedAt === null || e.completedAt > nextLastCompletedAt)
+        ) {
+          nextLastCompletedAt = e.completedAt;
+        }
+      }
+      next[index] = { ...updated, lastCompletedAt: nextLastCompletedAt };
+      writeAll(next);
+      return ok(withRecentSlips(next[index], remaining));
+    }
 
     if (
       parsed.data.completed === true &&
@@ -295,7 +487,7 @@ export const localTodoRepository: TodoRepository = {
         ]);
       }
     }
-    return ok(updated);
+    return ok(withRecentSlips(updated, readCompletions()));
   },
 
   async delete(id: string) {
@@ -304,6 +496,37 @@ export const localTodoRepository: TodoRepository = {
     // Cascade-delete children to mirror ON DELETE CASCADE in SQLite.
     writeAll(all.filter((t) => t.id !== id && t.parentId !== id));
     return ok({ success: true as const });
+  },
+
+  async vacation() {
+    const periods = readVacations().sort((a, b) => a.startsAt - b.startsAt);
+    const active = periods.find((p) => p.endsAt === null) ?? null;
+    return ok<VacationDTO>({ periods, active });
+  },
+
+  async setVacation(action: "start" | "end") {
+    const now = Date.now();
+    const periods = readVacations();
+    const open = periods.find((p) => p.endsAt === null) ?? null;
+    let next = periods;
+    if (action === "start") {
+      if (!open) {
+        next = [
+          ...periods,
+          { id: crypto.randomUUID(), startsAt: now, endsAt: null },
+        ];
+      }
+    } else {
+      // Defensive: close *every* open row, mirroring the server's UPDATE
+      // and protecting against historical data that predates this guard.
+      next = periods.map((p) =>
+        p.endsAt === null ? { ...p, endsAt: now } : p
+      );
+    }
+    const sorted = [...next].sort((a, b) => a.startsAt - b.startsAt);
+    writeVacations(sorted);
+    const active = sorted.find((p) => p.endsAt === null) ?? null;
+    return ok<VacationDTO>({ periods: sorted, active });
   },
 
   async reorder(ids: string[], parentId: string | null) {
@@ -332,4 +555,5 @@ export function clearGuestTodos(): void {
   window.localStorage.removeItem(STORAGE_KEY);
   window.localStorage.removeItem(LEGACY_SUBTASKS_KEY);
   window.localStorage.removeItem(COMPLETIONS_KEY);
+  window.localStorage.removeItem(VACATIONS_KEY);
 }

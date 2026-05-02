@@ -150,6 +150,19 @@ export const todos = sqliteTable(
     sortOrder: integer("sort_order").notNull().default(0),
     recurrence: text("recurrence", { enum: ["daily", "weekly"] }),
     pinnedToWeek: integer("pinned_to_week", { mode: "boolean" }).notNull().default(false),
+    // "do" = normal todo (default). "avoid" = bad-habit tracker: each tap
+    // logs a slip into todoCompletions instead of flipping completed, and the
+    // row never archives — it stays visible so future slips can be logged.
+    kind: text("kind", { enum: ["do", "avoid"] }).notNull().default("do"),
+    // Optional warning threshold for avoid-todos. limitCount slips inside
+    // the current calendar limitPeriod (Mon–Sun week, or 1st–end-of-month)
+    // trips an at/over-limit warning on the card.
+    limitCount: integer("limit_count"),
+    limitPeriod: text("limit_period", { enum: ["week", "month"] }),
+    // Avoid-only: when true, the +1 button disables for the rest of the
+    // local day after one slip. Each calendar day still counts at most once
+    // toward the limit window, regardless of taps.
+    oncePerDay: integer("once_per_day", { mode: "boolean" }).notNull().default(false),
     lastCompletedAt: integer("last_completed_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
@@ -161,6 +174,38 @@ export const todos = sqliteTable(
   (table) => [
     index("idx_todos_user").on(table.userId, table.completed, table.sortOrder),
     index("idx_todos_parent").on(table.parentId, table.sortOrder),
+  ]
+);
+
+// Vacation periods. While a row's [startsAt, endsAt) interval covers a
+// given day, recurring "do" misses and avoid slips on that day count as
+// neutral in analytics rather than as failures. endsAt is null while a
+// vacation is currently active. Only days *after* a vacation row's
+// startsAt are affected — toggling on does not retroactively neutralize
+// prior misses.
+export const vacations = sqliteTable(
+  "vacations",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    startsAt: integer("starts_at", { mode: "timestamp" }).notNull(),
+    endsAt: integer("ends_at", { mode: "timestamp" }),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    index("idx_vacations_user").on(table.userId, table.startsAt),
+    // Partial unique index: at most one open (currently-active) vacation
+    // per user. Lets concurrent toggle-on requests race safely — the
+    // second insert hits the constraint instead of creating a duplicate.
+    uniqueIndex("idx_vacations_one_open_per_user")
+      .on(table.userId)
+      .where(sql`ends_at IS NULL`),
   ]
 );
 

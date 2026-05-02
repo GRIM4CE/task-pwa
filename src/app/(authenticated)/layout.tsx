@@ -67,24 +67,21 @@ export default function AuthenticatedLayout({
           paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)",
         }}
       >
-        <div className="mx-auto flex max-w-2xl items-center justify-between gap-3 px-4 pb-3">
+        <div className="mx-auto flex max-w-2xl items-center gap-3 px-4 pb-3">
           <Link
             href="/todos/joined"
             className="shrink-0 text-lg font-semibold text-on-surface hover:text-primary"
           >
             Todo
           </Link>
-          <nav
-            className="flex min-w-0 flex-1 items-center justify-center gap-1"
-            aria-label="Todo scope"
-          >
+          <nav className="flex min-w-0 flex-1 items-center justify-end gap-2" aria-label="Primary">
             <Link
               href="/todos/joined"
               aria-current={joinedActive ? "page" : undefined}
-              className={`rounded-md px-3 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
+              className={`px-2 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
                 joinedActive
-                  ? "bg-primary font-semibold text-white shadow-md"
-                  : "font-medium text-on-surface/60 hover:bg-surface-hover hover:text-on-surface"
+                  ? "font-medium text-on-surface underline decoration-primary decoration-2 underline-offset-4"
+                  : "text-on-surface/60 hover:text-on-surface hover:underline hover:underline-offset-4"
               }`}
             >
               Joined
@@ -92,16 +89,14 @@ export default function AuthenticatedLayout({
             <Link
               href="/todos/personal"
               aria-current={personalActive ? "page" : undefined}
-              className={`rounded-md px-3 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
+              className={`px-2 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
                 personalActive
-                  ? "bg-primary font-semibold text-white shadow-md"
-                  : "font-medium text-on-surface/60 hover:bg-surface-hover hover:text-on-surface"
+                  ? "font-medium text-on-surface underline decoration-primary decoration-2 underline-offset-4"
+                  : "text-on-surface/60 hover:text-on-surface hover:underline hover:underline-offset-4"
               }`}
             >
               Personal
             </Link>
-          </nav>
-          <nav className="flex shrink-0 items-center gap-1" aria-label="Primary">
             <ThemeSwitcher />
             <Link
               href="/stats"

@@ -1,4 +1,9 @@
-import type { RecurringTodoStats } from "@/lib/api-client";
+import type {
+  AvoidTodoStats,
+  LimitPeriod,
+  RecurringTodoStats,
+  VacationPeriod,
+} from "@/lib/api-client";
 
 // Week starts on Monday (ISO 8601). All boundaries are computed in the
 // browser's local timezone so they match the recurrence reset logic.
@@ -35,6 +40,9 @@ export interface DayCell {
   completed: boolean;
   isFuture: boolean;
   isToday: boolean;
+  // True when the user was on vacation at any point during the day.
+  // Misses on vacation days are neutral (yellow) instead of failing.
+  onVacation: boolean;
 }
 
 export interface DailyStat {
@@ -44,6 +52,7 @@ export interface DailyStat {
   totalDays: number;
   days: DayCell[];
   streak: number;
+  bestStreak: number;
   heatmap: DayCell[];
 }
 
@@ -54,6 +63,10 @@ export interface WeekCell {
   isFuture: boolean;
   isCurrent: boolean;
   label: string;
+  // True when the entire week was covered by a vacation period. Partial
+  // overlap doesn't neutralize a weekly miss — the user still had non-
+  // vacation days inside the week to satisfy it.
+  onVacation: boolean;
 }
 
 export interface WeeklyStat {
@@ -63,6 +76,13 @@ export interface WeeklyStat {
   totalWeeks: number;
   weeks: WeekCell[];
   streak: number;
+  bestStreak: number;
+}
+
+export interface AtRiskTodo {
+  id: string;
+  title: string;
+  currentStreak: number;
 }
 
 export interface GlobalStats {
@@ -73,23 +93,117 @@ export interface GlobalStats {
   // habit's creation date so habits added mid-week don't drag the score.
   weekCompletedDays: number;
   weekTotalDays: number;
-  // Same partial-window logic applied to last week (e.g. Mon..Sat last
-  // week if today is Saturday) so the "vs last week" delta is apples to
-  // apples. Null when last week's window has no countable days (all
-  // habits were created this week) — the two values are always set or
-  // cleared together, so a single nullable bag keeps that invariant.
-  lastWeek: { completed: number; total: number } | null;
-  // Weekly-this-month over elapsed weeks (including the in-progress one),
-  // restricted to weeks at or after each habit's first active week.
+  // Same elapsed-window logic applied to last week (e.g. Mon..Sat last
+  // week if today is Saturday) so the "vs last week" delta compares
+  // apples to apples instead of partial-this-week vs full-last-week.
+  // Each daily todo only contributes days where it existed at the start
+  // of the day; vacation days are dropped from the denominator unless
+  // the todo was completed that day. Eligible = 0 means "no comparable
+  // history" — the UI hides the delta in that case.
+  prevWeekCompletedDays: number;
+  prevWeekEligibleDays: number;
   monthCompletedWeeks: number;
   monthTotalWeeks: number;
+  prevMonthCompletedWeeks: number;
+  prevMonthEligibleWeeks: number;
+  atRiskToday: AtRiskTodo[];
+  // Mon..Sun completion summary across all daily todos over the
+  // trailing 30-day window, excluding today (in-progress) and days
+  // before each todo was created. `rate` is null when no eligible
+  // samples landed in the bucket.
+  weekdayConsistency: WeekdayConsistencyEntry[];
 }
 
 export interface ComputedStats {
   daily: DailyStat[];
   weekly: WeeklyStat[];
+  avoid: AvoidStat[];
   global: GlobalStats;
 }
+
+export type AvoidStatus = "ok" | "warn" | "over";
+
+// Returns true when the day at `dayStart` falls inside any vacation period.
+// A period covers a day when it overlaps with any second of [dayStart, dayEnd),
+// matching how the daily heatmap thinks about days. Per the product decision,
+// vacations are not retroactive — only days *after* the period's startsAt are
+// considered, so toggling vacation on doesn't neutralize earlier misses.
+function dayOnVacation(
+  dayStart: number,
+  dayEnd: number,
+  vacations: VacationPeriod[],
+  now: number
+): boolean {
+  for (const v of vacations) {
+    const end = v.endsAt ?? now;
+    if (v.startsAt < dayEnd && end > dayStart) return true;
+  }
+  return false;
+}
+
+// True when the timestamp falls inside any vacation period — used for slip
+// classification. Open-ended periods extend to `now`.
+function timestampOnVacation(
+  ts: number,
+  vacations: VacationPeriod[],
+  now: number
+): boolean {
+  for (const v of vacations) {
+    const end = v.endsAt ?? now;
+    if (ts >= v.startsAt && ts < end) return true;
+  }
+  return false;
+}
+
+// Walks the same gap-anchored "best clean streak" math but treats vacation
+// slips as if they didn't happen — they neither reset the streak nor count
+// against the day-clean tally.
+function filterNonVacationSlips(
+  completions: number[],
+  vacations: VacationPeriod[],
+  now: number
+): number[] {
+  if (vacations.length === 0) return completions;
+  return completions.filter((ts) => !timestampOnVacation(ts, vacations, now));
+}
+
+export interface AvoidStat {
+  id: string;
+  title: string;
+  limitCount: number | null;
+  limitPeriod: LimitPeriod;
+  // Slips inside the rolling window (last 7 / last 30 days). For unlimited
+  // avoid-todos we still report a 30-day count for context.
+  windowSlipCount: number;
+  windowDays: number;
+  // Slips ever recorded (within the API's 120-day retention).
+  totalSlips: number;
+  status: AvoidStatus;
+  // Days since the most recent slip — null when there's never been one.
+  daysClean: number | null;
+  bestStreakDays: number;
+  // Last 30 days of slips for a sparkline-style heatmap.
+  heatmap: AvoidHeatCell[];
+  // Milestone hit by `daysClean` (e.g. 7, 14, 30, 60, 90), or null when
+  // none has been reached yet.
+  milestone: number | null;
+}
+
+export interface AvoidHeatCell {
+  date: number;
+  slips: number;
+  isToday: boolean;
+  // True when the day was at any point covered by a vacation period.
+  // Slips on those days are rendered yellow regardless of count.
+  onVacation: boolean;
+}
+
+const AVOID_HEATMAP_DAYS = 30;
+const AVOID_MILESTONES = [365, 180, 90, 60, 30, 14, 7];
+// Threshold for the warning state: if you're within this fraction of your
+// limit (but not yet at it), flag the card amber so it's actionable before
+// you cross the line.
+const AVOID_WARN_RATIO = 0.8;
 
 const HEATMAP_DAYS = 30;
 
@@ -111,52 +225,160 @@ function completedWeekSet(completions: number[]): Set<number> {
 
 // Walks backward from today (or yesterday, if today isn't done yet so an
 // in-progress day doesn't break the streak) counting consecutive completed
-// days. Capped indirectly by the API's 120-day completions window.
-function dailyStreak(completions: number[], todayStart: Date): number {
+// days. Vacation days are transparent: a missed vacation day neither
+// extends nor breaks the streak (it's "skipped"), while a completion that
+// happens on a vacation day still counts. Capped indirectly by the API's
+// 120-day completions window.
+function dailyStreak(
+  completions: number[],
+  todayStart: Date,
+  vacations: VacationPeriod[],
+  now: number
+): number {
   if (completions.length === 0) return 0;
   const days = completedDaySet(completions);
-  const today = todayStart.getTime();
-  const yesterday = addDays(todayStart, -1).getTime();
-  let cursor: number;
-  if (days.has(today)) cursor = today;
-  else if (days.has(yesterday)) cursor = yesterday;
-  else return 0;
+  const isVacationDay = (d: Date): boolean =>
+    dayOnVacation(d.getTime(), addDays(d, 1).getTime(), vacations, now);
+
+  let cursorDate: Date;
+  if (days.has(todayStart.getTime())) cursorDate = todayStart;
+  else if (isVacationDay(todayStart)) cursorDate = addDays(todayStart, -1);
+  else if (days.has(addDays(todayStart, -1).getTime())) {
+    cursorDate = addDays(todayStart, -1);
+  } else return 0;
+
   let count = 0;
-  while (days.has(cursor)) {
-    count++;
-    cursor = addDays(new Date(cursor), -1).getTime();
+  while (true) {
+    const ms = cursorDate.getTime();
+    if (days.has(ms)) {
+      count++;
+      cursorDate = addDays(cursorDate, -1);
+      continue;
+    }
+    if (isVacationDay(cursorDate)) {
+      cursorDate = addDays(cursorDate, -1);
+      continue;
+    }
+    break;
   }
   return count;
 }
 
-function weeklyStreak(completions: number[], thisWeekStart: Date): number {
+function weeklyStreak(
+  completions: number[],
+  thisWeekStart: Date,
+  vacations: VacationPeriod[],
+  now: number
+): number {
   if (completions.length === 0) return 0;
   const weeks = completedWeekSet(completions);
-  const thisWeek = thisWeekStart.getTime();
-  const lastWeek = addDays(thisWeekStart, -DAYS_IN_WEEK).getTime();
-  let cursor: number;
-  if (weeks.has(thisWeek)) cursor = thisWeek;
-  else if (weeks.has(lastWeek)) cursor = lastWeek;
-  else return 0;
+  const isFullVacationWeek = (start: Date): boolean => {
+    const startMs = start.getTime();
+    const endMs = addDays(start, DAYS_IN_WEEK).getTime();
+    return weekFullyOnVacation(startMs, endMs, vacations, now);
+  };
+
+  let cursorDate: Date;
+  if (weeks.has(thisWeekStart.getTime())) cursorDate = thisWeekStart;
+  else if (isFullVacationWeek(thisWeekStart)) {
+    cursorDate = addDays(thisWeekStart, -DAYS_IN_WEEK);
+  } else if (weeks.has(addDays(thisWeekStart, -DAYS_IN_WEEK).getTime())) {
+    cursorDate = addDays(thisWeekStart, -DAYS_IN_WEEK);
+  } else return 0;
+
   let count = 0;
-  while (weeks.has(cursor)) {
-    count++;
-    cursor = addDays(new Date(cursor), -DAYS_IN_WEEK).getTime();
+  while (true) {
+    const ms = cursorDate.getTime();
+    if (weeks.has(ms)) {
+      count++;
+      cursorDate = addDays(cursorDate, -DAYS_IN_WEEK);
+      continue;
+    }
+    if (isFullVacationWeek(cursorDate)) {
+      cursorDate = addDays(cursorDate, -DAYS_IN_WEEK);
+      continue;
+    }
+    break;
   }
   return count;
 }
 
-function dailyHeatmap(completions: number[], todayStart: Date): DayCell[] {
+// True when *every* day of [weekStart, weekEnd) is covered by some vacation
+// period. A partially-vacation week still requires the user to have
+// satisfied the recurrence on a non-vacation day, so it's not neutralized.
+function weekFullyOnVacation(
+  weekStart: number,
+  weekEnd: number,
+  vacations: VacationPeriod[],
+  now: number
+): boolean {
+  if (vacations.length === 0) return false;
+  let cursor = new Date(weekStart);
+  while (cursor.getTime() < weekEnd) {
+    const next = addDays(cursor, 1);
+    if (!dayOnVacation(cursor.getTime(), next.getTime(), vacations, now)) {
+      return false;
+    }
+    cursor = next;
+  }
+  return true;
+}
+
+// Longest-ever consecutive-day run within the API's 120-day window.
+// Uses date arithmetic rather than ms subtraction so DST transitions
+// don't break the streak.
+function longestDailyRun(completions: number[]): number {
+  if (completions.length === 0) return 0;
+  const days = [...completedDaySet(completions)].sort((a, b) => a - b);
+  let best = 1;
+  let run = 1;
+  for (let i = 1; i < days.length; i++) {
+    const expected = addDays(new Date(days[i - 1]), 1).getTime();
+    if (days[i] === expected) {
+      run++;
+      if (run > best) best = run;
+    } else {
+      run = 1;
+    }
+  }
+  return best;
+}
+
+function longestWeeklyRun(completions: number[]): number {
+  if (completions.length === 0) return 0;
+  const weeks = [...completedWeekSet(completions)].sort((a, b) => a - b);
+  let best = 1;
+  let run = 1;
+  for (let i = 1; i < weeks.length; i++) {
+    const expected = addDays(new Date(weeks[i - 1]), DAYS_IN_WEEK).getTime();
+    if (weeks[i] === expected) {
+      run++;
+      if (run > best) best = run;
+    } else {
+      run = 1;
+    }
+  }
+  return best;
+}
+
+function dailyHeatmap(
+  completions: number[],
+  todayStart: Date,
+  vacations: VacationPeriod[],
+  now: number
+): DayCell[] {
   const days = completedDaySet(completions);
   const cells: DayCell[] = [];
   for (let i = HEATMAP_DAYS - 1; i >= 0; i--) {
     const dayStart = addDays(todayStart, -i);
     const startMs = dayStart.getTime();
+    const endMs = addDays(dayStart, 1).getTime();
     cells.push({
       date: startMs,
       completed: days.has(startMs),
       isFuture: false,
       isToday: i === 0,
+      onVacation: dayOnVacation(startMs, endMs, vacations, now),
     });
   }
   return cells;
@@ -165,7 +387,9 @@ function dailyHeatmap(completions: number[], todayStart: Date): DayCell[] {
 function dailyForTodo(
   todo: RecurringTodoStats,
   weekStart: Date,
-  todayStart: Date
+  todayStart: Date,
+  vacations: VacationPeriod[],
+  now: number
 ): DailyStat {
   const days: DayCell[] = [];
   let completedCount = 0;
@@ -183,6 +407,7 @@ function dailyForTodo(
       completed,
       isFuture: dayStart.getTime() > todayStart.getTime(),
       isToday: dayStart.getTime() === todayStart.getTime(),
+      onVacation: dayOnVacation(startMs, endMs, vacations, now),
     });
   }
   return {
@@ -191,8 +416,9 @@ function dailyForTodo(
     completedCount,
     totalDays: DAYS_IN_WEEK,
     days,
-    streak: dailyStreak(todo.completions, todayStart),
-    heatmap: dailyHeatmap(todo.completions, todayStart),
+    streak: dailyStreak(todo.completions, todayStart, vacations, now),
+    bestStreak: longestDailyRun(todo.completions),
+    heatmap: dailyHeatmap(todo.completions, todayStart, vacations, now),
   };
 }
 
@@ -209,7 +435,9 @@ function weeksInMonth(monthStart: Date, monthEnd: Date): { start: Date; end: Dat
 function weeklyForTodo(
   todo: RecurringTodoStats,
   weeks: { start: Date; end: Date }[],
-  thisWeekStart: Date
+  thisWeekStart: Date,
+  vacations: VacationPeriod[],
+  now: number
 ): WeeklyStat {
   let completedCount = 0;
   const cells: WeekCell[] = weeks.map((w, i) => {
@@ -226,6 +454,7 @@ function weeklyForTodo(
       isFuture: startMs > thisWeekStart.getTime(),
       isCurrent: startMs === thisWeekStart.getTime(),
       label: `Week ${i + 1}`,
+      onVacation: weekFullyOnVacation(startMs, endMs, vacations, now),
     };
   });
   return {
@@ -234,21 +463,26 @@ function weeklyForTodo(
     completedCount,
     totalWeeks: cells.length,
     weeks: cells,
-    streak: weeklyStreak(todo.completions, thisWeekStart),
+    streak: weeklyStreak(todo.completions, thisWeekStart, vacations, now),
+    bestStreak: longestWeeklyRun(todo.completions),
   };
 }
 
-// Sums completed and possible day-instances across `dailyTodos` over the
-// half-open window [windowStart, windowEndExclusive). A day counts toward
-// a habit's denominator only when it's on or after the habit's creation
-// day, so a habit added Wednesday isn't penalised for Mon/Tue.
-function elapsedDailyTotals(
+// Sums completed and eligible day-instances across `dailyTodos` over the
+// half-open window [windowStart, windowEndExclusive). A day only counts
+// toward a habit's denominator when (a) it's on or after the habit's
+// creation day — so a habit added Wednesday isn't penalised for Mon/Tue —
+// and (b) it isn't a vacation day the habit went un-done on, since a
+// missed vacation day is neutral, not a failure.
+function elapsedDailyStats(
   dailyTodos: RecurringTodoStats[],
   windowStart: Date,
-  windowEndExclusive: Date
-): { completed: number; total: number } {
+  windowEndExclusive: Date,
+  vacations: VacationPeriod[],
+  now: number
+): { completed: number; eligible: number } {
   let completed = 0;
-  let total = 0;
+  let eligible = 0;
   const endMs = windowEndExclusive.getTime();
   for (const t of dailyTodos) {
     const habitDayStart = startOfDay(new Date(t.createdAt)).getTime();
@@ -257,88 +491,271 @@ function elapsedDailyTotals(
     while (cursor.getTime() < endMs) {
       const ms = cursor.getTime();
       if (ms >= habitDayStart) {
-        total++;
-        if (completedSet.has(ms)) completed++;
+        const wasCompleted = completedSet.has(ms);
+        const dayEndMs = addDays(cursor, 1).getTime();
+        const onVacation = dayOnVacation(ms, dayEndMs, vacations, now);
+        if (!(onVacation && !wasCompleted)) {
+          eligible++;
+          if (wasCompleted) completed++;
+        }
       }
       cursor = addDays(cursor, 1);
     }
   }
-  return { completed, total };
+  return { completed, eligible };
 }
 
-// Sums completed and possible week-instances across `weeklyTodos` over
+// Sums completed and eligible week-instances across `weeklyTodos` over
 // the elapsed weeks of the current month (weeks whose Monday is on or
-// before this Monday). Same per-habit gate by creation week.
-function elapsedWeeklyTotals(
+// before this Monday). Same per-habit creation-week gate; weeks fully
+// covered by vacation with nothing logged are dropped from the
+// denominator (the user wasn't expected to do them).
+function elapsedWeeklyStats(
   weeklyTodos: RecurringTodoStats[],
   monthWeeks: { start: Date; end: Date }[],
-  thisWeekStart: Date
-): { completed: number; total: number } {
+  thisWeekStart: Date,
+  vacations: VacationPeriod[],
+  now: number
+): { completed: number; eligible: number } {
   const elapsed = monthWeeks.filter(
     (w) => w.start.getTime() <= thisWeekStart.getTime()
   );
   let completed = 0;
-  let total = 0;
+  let eligible = 0;
   for (const t of weeklyTodos) {
     const habitWeekStart = startOfWeek(new Date(t.createdAt)).getTime();
     const completedSet = completedWeekSet(t.completions);
     for (const w of elapsed) {
       const ms = w.start.getTime();
-      if (ms >= habitWeekStart) {
-        total++;
-        if (completedSet.has(ms)) completed++;
+      if (ms < habitWeekStart) continue;
+      const wasCompleted = completedSet.has(ms);
+      if (
+        !wasCompleted &&
+        weekFullyOnVacation(ms, w.end.getTime(), vacations, now)
+      ) {
+        continue;
       }
+      eligible++;
+      if (wasCompleted) completed++;
     }
   }
-  return { completed, total };
+  return { completed, eligible };
+}
+
+function countCompletionsInRange(
+  completions: number[],
+  startMs: number,
+  endMs: number
+): number {
+  let n = 0;
+  for (const c of completions) {
+    if (c >= startMs && c < endMs) n++;
+  }
+  return n;
+}
+
+function prevMonthRange(monthStart: Date): { start: Date; end: Date } {
+  const start = new Date(
+    monthStart.getFullYear(),
+    monthStart.getMonth() - 1,
+    1,
+    0,
+    0,
+    0,
+    0
+  );
+  return { start, end: monthStart };
+}
+
+// Eligibility-aware prev-month aggregate: only weeks where the weekly
+// todo existed at the start of the week count toward the denominator.
+// A week fully covered by vacation is also dropped from the denominator
+// when nothing was logged inside it — the user wasn't expected to.
+function prevMonthStats(
+  weeklyTodos: RecurringTodoStats[],
+  prevWeeks: { start: Date; end: Date }[],
+  vacations: VacationPeriod[],
+  now: number
+): { completed: number; eligible: number } {
+  let completed = 0;
+  let eligible = 0;
+  for (const t of weeklyTodos) {
+    for (const w of prevWeeks) {
+      if (t.createdAt > w.start.getTime()) continue;
+      const hits = countCompletionsInRange(
+        t.completions,
+        w.start.getTime(),
+        w.end.getTime()
+      );
+      if (
+        hits === 0 &&
+        weekFullyOnVacation(w.start.getTime(), w.end.getTime(), vacations, now)
+      ) {
+        continue;
+      }
+      eligible++;
+      if (hits > 0) completed++;
+    }
+  }
+  return { completed, eligible };
+}
+
+export interface WeekdayConsistencyEntry {
+  // null when no eligible samples landed in this weekday in the
+  // 30-day window (e.g., todo too new). Distinguishes "no data"
+  // from a genuine 0% completion day.
+  rate: number | null;
+  samples: number;
+}
+
+function weekdayConsistency(
+  dailyTodos: RecurringTodoStats[],
+  todayStart: Date,
+  vacations: VacationPeriod[],
+  now: number
+): WeekdayConsistencyEntry[] {
+  const buckets: number[][] = Array.from({ length: 7 }, () => []);
+  if (dailyTodos.length === 0) {
+    return buckets.map(() => ({ rate: null, samples: 0 }));
+  }
+  const sets = dailyTodos.map((t) => completedDaySet(t.completions));
+  // Walk the past 30 days, skipping today (still in progress).
+  for (let i = 1; i <= HEATMAP_DAYS; i++) {
+    const day = addDays(todayStart, -i);
+    const dayMs = day.getTime();
+    const dayEndMs = addDays(day, 1).getTime();
+    const weekday = (day.getDay() + 6) % 7;
+    const onVacation = dayOnVacation(dayMs, dayEndMs, vacations, now);
+    let eligible = 0;
+    let completed = 0;
+    for (let j = 0; j < dailyTodos.length; j++) {
+      if (dailyTodos[j].createdAt > dayMs) continue;
+      const wasCompleted = sets[j].has(dayMs);
+      // On vacation: only count completions, never count misses against
+      // the bucket. Without this, a quiet vacation tanks the day's rate.
+      if (onVacation && !wasCompleted) continue;
+      eligible++;
+      if (wasCompleted) completed++;
+    }
+    if (eligible > 0) buckets[weekday].push(completed / eligible);
+  }
+  return buckets.map((arr) =>
+    arr.length === 0
+      ? { rate: null, samples: 0 }
+      : {
+          rate: arr.reduce((a, b) => a + b, 0) / arr.length,
+          samples: arr.length,
+        }
+  );
 }
 
 export function computeStats(
   todos: RecurringTodoStats[],
-  now: Date = new Date()
+  now: Date = new Date(),
+  avoidTodos: AvoidTodoStats[] = [],
+  vacations: VacationPeriod[] = []
 ): ComputedStats {
   const todayStart = startOfDay(now);
   const weekStart = startOfWeek(now);
   const monthStart = startOfMonth(now);
   const monthEnd = startOfNextMonth(now);
   const monthWeeks = weeksInMonth(monthStart, monthEnd);
+  const nowMs = now.getTime();
 
   const dailyTodos = todos.filter((t) => t.recurrence === "daily");
   const weeklyTodos = todos.filter((t) => t.recurrence === "weekly");
 
-  const daily = dailyTodos.map((t) => dailyForTodo(t, weekStart, todayStart));
-  const weekly = weeklyTodos.map((t) => weeklyForTodo(t, monthWeeks, weekStart));
+  const daily = dailyTodos.map((t) =>
+    dailyForTodo(t, weekStart, todayStart, vacations, nowMs)
+  );
+  const weekly = weeklyTodos.map((t) =>
+    weeklyForTodo(t, monthWeeks, weekStart, vacations, nowMs)
+  );
+  const avoid = avoidTodos.map((t) =>
+    avoidForTodo(t, todayStart, now, vacations)
+  );
 
   // Elapsed window = Mon..today inclusive. Half-open end is the day after
   // today so today itself is always counted (matches the spec's "today is
-  // always included" rule).
+  // always included" rule). Vacation handling is folded into the helper.
   const elapsedEnd = addDays(todayStart, 1);
-  const { completed: weekCompletedDays, total: weekTotalDays } =
-    elapsedDailyTotals(dailyTodos, weekStart, elapsedEnd);
+  const thisWeek = elapsedDailyStats(
+    dailyTodos,
+    weekStart,
+    elapsedEnd,
+    vacations,
+    nowMs
+  );
+  const weekCompletedDays = thisWeek.completed;
+  const weekTotalDays = thisWeek.eligible;
 
-  // Last-week comparison uses the same number of elapsed days, anchored
-  // at last Monday — e.g. if today is Saturday (day 6), compare Mon..Sat
-  // both weeks rather than against last week's full Mon..Sun.
-  const elapsedDayCount =
-    Math.round((elapsedEnd.getTime() - weekStart.getTime()) / 86_400_000);
+  // Last-week comparison uses the same elapsed-day count anchored at last
+  // Monday — e.g. if today is Saturday (day 6), compare Mon..Sat both
+  // weeks rather than against last week's full Mon..Sun.
+  const elapsedDayCount = Math.round(
+    (elapsedEnd.getTime() - weekStart.getTime()) / 86_400_000
+  );
   const lastWeekStart = addDays(weekStart, -DAYS_IN_WEEK);
   const lastWeekEnd = addDays(lastWeekStart, elapsedDayCount);
-  const lastWeek = elapsedDailyTotals(dailyTodos, lastWeekStart, lastWeekEnd);
+  const prevWeek = elapsedDailyStats(
+    dailyTodos,
+    lastWeekStart,
+    lastWeekEnd,
+    vacations,
+    nowMs
+  );
 
-  const { completed: monthCompletedWeeks, total: monthTotalWeeks } =
-    elapsedWeeklyTotals(weeklyTodos, monthWeeks, weekStart);
+  const monthAgg = elapsedWeeklyStats(
+    weeklyTodos,
+    monthWeeks,
+    weekStart,
+    vacations,
+    nowMs
+  );
+  const monthCompletedWeeks = monthAgg.completed;
+  const monthTotalWeeks = monthAgg.eligible;
+
+  const prevMonth = prevMonthRange(monthStart);
+  const prevMonthWeeks = weeksInMonth(prevMonth.start, prevMonth.end);
+  const prevMonthAgg = prevMonthStats(
+    weeklyTodos,
+    prevMonthWeeks,
+    vacations,
+    nowMs
+  );
+
+  const atRiskToday: AtRiskTodo[] = daily
+    .filter((d) => {
+      const todayCell = d.days.find((c) => c.isToday);
+      // On vacation today → not at risk: a missed vacation day doesn't
+      // break the streak, so there's nothing to flag.
+      if (todayCell?.onVacation) return false;
+      return d.streak > 0 && !todayCell?.completed;
+    })
+    .map((d) => ({ id: d.id, title: d.title, currentStreak: d.streak }));
 
   return {
     daily,
     weekly,
+    avoid,
     global: {
       dailyCount: daily.length,
       weeklyCount: weekly.length,
       weekCompletedDays,
       weekTotalDays,
-      lastWeek: lastWeek.total > 0 ? lastWeek : null,
+      prevWeekCompletedDays: prevWeek.completed,
+      prevWeekEligibleDays: prevWeek.eligible,
       monthCompletedWeeks,
       monthTotalWeeks,
+      prevMonthCompletedWeeks: prevMonthAgg.completed,
+      prevMonthEligibleWeeks: prevMonthAgg.eligible,
+      atRiskToday,
+      weekdayConsistency: weekdayConsistency(
+        dailyTodos,
+        todayStart,
+        vacations,
+        nowMs
+      ),
     },
   };
 }
@@ -346,4 +763,195 @@ export function computeStats(
 export function percent(num: number, denom: number): number {
   if (denom === 0) return 0;
   return Math.round((num / denom) * 100);
+}
+
+// Calendar-window start: the most recent ISO Monday for "week" limits, or
+// the 1st of the current month for "month" limits. Returned in local time so
+// the boundary lines up with the user's clock (and matches the recurrence
+// reset). For unlimited avoid-todos with no period, falls back to a 30-day
+// rolling cutoff so the card still has something to display.
+export function avoidWindowStart(period: LimitPeriod, now: Date): Date {
+  if (period === "week") return startOfWeek(now);
+  if (period === "month") return startOfMonth(now);
+  return new Date(startOfDay(now).getTime() - (AVOID_HEATMAP_DAYS - 1) * 24 * 60 * 60 * 1000);
+}
+
+// Days in the current calendar period — used by the card to surface a count
+// like "3 / 5 this week" without committing to a specific implementation of
+// the boundary check.
+export function avoidWindowDays(period: LimitPeriod, now: Date): number {
+  const start = avoidWindowStart(period, now);
+  if (period === "week") return DAYS_IN_WEEK;
+  if (period === "month") {
+    const end = startOfNextMonth(now);
+    return Math.round(
+      (end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)
+    );
+  }
+  return AVOID_HEATMAP_DAYS;
+}
+
+function countSlipsInWindow(
+  completions: number[],
+  windowStart: number
+): number {
+  return completions.reduce((n, ts) => (ts >= windowStart ? n + 1 : n), 0);
+}
+
+function avoidStatus(
+  count: number,
+  limit: number | null
+): AvoidStatus {
+  if (limit === null || limit <= 0) return "ok";
+  if (count >= limit) return "over";
+  if (count >= Math.ceil(limit * AVOID_WARN_RATIO)) return "warn";
+  return "ok";
+}
+
+function daysSinceLastSlip(
+  completions: number[],
+  todayStart: Date
+): number | null {
+  if (completions.length === 0) return null;
+  const last = Math.max(...completions);
+  const lastDay = startOfDay(new Date(last)).getTime();
+  return Math.max(
+    0,
+    Math.round((todayStart.getTime() - lastDay) / (24 * 60 * 60 * 1000))
+  );
+}
+
+// Best streak = longest run of consecutive whole days with no slip recorded,
+// looking back through the available completion history (capped by the API's
+// 120-day window). The most recent gap is included so an in-progress streak
+// can become the new best.
+function bestCleanStreak(
+  completions: number[],
+  todoCreatedAt: number,
+  now: number
+): number {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const sorted = [...completions].sort((a, b) => a - b);
+  // Anchors: the todo's creation (no slips before it could exist) and the
+  // current moment (so the in-progress gap counts).
+  const anchors = [todoCreatedAt, ...sorted, now];
+  let best = 0;
+  for (let i = 1; i < anchors.length; i++) {
+    const days = Math.floor((anchors[i] - anchors[i - 1]) / dayMs);
+    if (days > best) best = days;
+  }
+  return best;
+}
+
+function avoidHeatmap(
+  completions: number[],
+  todayStart: Date,
+  vacations: VacationPeriod[],
+  now: number
+): AvoidHeatCell[] {
+  // Bucket slips by start-of-day so a day with multiple slips renders darker.
+  const bucket = new Map<number, number>();
+  for (const ts of completions) {
+    const day = startOfDay(new Date(ts)).getTime();
+    bucket.set(day, (bucket.get(day) ?? 0) + 1);
+  }
+  const cells: AvoidHeatCell[] = [];
+  for (let i = AVOID_HEATMAP_DAYS - 1; i >= 0; i--) {
+    const day = addDays(todayStart, -i);
+    const startMs = day.getTime();
+    const endMs = addDays(day, 1).getTime();
+    cells.push({
+      date: startMs,
+      slips: bucket.get(startMs) ?? 0,
+      isToday: i === 0,
+      onVacation: dayOnVacation(startMs, endMs, vacations, now),
+    });
+  }
+  return cells;
+}
+
+function milestoneFor(daysClean: number | null): number | null {
+  if (daysClean === null) return null;
+  for (const m of AVOID_MILESTONES) {
+    if (daysClean >= m) return m;
+  }
+  return null;
+}
+
+function avoidForTodo(
+  todo: AvoidTodoStats,
+  todayStart: Date,
+  now: Date,
+  vacations: VacationPeriod[]
+): AvoidStat {
+  const windowStart = avoidWindowStart(todo.limitPeriod, now).getTime();
+  const windowDays = avoidWindowDays(todo.limitPeriod, now);
+  // Vacation slips are excluded from the limit count and from streak math
+  // so a logged-but-on-vacation slip stays neutral. They still appear in
+  // `totalSlips` and on the heatmap, just rendered yellow.
+  const effective = filterNonVacationSlips(
+    todo.completions,
+    vacations,
+    now.getTime()
+  );
+  const windowSlipCount = countSlipsInWindow(effective, windowStart);
+  const totalSlips = todo.completions.length;
+  const status = avoidStatus(windowSlipCount, todo.limitCount);
+  const daysClean = daysSinceLastSlip(effective, todayStart);
+  const bestStreakDays = bestCleanStreak(
+    effective,
+    todo.createdAt,
+    now.getTime()
+  );
+  return {
+    id: todo.id,
+    title: todo.title,
+    limitCount: todo.limitCount,
+    limitPeriod: todo.limitPeriod,
+    windowSlipCount,
+    windowDays,
+    totalSlips,
+    status,
+    daysClean,
+    bestStreakDays,
+    heatmap: avoidHeatmap(todo.completions, todayStart, vacations, now.getTime()),
+    milestone: milestoneFor(daysClean),
+  };
+}
+
+// Public so the todo card can compute the same status without redoing the
+// arithmetic. Only needs the per-todo info available in the list view.
+// `vacations` is optional — when supplied, slips that fell inside any
+// vacation period are excluded from the count so the card chip matches the
+// stats page.
+export function avoidStatusForTodo(
+  completions: number[],
+  limitCount: number | null,
+  limitPeriod: LimitPeriod,
+  now: number = Date.now(),
+  vacations: VacationPeriod[] = []
+): { count: number; status: AvoidStatus; windowDays: number } {
+  const nowDate = new Date(now);
+  const windowStart = avoidWindowStart(limitPeriod, nowDate).getTime();
+  const windowDays = avoidWindowDays(limitPeriod, nowDate);
+  const effective = filterNonVacationSlips(completions, vacations, now);
+  const count = countSlipsInWindow(effective, windowStart);
+  return { count, status: avoidStatus(count, limitCount), windowDays };
+}
+
+// Whether the given completion list contains a slip on today's local
+// calendar day. Used by the once-per-day card mode to decide whether the
+// +1 button should be disabled. Uses date arithmetic (addDays) for the
+// next-day boundary so DST transitions — where the next local midnight is
+// 23 or 25 hours away — don't shift the window.
+export function hasSlipToday(
+  completions: number[],
+  now: number = Date.now()
+): boolean {
+  const todayStart = startOfDay(new Date(now));
+  const todayStartMs = todayStart.getTime();
+  const tomorrowStartMs = addDays(todayStart, 1).getTime();
+  return completions.some(
+    (ts) => ts >= todayStartMs && ts < tomorrowStartMs
+  );
 }

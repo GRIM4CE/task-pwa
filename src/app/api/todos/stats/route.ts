@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { and, asc, eq, gte, isNotNull, or } from "drizzle-orm";
+import { and, asc, eq, gte, isNotNull, isNull, or } from "drizzle-orm";
 import { validateSession } from "@/lib/session";
 
-// Raw completion timestamps per recurring todo. The client computes
-// week/month aggregates locally so the user's timezone (and locale week
-// boundary) stays authoritative — same approach as the recurrence reset.
+// Raw completion timestamps per tracked todo (recurring + avoid). The client
+// computes week/month/rolling-window aggregates locally so the user's timezone
+// stays authoritative — same approach as the recurrence reset.
 export async function GET() {
   const session = await validateSession();
   if (!session) {
@@ -13,21 +13,32 @@ export async function GET() {
   }
 
   // Pull at most ~120 days of history; weekly stats only need the current
-  // calendar month, daily stats only the current week.
+  // calendar month, daily stats only the current week, monthly avoid windows
+  // need the last 30 days.
   const cutoff = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000);
 
-  const recurringTodos = await db
+  const trackedTodos = await db
     .select({
       id: schema.todos.id,
       title: schema.todos.title,
       recurrence: schema.todos.recurrence,
+      kind: schema.todos.kind,
+      limitCount: schema.todos.limitCount,
+      limitPeriod: schema.todos.limitPeriod,
+      oncePerDay: schema.todos.oncePerDay,
       isPersonal: schema.todos.isPersonal,
       createdAt: schema.todos.createdAt,
     })
     .from(schema.todos)
     .where(
       and(
-        isNotNull(schema.todos.recurrence),
+        // Top-level only — current validation rejects avoid/recurring on
+        // subtasks, but legacy rows could still slip through and pollute stats.
+        isNull(schema.todos.parentId),
+        or(
+          isNotNull(schema.todos.recurrence),
+          eq(schema.todos.kind, "avoid")
+        ),
         or(
           eq(schema.todos.isPersonal, false),
           and(
@@ -61,14 +72,53 @@ export async function GET() {
     byTodo.set(c.todoId, list);
   }
 
+  const recurring = trackedTodos.filter((t) => t.recurrence !== null);
+  const avoid = trackedTodos.filter((t) => t.kind === "avoid");
+
+  // Vacation periods: include the trailing 120-day window (matching the
+  // completions cutoff) plus any currently-active period regardless of
+  // its start. Closed-and-old periods are omitted.
+  const vacationRows = await db
+    .select({
+      id: schema.vacations.id,
+      startsAt: schema.vacations.startsAt,
+      endsAt: schema.vacations.endsAt,
+    })
+    .from(schema.vacations)
+    .where(
+      and(
+        eq(schema.vacations.userId, session.user.id),
+        or(
+          isNull(schema.vacations.endsAt),
+          gte(schema.vacations.endsAt, cutoff)
+        )
+      )
+    )
+    .orderBy(asc(schema.vacations.startsAt));
+
   return NextResponse.json({
-    todos: recurringTodos.map((t) => ({
+    todos: recurring.map((t) => ({
       id: t.id,
       title: t.title,
       recurrence: t.recurrence as "daily" | "weekly",
       isPersonal: t.isPersonal,
       createdAt: t.createdAt.getTime(),
       completions: byTodo.get(t.id) ?? [],
+    })),
+    avoid: avoid.map((t) => ({
+      id: t.id,
+      title: t.title,
+      isPersonal: t.isPersonal,
+      createdAt: t.createdAt.getTime(),
+      limitCount: t.limitCount,
+      limitPeriod: t.limitPeriod,
+      oncePerDay: t.oncePerDay,
+      completions: byTodo.get(t.id) ?? [],
+    })),
+    vacations: vacationRows.map((v) => ({
+      id: v.id,
+      startsAt: v.startsAt.getTime(),
+      endsAt: v.endsAt ? v.endsAt.getTime() : null,
     })),
   });
 }
