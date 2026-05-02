@@ -583,7 +583,7 @@ export default function TodosPage() {
           {activeTab === "joined" ? "Joined Todos" : "Personal Todos"}
         </h2>
         <p className="text-sm text-text-muted">
-          {thisWeekTodos.length + dailyTodos.length + regularActive.length + thisWeekSubtasks.length} remaining
+          {thisWeekTodos.length + dailyTodos.length + thisWeekSubtasks.length} remaining
           {completedTodos.length > 0 ? `, ${completedTodos.length} done` : ""}
         </p>
       </div>
