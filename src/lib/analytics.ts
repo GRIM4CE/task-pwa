@@ -88,12 +88,19 @@ export interface AtRiskTodo {
 export interface GlobalStats {
   dailyCount: number;
   weeklyCount: number;
+  // Daily-this-week numerator/denominator counted only over the elapsed
+  // window (Mon..today inclusive), and only for days at or after each
+  // habit's creation date so habits added mid-week don't drag the score.
   weekCompletedDays: number;
   weekTotalDays: number;
+  // Same elapsed-window logic applied to last week (e.g. Mon..Sat last
+  // week if today is Saturday) so the "vs last week" delta compares
+  // apples to apples instead of partial-this-week vs full-last-week.
+  // Each daily todo only contributes days where it existed at the start
+  // of the day; vacation days are dropped from the denominator unless
+  // the todo was completed that day. Eligible = 0 means "no comparable
+  // history" — the UI hides the delta in that case.
   prevWeekCompletedDays: number;
-  // Days in the prior week where at least one daily todo existed at
-  // the start of the day. Zero when there's no comparable history,
-  // which the UI uses to hide the velocity delta.
   prevWeekEligibleDays: number;
   monthCompletedWeeks: number;
   monthTotalWeeks: number;
@@ -461,6 +468,80 @@ function weeklyForTodo(
   };
 }
 
+// Sums completed and eligible day-instances across `dailyTodos` over the
+// half-open window [windowStart, windowEndExclusive). A day only counts
+// toward a habit's denominator when (a) it's on or after the habit's
+// creation day — so a habit added Wednesday isn't penalised for Mon/Tue —
+// and (b) it isn't a vacation day the habit went un-done on, since a
+// missed vacation day is neutral, not a failure.
+function elapsedDailyStats(
+  dailyTodos: RecurringTodoStats[],
+  windowStart: Date,
+  windowEndExclusive: Date,
+  vacations: VacationPeriod[],
+  now: number
+): { completed: number; eligible: number } {
+  let completed = 0;
+  let eligible = 0;
+  const endMs = windowEndExclusive.getTime();
+  for (const t of dailyTodos) {
+    const habitDayStart = startOfDay(new Date(t.createdAt)).getTime();
+    const completedSet = completedDaySet(t.completions);
+    let cursor = new Date(windowStart);
+    while (cursor.getTime() < endMs) {
+      const ms = cursor.getTime();
+      if (ms >= habitDayStart) {
+        const wasCompleted = completedSet.has(ms);
+        const dayEndMs = addDays(cursor, 1).getTime();
+        const onVacation = dayOnVacation(ms, dayEndMs, vacations, now);
+        if (!(onVacation && !wasCompleted)) {
+          eligible++;
+          if (wasCompleted) completed++;
+        }
+      }
+      cursor = addDays(cursor, 1);
+    }
+  }
+  return { completed, eligible };
+}
+
+// Sums completed and eligible week-instances across `weeklyTodos` over
+// the elapsed weeks of the current month (weeks whose Monday is on or
+// before this Monday). Same per-habit creation-week gate; weeks fully
+// covered by vacation with nothing logged are dropped from the
+// denominator (the user wasn't expected to do them).
+function elapsedWeeklyStats(
+  weeklyTodos: RecurringTodoStats[],
+  monthWeeks: { start: Date; end: Date }[],
+  thisWeekStart: Date,
+  vacations: VacationPeriod[],
+  now: number
+): { completed: number; eligible: number } {
+  const elapsed = monthWeeks.filter(
+    (w) => w.start.getTime() <= thisWeekStart.getTime()
+  );
+  let completed = 0;
+  let eligible = 0;
+  for (const t of weeklyTodos) {
+    const habitWeekStart = startOfWeek(new Date(t.createdAt)).getTime();
+    const completedSet = completedWeekSet(t.completions);
+    for (const w of elapsed) {
+      const ms = w.start.getTime();
+      if (ms < habitWeekStart) continue;
+      const wasCompleted = completedSet.has(ms);
+      if (
+        !wasCompleted &&
+        weekFullyOnVacation(ms, w.end.getTime(), vacations, now)
+      ) {
+        continue;
+      }
+      eligible++;
+      if (wasCompleted) completed++;
+    }
+  }
+  return { completed, eligible };
+}
+
 function countCompletionsInRange(
   completions: number[],
   startMs: number,
@@ -471,42 +552,6 @@ function countCompletionsInRange(
     if (c >= startMs && c < endMs) n++;
   }
   return n;
-}
-
-// Eligibility-aware prev-week aggregate: a daily todo only contributes
-// (createdAt, day) pairs where it actually existed at the start of the
-// day, so a todo created mid-period doesn't deflate the prior-period
-// percentage with phantom 0s. Vacation days are also excluded from the
-// denominator so a missed-on-vacation day doesn't drag the percentage down.
-function prevWeekStats(
-  dailyTodos: RecurringTodoStats[],
-  weekStart: Date,
-  vacations: VacationPeriod[],
-  now: number
-): { completed: number; eligible: number } {
-  const prevStart = addDays(weekStart, -DAYS_IN_WEEK);
-  const prevEndMs = weekStart.getTime();
-  let completed = 0;
-  let eligible = 0;
-  for (const t of dailyTodos) {
-    const completedDays = new Set<number>();
-    for (const c of t.completions) {
-      if (c >= prevStart.getTime() && c < prevEndMs) {
-        completedDays.add(startOfDay(new Date(c)).getTime());
-      }
-    }
-    for (let i = 0; i < DAYS_IN_WEEK; i++) {
-      const dayStart = addDays(prevStart, i);
-      const dayMs = dayStart.getTime();
-      if (t.createdAt > dayMs) continue;
-      const dayEndMs = addDays(dayStart, 1).getTime();
-      const onVacation = dayOnVacation(dayMs, dayEndMs, vacations, now);
-      if (onVacation && !completedDays.has(dayMs)) continue;
-      eligible++;
-      if (completedDays.has(dayMs)) completed++;
-    }
-  }
-  return { completed, eligible };
 }
 
 function prevMonthRange(monthStart: Date): { start: Date; end: Date } {
@@ -630,28 +675,45 @@ export function computeStats(
     avoidForTodo(t, todayStart, now, vacations)
   );
 
-  const weekCompletedDays = daily.reduce((acc, d) => acc + d.completedCount, 0);
-  // Subtract vacation days that weren't completed: they're neutral, not
-  // failures, so they shouldn't be in the denominator.
-  const weekVacationMisses = daily.reduce(
-    (acc, d) =>
-      acc + d.days.filter((c) => c.onVacation && !c.completed).length,
-    0
+  // Elapsed window = Mon..today inclusive. Half-open end is the day after
+  // today so today itself is always counted (matches the spec's "today is
+  // always included" rule). Vacation handling is folded into the helper.
+  const elapsedEnd = addDays(todayStart, 1);
+  const thisWeek = elapsedDailyStats(
+    dailyTodos,
+    weekStart,
+    elapsedEnd,
+    vacations,
+    nowMs
   );
-  const weekTotalDays = daily.length * DAYS_IN_WEEK - weekVacationMisses;
-  const monthCompletedWeeks = weekly.reduce(
-    (acc, w) => acc + w.completedCount,
-    0
-  );
-  const monthVacationWeeks = weekly.reduce(
-    (acc, w) =>
-      acc + w.weeks.filter((c) => c.onVacation && !c.completed).length,
-    0
-  );
-  const monthTotalWeeks =
-    weekly.length * monthWeeks.length - monthVacationWeeks;
+  const weekCompletedDays = thisWeek.completed;
+  const weekTotalDays = thisWeek.eligible;
 
-  const prevWeek = prevWeekStats(dailyTodos, weekStart, vacations, nowMs);
+  // Last-week comparison uses the same elapsed-day count anchored at last
+  // Monday — e.g. if today is Saturday (day 6), compare Mon..Sat both
+  // weeks rather than against last week's full Mon..Sun.
+  const elapsedDayCount = Math.round(
+    (elapsedEnd.getTime() - weekStart.getTime()) / 86_400_000
+  );
+  const lastWeekStart = addDays(weekStart, -DAYS_IN_WEEK);
+  const lastWeekEnd = addDays(lastWeekStart, elapsedDayCount);
+  const prevWeek = elapsedDailyStats(
+    dailyTodos,
+    lastWeekStart,
+    lastWeekEnd,
+    vacations,
+    nowMs
+  );
+
+  const monthAgg = elapsedWeeklyStats(
+    weeklyTodos,
+    monthWeeks,
+    weekStart,
+    vacations,
+    nowMs
+  );
+  const monthCompletedWeeks = monthAgg.completed;
+  const monthTotalWeeks = monthAgg.eligible;
 
   const prevMonth = prevMonthRange(monthStart);
   const prevMonthWeeks = weeksInMonth(prevMonth.start, prevMonth.end);

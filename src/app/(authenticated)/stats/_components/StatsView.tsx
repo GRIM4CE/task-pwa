@@ -209,10 +209,11 @@ function GlobalCard({
     stats.prevMonthCompletedWeeks,
     stats.prevMonthEligibleWeeks
   );
-  // When every day in the window is a vacation miss, the denominator
-  // collapses to 0 even though the user has daily todos. Show "—" with a
-  // vacation-aware subtitle rather than "0 / 0" / "0%", which reads like
-  // failure. Same for weekly.
+  // When every day in the window is a vacation miss (or all habits were
+  // created after the elapsed window), the denominator collapses to 0
+  // even though there are daily todos. Show "—" with a vacation-aware
+  // subtitle rather than "0 / 0" / "0%", which reads like failure. Same
+  // logic for weekly.
   const weekHasEligible = stats.dailyCount > 0 && stats.weekTotalDays > 0;
   const monthHasEligible = stats.weeklyCount > 0 && stats.monthTotalWeeks > 0;
   return (
