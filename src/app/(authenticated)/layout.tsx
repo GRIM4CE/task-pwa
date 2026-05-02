@@ -74,11 +74,11 @@ export default function AuthenticatedLayout({
           >
             Todo
           </Link>
-          <nav className="flex flex-1 items-center justify-end gap-3" aria-label="Primary">
+          <nav className="flex min-w-0 flex-1 items-center justify-end gap-2" aria-label="Primary">
             <Link
               href="/todos/joined"
               aria-current={joinedActive ? "page" : undefined}
-              className={`text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
+              className={`px-2 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
                 joinedActive
                   ? "font-medium text-on-surface underline decoration-primary decoration-2 underline-offset-4"
                   : "text-on-surface/60 hover:text-on-surface hover:underline hover:underline-offset-4"
@@ -89,7 +89,7 @@ export default function AuthenticatedLayout({
             <Link
               href="/todos/personal"
               aria-current={personalActive ? "page" : undefined}
-              className={`text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
+              className={`px-2 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
                 personalActive
                   ? "font-medium text-on-surface underline decoration-primary decoration-2 underline-offset-4"
                   : "text-on-surface/60 hover:text-on-surface hover:underline hover:underline-offset-4"
