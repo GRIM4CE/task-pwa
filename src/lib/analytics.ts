@@ -44,6 +44,7 @@ export interface DailyStat {
   totalDays: number;
   days: DayCell[];
   streak: number;
+  bestStreak: number;
   heatmap: DayCell[];
 }
 
@@ -63,6 +64,13 @@ export interface WeeklyStat {
   totalWeeks: number;
   weeks: WeekCell[];
   streak: number;
+  bestStreak: number;
+}
+
+export interface AtRiskTodo {
+  id: string;
+  title: string;
+  currentStreak: number;
 }
 
 export interface GlobalStats {
@@ -70,8 +78,17 @@ export interface GlobalStats {
   weeklyCount: number;
   weekCompletedDays: number;
   weekTotalDays: number;
+  prevWeekCompletedDays: number;
+  prevWeekTotalDays: number;
   monthCompletedWeeks: number;
   monthTotalWeeks: number;
+  prevMonthCompletedWeeks: number;
+  prevMonthTotalWeeks: number;
+  atRiskToday: AtRiskTodo[];
+  // Mon..Sun completion rate (0..1) across all daily todos over the
+  // trailing 30-day window, excluding today (in-progress) and days
+  // before each todo was created.
+  weekdayConsistency: number[];
 }
 
 export interface ComputedStats {
@@ -135,6 +152,43 @@ function weeklyStreak(completions: number[], thisWeekStart: Date): number {
   return count;
 }
 
+// Longest-ever consecutive-day run within the API's 120-day window.
+// Uses date arithmetic rather than ms subtraction so DST transitions
+// don't break the streak.
+function longestDailyRun(completions: number[]): number {
+  if (completions.length === 0) return 0;
+  const days = [...completedDaySet(completions)].sort((a, b) => a - b);
+  let best = 1;
+  let run = 1;
+  for (let i = 1; i < days.length; i++) {
+    const expected = addDays(new Date(days[i - 1]), 1).getTime();
+    if (days[i] === expected) {
+      run++;
+      if (run > best) best = run;
+    } else {
+      run = 1;
+    }
+  }
+  return best;
+}
+
+function longestWeeklyRun(completions: number[]): number {
+  if (completions.length === 0) return 0;
+  const weeks = [...completedWeekSet(completions)].sort((a, b) => a - b);
+  let best = 1;
+  let run = 1;
+  for (let i = 1; i < weeks.length; i++) {
+    const expected = addDays(new Date(weeks[i - 1]), DAYS_IN_WEEK).getTime();
+    if (weeks[i] === expected) {
+      run++;
+      if (run > best) best = run;
+    } else {
+      run = 1;
+    }
+  }
+  return best;
+}
+
 function dailyHeatmap(completions: number[], todayStart: Date): DayCell[] {
   const days = completedDaySet(completions);
   const cells: DayCell[] = [];
@@ -181,6 +235,7 @@ function dailyForTodo(
     totalDays: DAYS_IN_WEEK,
     days,
     streak: dailyStreak(todo.completions, todayStart),
+    bestStreak: longestDailyRun(todo.completions),
     heatmap: dailyHeatmap(todo.completions, todayStart),
   };
 }
@@ -224,7 +279,97 @@ function weeklyForTodo(
     totalWeeks: cells.length,
     weeks: cells,
     streak: weeklyStreak(todo.completions, thisWeekStart),
+    bestStreak: longestWeeklyRun(todo.completions),
   };
+}
+
+function countCompletionsInRange(
+  completions: number[],
+  startMs: number,
+  endMs: number
+): number {
+  let n = 0;
+  for (const c of completions) {
+    if (c >= startMs && c < endMs) n++;
+  }
+  return n;
+}
+
+function prevWeekCompleted(
+  dailyTodos: RecurringTodoStats[],
+  weekStart: Date
+): number {
+  const prevStart = addDays(weekStart, -DAYS_IN_WEEK).getTime();
+  const prevEnd = weekStart.getTime();
+  let total = 0;
+  for (const t of dailyTodos) {
+    // Bucket per-day so multiple completions on a single day still
+    // count once, matching how the current-week ratio is computed.
+    const days = new Set<number>();
+    for (const c of t.completions) {
+      if (c >= prevStart && c < prevEnd) {
+        days.add(startOfDay(new Date(c)).getTime());
+      }
+    }
+    total += days.size;
+  }
+  return total;
+}
+
+function prevMonthRange(monthStart: Date): { start: Date; end: Date } {
+  const start = new Date(
+    monthStart.getFullYear(),
+    monthStart.getMonth() - 1,
+    1,
+    0,
+    0,
+    0,
+    0
+  );
+  return { start, end: monthStart };
+}
+
+function prevMonthCompleted(
+  weeklyTodos: RecurringTodoStats[],
+  prevWeeks: { start: Date; end: Date }[]
+): number {
+  let total = 0;
+  for (const t of weeklyTodos) {
+    for (const w of prevWeeks) {
+      if (
+        countCompletionsInRange(t.completions, w.start.getTime(), w.end.getTime()) > 0
+      ) {
+        total++;
+      }
+    }
+  }
+  return total;
+}
+
+function weekdayConsistency(
+  dailyTodos: RecurringTodoStats[],
+  todayStart: Date
+): number[] {
+  const buckets: number[][] = Array.from({ length: 7 }, () => []);
+  if (dailyTodos.length === 0) return buckets.map(() => 0);
+  const sets = dailyTodos.map((t) => completedDaySet(t.completions));
+  // Walk the past 30 days, skipping today (still in progress).
+  for (let i = 1; i <= HEATMAP_DAYS; i++) {
+    const day = addDays(todayStart, -i);
+    const dayMs = day.getTime();
+    const weekday = (day.getDay() + 6) % 7;
+    let eligible = 0;
+    let completed = 0;
+    for (let j = 0; j < dailyTodos.length; j++) {
+      if (dailyTodos[j].createdAt > dayMs) continue;
+      eligible++;
+      if (sets[j].has(dayMs)) completed++;
+    }
+    if (eligible > 0) buckets[weekday].push(completed / eligible);
+  }
+  return buckets.map((arr) =>
+    arr.length === 0 ? 0 : arr.reduce((a, b) => a + b, 0) / arr.length
+  );
 }
 
 export function computeStats(
@@ -251,6 +396,21 @@ export function computeStats(
   );
   const monthTotalWeeks = weekly.length * monthWeeks.length;
 
+  const prevWeekCompletedDays = prevWeekCompleted(dailyTodos, weekStart);
+  const prevWeekTotalDays = dailyTodos.length * DAYS_IN_WEEK;
+
+  const prevMonth = prevMonthRange(monthStart);
+  const prevMonthWeeks = weeksInMonth(prevMonth.start, prevMonth.end);
+  const prevMonthCompletedWeeks = prevMonthCompleted(weeklyTodos, prevMonthWeeks);
+  const prevMonthTotalWeeks = weeklyTodos.length * prevMonthWeeks.length;
+
+  const atRiskToday: AtRiskTodo[] = daily
+    .filter((d) => {
+      const todayCell = d.days.find((c) => c.isToday);
+      return d.streak > 0 && !todayCell?.completed;
+    })
+    .map((d) => ({ id: d.id, title: d.title, currentStreak: d.streak }));
+
   return {
     daily,
     weekly,
@@ -259,8 +419,14 @@ export function computeStats(
       weeklyCount: weekly.length,
       weekCompletedDays,
       weekTotalDays,
+      prevWeekCompletedDays,
+      prevWeekTotalDays,
       monthCompletedWeeks,
       monthTotalWeeks,
+      prevMonthCompletedWeeks,
+      prevMonthTotalWeeks,
+      atRiskToday,
+      weekdayConsistency: weekdayConsistency(dailyTodos, todayStart),
     },
   };
 }
