@@ -8,6 +8,7 @@ import {
   type DailyStat,
   type WeeklyStat,
 } from "@/lib/analytics";
+import { subscribeStatsMayHaveChanged } from "@/lib/stats-events";
 import { useTodoRepository } from "@/lib/todos/use-todo-repository";
 
 const WEEKDAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
@@ -53,6 +54,25 @@ export default function StatsPage() {
     return () => {
       cancelled = true;
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refresh]);
+
+  // Refetch when the todos page signals a recurring toggle has committed.
+  // The mount-time fetch above can race with an in-flight PATCH from the
+  // previous route — visibility doesn't change during intra-app nav, so this
+  // is the only refetch the user sees in that flow. Same null-data guard as
+  // the visibility handler: don't blank the page on a transient blip.
+  useEffect(() => {
+    let cancelled = false;
+    const unsubscribe = subscribeStatsMayHaveChanged(() => {
+      refresh().then((data) => {
+        if (cancelled) return;
+        if (data) setData(data);
+      });
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
     };
   }, [refresh]);
 
