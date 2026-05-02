@@ -307,8 +307,11 @@ export default function TodosPage() {
       // can't rely on `visibilitychange` to refresh a stats page reached via
       // intra-app nav — the document never goes hidden — so signal explicitly
       // here, after the server's response, so any mounted stats page refetches
-      // post-commit instead of trusting its mount-race snapshot.
-      if (todo.recurrence !== null && todo.parentId === null) {
+      // post-commit instead of trusting its mount-race snapshot. Read the
+      // recurrence/parent fields off the committed row rather than the
+      // pre-request `todo` so a stale optimistic snapshot can't suppress a
+      // notify the server actually warranted.
+      if (data.recurrence !== null && data.parentId === null) {
         notifyStatsMayHaveChanged();
       }
     }

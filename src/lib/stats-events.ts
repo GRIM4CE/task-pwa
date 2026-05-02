@@ -1,3 +1,5 @@
+"use client";
+
 // Module-level pub/sub for "the recurring-todo completion log may have
 // changed." The stats page subscribes; the todos page notifies after a
 // successful manual toggle of a recurring task. This bridges the gap that

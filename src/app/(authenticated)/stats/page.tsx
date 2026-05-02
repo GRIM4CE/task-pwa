@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { StatsDTO } from "@/lib/api-client";
 import {
   computeStats,
@@ -17,9 +17,17 @@ export default function StatsPage() {
   const repo = useTodoRepository();
   const [data, setData] = useState<StatsDTO | null>(null);
   const [loading, setLoading] = useState(true);
+  // Monotonic id so overlapping refreshes (rapid toggles, visibility +
+  // event subscriber firing back-to-back) can't reorder a stale response
+  // over a fresh one. Only the most recently issued fetch's data is
+  // returned; older in-flight ones resolve to null and the call sites
+  // skip them.
+  const refreshIdRef = useRef(0);
 
   const refresh = useCallback(async () => {
+    const myId = ++refreshIdRef.current;
     const { data } = await repo.stats();
+    if (myId !== refreshIdRef.current) return null;
     return data;
   }, [repo]);
 
@@ -27,7 +35,7 @@ export default function StatsPage() {
     let cancelled = false;
     refresh().then((data) => {
       if (cancelled) return;
-      setData(data);
+      if (data) setData(data);
       setLoading(false);
     });
     return () => {
