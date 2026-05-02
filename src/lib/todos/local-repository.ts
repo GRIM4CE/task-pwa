@@ -37,7 +37,7 @@ function err<T>(error: string): RepoResult<T> {
   return { data: null, error };
 }
 
-const SLIP_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const SLIP_WINDOW_MS = 35 * 24 * 60 * 60 * 1000;
 
 // Filter the persisted completion log down to the last 30 days for a given
 // todo. Mirrors the avoid-todo `recentSlips` field the server returns on the
@@ -71,6 +71,7 @@ function readAll(): TodoDTO[] {
           kind: t.kind ?? "do",
           limitCount: t.limitCount ?? null,
           limitPeriod: t.limitPeriod ?? null,
+          oncePerDay: t.oncePerDay ?? false,
           recentSlips: t.recentSlips ?? [],
         }));
       }
@@ -181,6 +182,7 @@ export const localTodoRepository: TodoRepository = {
         createdAt: t.createdAt,
         limitCount: t.limitCount,
         limitPeriod: t.limitPeriod,
+        oncePerDay: t.oncePerDay,
         completions: (byTodo.get(t.id) ?? []).sort((a, b) => a - b),
       }));
     return ok({ todos, avoid });
@@ -221,6 +223,7 @@ export const localTodoRepository: TodoRepository = {
       kind,
       limitCount: kind === "avoid" ? parsed.data.limitCount ?? null : null,
       limitPeriod: kind === "avoid" ? parsed.data.limitPeriod ?? null : null,
+      oncePerDay: kind === "avoid" ? parsed.data.oncePerDay ?? false : false,
       recentSlips: [],
       lastCompletedAt: null,
       createdAt: now,
@@ -300,8 +303,11 @@ export const localTodoRepository: TodoRepository = {
     }
     // Require the persisted row to already be avoid — see the matching guard
     // in /api/todos/[id]/route.ts for why a same-patch kind switch is rejected.
-    if (parsed.data.recordSlip === true && previous.kind !== "avoid") {
-      return err("Slips can only be recorded on avoid todos");
+    if (
+      (parsed.data.recordSlip === true || parsed.data.undoLastSlip === true) &&
+      previous.kind !== "avoid"
+    ) {
+      return err("Slip operations only apply to avoid todos");
     }
     if (effectiveKind !== "avoid") {
       if (
@@ -309,6 +315,9 @@ export const localTodoRepository: TodoRepository = {
         (parsed.data.limitPeriod !== undefined && parsed.data.limitPeriod !== null)
       ) {
         return err("Limits only apply to avoid todos");
+      }
+      if (parsed.data.oncePerDay === true) {
+        return err("Once-per-day only applies to avoid todos");
       }
     }
 
@@ -347,6 +356,42 @@ export const localTodoRepository: TodoRepository = {
       ];
       writeCompletions(events);
       return ok(withRecentSlips(next[index], events));
+    }
+
+    // Undo the most recent slip. Mirrors the server transaction: drop the
+    // latest event and rebase lastCompletedAt onto the new latest (or null).
+    if (parsed.data.undoLastSlip === true && previous.kind === "avoid") {
+      const events = readCompletions();
+      let latestIdx = -1;
+      let latestAt = -Infinity;
+      for (let i = 0; i < events.length; i++) {
+        if (events[i].todoId === id && events[i].completedAt > latestAt) {
+          latestAt = events[i].completedAt;
+          latestIdx = i;
+        }
+      }
+      if (latestIdx === -1) {
+        // No slip to undo — return the row as-is.
+        writeAll(next);
+        return ok(withRecentSlips(updated, events));
+      }
+      const remaining = [
+        ...events.slice(0, latestIdx),
+        ...events.slice(latestIdx + 1),
+      ];
+      writeCompletions(remaining);
+      let nextLastCompletedAt: number | null = null;
+      for (const e of remaining) {
+        if (
+          e.todoId === id &&
+          (nextLastCompletedAt === null || e.completedAt > nextLastCompletedAt)
+        ) {
+          nextLastCompletedAt = e.completedAt;
+        }
+      }
+      next[index] = { ...updated, lastCompletedAt: nextLastCompletedAt };
+      writeAll(next);
+      return ok(withRecentSlips(next[index], remaining));
     }
 
     if (

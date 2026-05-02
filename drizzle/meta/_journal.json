@@ -50,6 +50,13 @@
       "when": 1777730404675,
       "tag": "0006_avoid_habits",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1777733989901,
+      "tag": "0007_avoid_once_per_day",
+      "breakpoints": true
     }
   ]
 }

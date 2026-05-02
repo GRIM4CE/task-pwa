@@ -511,23 +511,37 @@ export function percent(num: number, denom: number): number {
   return Math.round((num / denom) * 100);
 }
 
-// Rolling-window slip count: how many slips fall in the last N days, where N
-// is 7 for "week" limits and 30 for "month" limits. Calendar resets would be
-// gameable ("just hold out till Sunday"), and a rolling window matches how the
-// user actually experiences the habit.
-export function rollingWindowDays(period: LimitPeriod): number {
-  if (period === "week") return 7;
-  if (period === "month") return 30;
+// Calendar-window start: the most recent ISO Monday for "week" limits, or
+// the 1st of the current month for "month" limits. Returned in local time so
+// the boundary lines up with the user's clock (and matches the recurrence
+// reset). For unlimited avoid-todos with no period, falls back to a 30-day
+// rolling cutoff so the card still has something to display.
+export function avoidWindowStart(period: LimitPeriod, now: Date): Date {
+  if (period === "week") return startOfWeek(now);
+  if (period === "month") return startOfMonth(now);
+  return new Date(startOfDay(now).getTime() - (AVOID_HEATMAP_DAYS - 1) * 24 * 60 * 60 * 1000);
+}
+
+// Days in the current calendar period — used by the card to surface a count
+// like "3 / 5 this week" without committing to a specific implementation of
+// the boundary check.
+export function avoidWindowDays(period: LimitPeriod, now: Date): number {
+  const start = avoidWindowStart(period, now);
+  if (period === "week") return DAYS_IN_WEEK;
+  if (period === "month") {
+    const end = startOfNextMonth(now);
+    return Math.round(
+      (end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)
+    );
+  }
   return AVOID_HEATMAP_DAYS;
 }
 
 function countSlipsInWindow(
   completions: number[],
-  windowDays: number,
-  now: number
+  windowStart: number
 ): number {
-  const cutoff = now - windowDays * 24 * 60 * 60 * 1000;
-  return completions.reduce((n, ts) => (ts >= cutoff ? n + 1 : n), 0);
+  return completions.reduce((n, ts) => (ts >= windowStart ? n + 1 : n), 0);
 }
 
 function avoidStatus(
@@ -611,12 +625,9 @@ function avoidForTodo(
   todayStart: Date,
   now: Date
 ): AvoidStat {
-  const windowDays = rollingWindowDays(todo.limitPeriod);
-  const windowSlipCount = countSlipsInWindow(
-    todo.completions,
-    windowDays,
-    now.getTime()
-  );
+  const windowStart = avoidWindowStart(todo.limitPeriod, now).getTime();
+  const windowDays = avoidWindowDays(todo.limitPeriod, now);
+  const windowSlipCount = countSlipsInWindow(todo.completions, windowStart);
   const totalSlips = todo.completions.length;
   const status = avoidStatus(windowSlipCount, todo.limitCount);
   const daysClean = daysSinceLastSlip(todo.completions, todayStart);
@@ -649,7 +660,21 @@ export function avoidStatusForTodo(
   limitPeriod: LimitPeriod,
   now: number = Date.now()
 ): { count: number; status: AvoidStatus; windowDays: number } {
-  const windowDays = rollingWindowDays(limitPeriod);
-  const count = countSlipsInWindow(completions, windowDays, now);
+  const nowDate = new Date(now);
+  const windowStart = avoidWindowStart(limitPeriod, nowDate).getTime();
+  const windowDays = avoidWindowDays(limitPeriod, nowDate);
+  const count = countSlipsInWindow(completions, windowStart);
   return { count, status: avoidStatus(count, limitCount), windowDays };
+}
+
+// Whether the given completion list contains a slip on today's local
+// calendar day. Used by the once-per-day card mode to decide whether the
+// +1 button should be disabled.
+export function hasSlipToday(
+  completions: number[],
+  now: number = Date.now()
+): boolean {
+  const todayStart = startOfDay(new Date(now)).getTime();
+  const tomorrowStart = todayStart + 24 * 60 * 60 * 1000;
+  return completions.some((ts) => ts >= todayStart && ts < tomorrowStart);
 }

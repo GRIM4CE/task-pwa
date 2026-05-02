@@ -27,7 +27,9 @@ export async function PATCH(
     kind?: "do" | "avoid";
     limitCount?: number | null;
     limitPeriod?: "week" | "month" | null;
+    oncePerDay?: boolean;
     recordSlip?: boolean;
+    undoLastSlip?: boolean;
   };
   try {
     const raw = await request.json();
@@ -182,16 +184,19 @@ export async function PATCH(
   // shape. Otherwise `{ kind: "avoid", recordSlip: true }` on a "do" row would
   // pass the effectiveKind check but the slip insert below (gated on
   // `current.kind`) would silently no-op, leaving lastCompletedAt advanced
-  // without a logged event.
-  if (body.recordSlip === true && existing[0].kind !== "avoid") {
+  // without a logged event. Same constraint for undoLastSlip.
+  if (
+    (body.recordSlip === true || body.undoLastSlip === true) &&
+    existing[0].kind !== "avoid"
+  ) {
     return NextResponse.json(
-      { error: "Slips can only be recorded on avoid todos" },
+      { error: "Slip operations only apply to avoid todos" },
       { status: 400 }
     );
   }
-  // limit fields are only meaningful for avoid todos. If the patch sets them
-  // on a non-avoid row (or a row being switched to "do" in the same patch),
-  // reject rather than silently dropping them.
+  // limit + once-per-day fields are only meaningful for avoid todos. If the
+  // patch sets them on a non-avoid row (or a row being switched to "do" in
+  // the same patch), reject rather than silently dropping them.
   if (effectiveKind !== "avoid") {
     if (
       (body.limitCount !== undefined && body.limitCount !== null) ||
@@ -199,6 +204,12 @@ export async function PATCH(
     ) {
       return NextResponse.json(
         { error: "Limits only apply to avoid todos" },
+        { status: 400 }
+      );
+    }
+    if (body.oncePerDay === true) {
+      return NextResponse.json(
+        { error: "Once-per-day only applies to avoid todos" },
         { status: 400 }
       );
     }
@@ -214,11 +225,13 @@ export async function PATCH(
   if (body.kind !== undefined) updateData.kind = body.kind;
   if (body.limitCount !== undefined) updateData.limitCount = body.limitCount;
   if (body.limitPeriod !== undefined) updateData.limitPeriod = body.limitPeriod;
-  // Switching kind away from avoid drops any stale limit fields so they don't
-  // linger as dead config on a non-avoid row.
+  if (body.oncePerDay !== undefined) updateData.oncePerDay = body.oncePerDay;
+  // Switching kind away from avoid drops any stale avoid-only fields so they
+  // don't linger as dead config on a non-avoid row.
   if (body.kind === "do") {
     updateData.limitCount = null;
     updateData.limitPeriod = null;
+    updateData.oncePerDay = false;
   }
   if (body.completed !== undefined) {
     updateData.completed = body.completed;
@@ -320,7 +333,7 @@ export async function PATCH(
     }
 
     // Avoid todos: each slip is recorded as a completion event so analytics
-    // can compute rolling-window slip counts and streak gaps. The row's
+    // can compute calendar-window slip counts and streak gaps. The row's
     // `completed` flag stays false — it's not a "done" event, just a tally.
     if (body.recordSlip === true && current.kind === "avoid") {
       await tx.insert(schema.todoCompletions).values({
@@ -328,6 +341,54 @@ export async function PATCH(
         userId: session.user.id,
         completedAt: now,
       });
+    }
+
+    // Undo the most recent slip: drop the latest event for this todo+user
+    // and rebase lastCompletedAt onto whatever the new latest event is (or
+    // null if none remain). The lastCompletedAt rebase is what makes the
+    // days-clean badge return to the prior streak after an undo.
+    if (body.undoLastSlip === true && current.kind === "avoid") {
+      const latest = await tx
+        .select({
+          id: schema.todoCompletions.id,
+          completedAt: schema.todoCompletions.completedAt,
+        })
+        .from(schema.todoCompletions)
+        .where(
+          and(
+            eq(schema.todoCompletions.todoId, row.id),
+            eq(schema.todoCompletions.userId, session.user.id)
+          )
+        )
+        .orderBy(desc(schema.todoCompletions.completedAt))
+        .limit(1);
+      if (latest[0]) {
+        await tx
+          .delete(schema.todoCompletions)
+          .where(eq(schema.todoCompletions.id, latest[0].id));
+        const [nextLatest] = await tx
+          .select({ completedAt: schema.todoCompletions.completedAt })
+          .from(schema.todoCompletions)
+          .where(
+            and(
+              eq(schema.todoCompletions.todoId, row.id),
+              eq(schema.todoCompletions.userId, session.user.id)
+            )
+          )
+          .orderBy(desc(schema.todoCompletions.completedAt))
+          .limit(1);
+        const nextLastCompletedAt = nextLatest?.completedAt ?? null;
+        await tx
+          .update(schema.todos)
+          .set({
+            lastCompletedAt: nextLastCompletedAt,
+            updatedAt: now,
+          })
+          .where(eq(schema.todos.id, row.id));
+        // Reflect in the row we return so the response and the recentSlips
+        // refetch below both see the post-undo state.
+        row.lastCompletedAt = nextLastCompletedAt;
+      }
     }
 
     // Only recurring todos surface in stats, so non-recurring completions
@@ -384,12 +445,12 @@ export async function PATCH(
     .where(eq(schema.users.id, updated.userId))
     .limit(1);
 
-  // Refetch the 30-day slip window so the client can recompute the card's
-  // warning state without a separate /api/todos round-trip after a slip is
-  // logged (or after kind/limit fields change).
+  // Refetch the 35-day slip window so the client can recompute the card's
+  // calendar-window warning state without a separate /api/todos round-trip
+  // after a slip is logged/undone (or after kind/limit fields change).
   let recentSlips: number[] = [];
   if (updated.kind === "avoid") {
-    const slipCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const slipCutoff = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000);
     const slips = await db
       .select({ completedAt: schema.todoCompletions.completedAt })
       .from(schema.todoCompletions)
@@ -416,6 +477,7 @@ export async function PATCH(
     kind: updated.kind,
     limitCount: updated.limitCount,
     limitPeriod: updated.limitPeriod,
+    oncePerDay: updated.oncePerDay,
     recentSlips,
     lastCompletedAt: updated.lastCompletedAt ? updated.lastCompletedAt.getTime() : null,
     createdAt: updated.createdAt.getTime(),
