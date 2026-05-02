@@ -91,7 +91,7 @@ export default function LoginPage() {
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-border bg-input px-3 py-2 text-input-text placeholder-gray-400 focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+                className="mt-1 block w-full rounded-lg border border-border bg-input px-3 py-2 text-input-text placeholder-input-placeholder focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
                 placeholder="admin"
               />
             </div>
@@ -110,7 +110,7 @@ export default function LoginPage() {
                 maxLength={6}
                 value={totpCode}
                 onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                className="mt-1 block w-full rounded-lg border border-border bg-input px-3 py-2 text-center text-2xl tracking-[0.3em] text-input-text placeholder-gray-400 focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+                className="mt-1 block w-full rounded-lg border border-border bg-input px-3 py-2 text-center text-2xl tracking-[0.3em] text-input-text placeholder-input-placeholder focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
                 placeholder="000000"
               />
             </div>
@@ -172,7 +172,7 @@ export default function LoginPage() {
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-border bg-input px-3 py-2 text-input-text placeholder-gray-400 focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+                className="mt-1 block w-full rounded-lg border border-border bg-input px-3 py-2 text-input-text placeholder-input-placeholder focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
                 placeholder="admin"
               />
             </div>
@@ -188,7 +188,7 @@ export default function LoginPage() {
                 maxLength={8}
                 value={recoveryCode}
                 onChange={(e) => setRecoveryCode(e.target.value.toLowerCase().slice(0, 8))}
-                className="mt-1 block w-full rounded-lg border border-border bg-input px-3 py-2 text-center text-lg tracking-wider text-input-text placeholder-gray-400 focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus font-mono"
+                className="mt-1 block w-full rounded-lg border border-border bg-input px-3 py-2 text-center text-lg tracking-wider text-input-text placeholder-input-placeholder focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus font-mono"
                 placeholder="abcd1234"
               />
             </div>

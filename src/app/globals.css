@@ -6,10 +6,13 @@
  * always reach through a semantic token.
  */
 :root {
+  color-scheme: dark;
   --c-page-bg: #12131e;       /* Dusty Grape -80% */
+  --c-grape-900: #1c1d2c;     /* Elevated dark surface for inputs */
   --c-violet-700: #32161f;    /* Midnight Violet — surface */
   --c-violet-500: #502331;    /* Midnight Violet +10% — outline / hover */
   --c-grape-700: #5b5f97;     /* Dusty Grape */
+  --c-grape-400: #6e6f9a;     /* Muted slate — input borders */
   --c-grape-200: #b8b8d1;     /* Pale Slate */
   --c-porcelain: #fffffb;
   --c-magenta-700: #e83f6f;   /* Magenta Bloom */
@@ -29,9 +32,10 @@
   --color-surface: var(--c-violet-700);
   --color-surface-hover: var(--c-violet-500);
   --color-on-surface: var(--c-porcelain);
-  --color-input: var(--c-porcelain);
-  --color-input-text: var(--c-page-bg);
-  --color-border: var(--c-grape-200);
+  --color-input: var(--c-grape-900);
+  --color-input-text: var(--c-porcelain);
+  --color-input-placeholder: var(--c-grape-400);
+  --color-border: var(--c-grape-400);
   --color-border-on-surface: var(--c-violet-500);
   --color-text: var(--c-porcelain);
   --color-text-muted: var(--c-grape-200);
@@ -51,12 +55,14 @@
  * here so the override is self-contained and easy to remove.
  */
 :root[data-theme="juliette"] {
+  color-scheme: light;
   --color-background: #e5d0e3;
   --color-surface: #e7e5e5;
   --color-surface-hover: #d8d6d6;
   --color-on-surface: #5d4a66;
   --color-input: #e7e5e5;
   --color-input-text: #5d4a66;
+  --color-input-placeholder: #8a7d96;
   --color-border: #6a5d7b;
   --color-border-on-surface: #e0b0d5;
   --color-text: #5d4a66;
