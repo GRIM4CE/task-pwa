@@ -7,6 +7,7 @@ import {
   percent,
   type AtRiskTodo,
   type DailyStat,
+  type WeekdayConsistencyEntry,
   type WeeklyStat,
 } from "@/lib/analytics";
 import { subscribeStatsMayHaveChanged } from "@/lib/stats-events";
@@ -126,7 +127,7 @@ export default function StatsView() {
                   <DailyRow key={d.id} stat={d} />
                 ))}
               </div>
-              <WeekdayConsistency rates={stats.global.weekdayConsistency} />
+              <WeekdayConsistency entries={stats.global.weekdayConsistency} />
             </Section>
           )}
           {stats && stats.weekly.length > 0 && (
@@ -173,11 +174,11 @@ function GlobalCard({
   const monthPct = percent(stats.monthCompletedWeeks, stats.monthTotalWeeks);
   const prevWeekPct = percent(
     stats.prevWeekCompletedDays,
-    stats.prevWeekTotalDays
+    stats.prevWeekEligibleDays
   );
   const prevMonthPct = percent(
     stats.prevMonthCompletedWeeks,
-    stats.prevMonthTotalWeeks
+    stats.prevMonthEligibleWeeks
   );
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -190,7 +191,7 @@ function GlobalCard({
             : `${stats.weekCompletedDays} / ${stats.weekTotalDays} day-completions`
         }
         delta={
-          stats.dailyCount === 0 || stats.prevWeekCompletedDays === 0
+          stats.prevWeekEligibleDays === 0
             ? null
             : { current: weekPct, previous: prevWeekPct, label: "vs last week" }
         }
@@ -204,7 +205,7 @@ function GlobalCard({
             : `${stats.monthCompletedWeeks} / ${stats.monthTotalWeeks} week-completions`
         }
         delta={
-          stats.weeklyCount === 0 || stats.prevMonthCompletedWeeks === 0
+          stats.prevMonthEligibleWeeks === 0
             ? null
             : {
                 current: monthPct,
@@ -244,11 +245,18 @@ function AtRiskBanner({ items }: { items: AtRiskTodo[] }) {
 
 const WEEKDAY_FULL_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-function WeekdayConsistency({ rates }: { rates: number[] }) {
-  const total = rates.reduce((a, b) => a + b, 0);
-  if (total === 0) return null;
-  const max = Math.max(...rates);
-  const min = Math.min(...rates.filter((r) => r > 0));
+function WeekdayConsistency({
+  entries,
+}: {
+  entries: WeekdayConsistencyEntry[];
+}) {
+  const withData = entries
+    .map((e) => e.rate)
+    .filter((r): r is number => r !== null);
+  if (withData.length === 0) return null;
+  const max = Math.max(...withData);
+  const min = Math.min(...withData);
+  const hasVariance = max > min;
   return (
     <div className="mt-3 rounded-lg border border-border-on-surface bg-surface px-4 py-3">
       <div className="mb-2 flex items-baseline justify-between">
@@ -258,23 +266,31 @@ function WeekdayConsistency({ rates }: { rates: number[] }) {
         <div className="text-[10px] text-on-surface/50">Last 30 days</div>
       </div>
       <div className="grid grid-cols-7 gap-1">
-        {rates.map((rate, i) => {
-          const isBest = rate === max && rate > 0;
-          const isWorst = rate === min && rate < max;
-          const tone = isBest
-            ? "bg-success/80 text-white"
-            : isWorst
-              ? "bg-focus/30 text-on-surface"
-              : "bg-surface-hover text-on-surface/70";
+        {entries.map((entry, i) => {
+          const rate = entry.rate;
+          const isBest = rate !== null && rate === max && hasVariance;
+          const isWorst = rate !== null && rate === min && hasVariance;
+          const tone =
+            rate === null
+              ? "bg-surface-hover text-on-surface/40"
+              : isBest
+                ? "bg-success/80 text-white"
+                : isWorst
+                  ? "bg-focus/30 text-on-surface"
+                  : "bg-surface-hover text-on-surface/70";
+          const title =
+            rate === null
+              ? `${WEEKDAY_FULL_LABELS[i]}: no data`
+              : `${WEEKDAY_FULL_LABELS[i]}: ${Math.round(rate * 100)}% of daily todos completed (${entry.samples} ${entry.samples === 1 ? "day" : "days"} sampled)`;
           return (
             <div
               key={i}
               className={`flex flex-col items-center rounded px-1 py-1.5 text-[10px] ${tone}`}
-              title={`${WEEKDAY_FULL_LABELS[i]}: ${Math.round(rate * 100)}% of daily todos completed`}
+              title={title}
             >
               <span className="font-medium">{WEEKDAY_FULL_LABELS[i][0]}</span>
               <span className="text-[10px] opacity-90">
-                {Math.round(rate * 100)}%
+                {rate === null ? "—" : `${Math.round(rate * 100)}%`}
               </span>
             </div>
           );

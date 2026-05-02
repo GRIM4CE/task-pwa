@@ -79,16 +79,20 @@ export interface GlobalStats {
   weekCompletedDays: number;
   weekTotalDays: number;
   prevWeekCompletedDays: number;
-  prevWeekTotalDays: number;
+  // Days in the prior week where at least one daily todo existed at
+  // the start of the day. Zero when there's no comparable history,
+  // which the UI uses to hide the velocity delta.
+  prevWeekEligibleDays: number;
   monthCompletedWeeks: number;
   monthTotalWeeks: number;
   prevMonthCompletedWeeks: number;
-  prevMonthTotalWeeks: number;
+  prevMonthEligibleWeeks: number;
   atRiskToday: AtRiskTodo[];
-  // Mon..Sun completion rate (0..1) across all daily todos over the
+  // Mon..Sun completion summary across all daily todos over the
   // trailing 30-day window, excluding today (in-progress) and days
-  // before each todo was created.
-  weekdayConsistency: number[];
+  // before each todo was created. `rate` is null when no eligible
+  // samples landed in the bucket.
+  weekdayConsistency: WeekdayConsistencyEntry[];
 }
 
 export interface ComputedStats {
@@ -295,25 +299,33 @@ function countCompletionsInRange(
   return n;
 }
 
-function prevWeekCompleted(
+// Eligibility-aware prev-week aggregate: a daily todo only contributes
+// (createdAt, day) pairs where it actually existed at the start of the
+// day, so a todo created mid-period doesn't deflate the prior-period
+// percentage with phantom 0s.
+function prevWeekStats(
   dailyTodos: RecurringTodoStats[],
   weekStart: Date
-): number {
-  const prevStart = addDays(weekStart, -DAYS_IN_WEEK).getTime();
-  const prevEnd = weekStart.getTime();
-  let total = 0;
+): { completed: number; eligible: number } {
+  const prevStart = addDays(weekStart, -DAYS_IN_WEEK);
+  const prevEndMs = weekStart.getTime();
+  let completed = 0;
+  let eligible = 0;
   for (const t of dailyTodos) {
-    // Bucket per-day so multiple completions on a single day still
-    // count once, matching how the current-week ratio is computed.
-    const days = new Set<number>();
+    const completedDays = new Set<number>();
     for (const c of t.completions) {
-      if (c >= prevStart && c < prevEnd) {
-        days.add(startOfDay(new Date(c)).getTime());
+      if (c >= prevStart.getTime() && c < prevEndMs) {
+        completedDays.add(startOfDay(new Date(c)).getTime());
       }
     }
-    total += days.size;
+    for (let i = 0; i < DAYS_IN_WEEK; i++) {
+      const dayMs = addDays(prevStart, i).getTime();
+      if (t.createdAt > dayMs) continue;
+      eligible++;
+      if (completedDays.has(dayMs)) completed++;
+    }
   }
-  return total;
+  return { completed, eligible };
 }
 
 function prevMonthRange(monthStart: Date): { start: Date; end: Date } {
@@ -329,29 +341,44 @@ function prevMonthRange(monthStart: Date): { start: Date; end: Date } {
   return { start, end: monthStart };
 }
 
-function prevMonthCompleted(
+// Eligibility-aware prev-month aggregate: only weeks where the weekly
+// todo existed at the start of the week count toward the denominator.
+function prevMonthStats(
   weeklyTodos: RecurringTodoStats[],
   prevWeeks: { start: Date; end: Date }[]
-): number {
-  let total = 0;
+): { completed: number; eligible: number } {
+  let completed = 0;
+  let eligible = 0;
   for (const t of weeklyTodos) {
     for (const w of prevWeeks) {
+      if (t.createdAt > w.start.getTime()) continue;
+      eligible++;
       if (
         countCompletionsInRange(t.completions, w.start.getTime(), w.end.getTime()) > 0
       ) {
-        total++;
+        completed++;
       }
     }
   }
-  return total;
+  return { completed, eligible };
+}
+
+export interface WeekdayConsistencyEntry {
+  // null when no eligible samples landed in this weekday in the
+  // 30-day window (e.g., todo too new). Distinguishes "no data"
+  // from a genuine 0% completion day.
+  rate: number | null;
+  samples: number;
 }
 
 function weekdayConsistency(
   dailyTodos: RecurringTodoStats[],
   todayStart: Date
-): number[] {
+): WeekdayConsistencyEntry[] {
   const buckets: number[][] = Array.from({ length: 7 }, () => []);
-  if (dailyTodos.length === 0) return buckets.map(() => 0);
+  if (dailyTodos.length === 0) {
+    return buckets.map(() => ({ rate: null, samples: 0 }));
+  }
   const sets = dailyTodos.map((t) => completedDaySet(t.completions));
   // Walk the past 30 days, skipping today (still in progress).
   for (let i = 1; i <= HEATMAP_DAYS; i++) {
@@ -368,7 +395,12 @@ function weekdayConsistency(
     if (eligible > 0) buckets[weekday].push(completed / eligible);
   }
   return buckets.map((arr) =>
-    arr.length === 0 ? 0 : arr.reduce((a, b) => a + b, 0) / arr.length
+    arr.length === 0
+      ? { rate: null, samples: 0 }
+      : {
+          rate: arr.reduce((a, b) => a + b, 0) / arr.length,
+          samples: arr.length,
+        }
   );
 }
 
@@ -396,13 +428,11 @@ export function computeStats(
   );
   const monthTotalWeeks = weekly.length * monthWeeks.length;
 
-  const prevWeekCompletedDays = prevWeekCompleted(dailyTodos, weekStart);
-  const prevWeekTotalDays = dailyTodos.length * DAYS_IN_WEEK;
+  const prevWeek = prevWeekStats(dailyTodos, weekStart);
 
   const prevMonth = prevMonthRange(monthStart);
   const prevMonthWeeks = weeksInMonth(prevMonth.start, prevMonth.end);
-  const prevMonthCompletedWeeks = prevMonthCompleted(weeklyTodos, prevMonthWeeks);
-  const prevMonthTotalWeeks = weeklyTodos.length * prevMonthWeeks.length;
+  const prevMonthAgg = prevMonthStats(weeklyTodos, prevMonthWeeks);
 
   const atRiskToday: AtRiskTodo[] = daily
     .filter((d) => {
@@ -419,12 +449,12 @@ export function computeStats(
       weeklyCount: weekly.length,
       weekCompletedDays,
       weekTotalDays,
-      prevWeekCompletedDays,
-      prevWeekTotalDays,
+      prevWeekCompletedDays: prevWeek.completed,
+      prevWeekEligibleDays: prevWeek.eligible,
       monthCompletedWeeks,
       monthTotalWeeks,
-      prevMonthCompletedWeeks,
-      prevMonthTotalWeeks,
+      prevMonthCompletedWeeks: prevMonthAgg.completed,
+      prevMonthEligibleWeeks: prevMonthAgg.eligible,
       atRiskToday,
       weekdayConsistency: weekdayConsistency(dailyTodos, todayStart),
     },
