@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { StatsDTO } from "@/lib/api-client";
 import {
   computeStats,
@@ -17,9 +17,14 @@ export default function StatsPage() {
   const [data, setData] = useState<StatsDTO | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const refresh = useCallback(async () => {
+    const { data } = await repo.stats();
+    return data;
+  }, [repo]);
+
   useEffect(() => {
     let cancelled = false;
-    repo.stats().then(({ data }) => {
+    refresh().then((data) => {
       if (cancelled) return;
       setData(data);
       setLoading(false);
@@ -27,7 +32,22 @@ export default function StatsPage() {
     return () => {
       cancelled = true;
     };
-  }, [repo]);
+  }, [refresh]);
+
+  // Refetch when the app comes back into focus so a toggle made on the
+  // todos page (or via PWA app-switch) is reflected here without a manual
+  // reload. Mirrors the same handler on /todos.
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState !== "visible") return;
+      refresh().then((data) => {
+        if (data) setData(data);
+      });
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [refresh]);
 
   if (loading) {
     return (
