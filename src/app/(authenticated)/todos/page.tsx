@@ -583,8 +583,16 @@ export default function TodosPage() {
           {activeTab === "joined" ? "Joined Todos" : "Personal Todos"}
         </h2>
         <p className="text-sm text-text-muted">
-          {thisWeekTodos.length + dailyTodos.length + thisWeekSubtasks.length} remaining
-          {completedTodos.length > 0 ? `, ${completedTodos.length} done` : ""}
+          {(() => {
+            const todoToday = dailyTodos.length;
+            const todoThisWeek = thisWeekTodos.length + thisWeekSubtasks.length;
+            const completeToday = completedTodos.length;
+            const parts: string[] = [];
+            if (todoToday > 0) parts.push(`${todoToday} todo today`);
+            if (todoThisWeek > 0) parts.push(`${todoThisWeek} todo this week`);
+            if (completeToday > 0) parts.push(`${completeToday} complete today`);
+            return parts.length > 0 ? parts.join(", ") : "All caught up";
+          })()}
         </p>
       </div>
 
