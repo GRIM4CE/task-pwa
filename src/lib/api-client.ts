@@ -75,9 +75,24 @@ export interface AvoidTodoStats {
   completions: number[];
 }
 
+// A vacation period: while [startsAt, endsAt) covers a given day, recurring
+// misses and avoid slips on that day count as neutral in analytics. endsAt
+// is null while the vacation is currently active.
+export interface VacationPeriod {
+  id: string;
+  startsAt: number;
+  endsAt: number | null;
+}
+
+export interface VacationDTO {
+  periods: VacationPeriod[];
+  active: VacationPeriod | null;
+}
+
 export interface StatsDTO {
   todos: RecurringTodoStats[];
   avoid: AvoidTodoStats[];
+  vacations: VacationPeriod[];
 }
 
 export const api = {
@@ -103,5 +118,13 @@ export const api = {
     reorder: (ids: string[], parentId?: string | null) =>
       apiRequest<{ success: boolean }>("/api/todos/reorder", { method: "POST", body: JSON.stringify({ ids, parentId: parentId ?? null }) }),
     delete: (id: string) => apiRequest<{ success: boolean }>(`/api/todos/${id}`, { method: "DELETE" }),
+  },
+  vacation: {
+    get: () => apiRequest<VacationDTO>("/api/vacation"),
+    set: (action: "start" | "end") =>
+      apiRequest<VacationDTO>("/api/vacation", {
+        method: "POST",
+        body: JSON.stringify({ action }),
+      }),
   },
 };

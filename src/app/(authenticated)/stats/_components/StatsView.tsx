@@ -96,8 +96,9 @@ export default function StatsView() {
   }
 
   const stats = data
-    ? computeStats(data.todos, new Date(), data.avoid ?? [])
+    ? computeStats(data.todos, new Date(), data.avoid ?? [], data.vacations ?? [])
     : null;
+  const onVacation = !!data?.vacations?.some((v) => v.endsAt === null);
   const hasAnyRecurring =
     !!stats && (stats.daily.length > 0 || stats.weekly.length > 0);
   const hasAnyAvoid = !!stats && stats.avoid.length > 0;
@@ -111,6 +112,16 @@ export default function StatsView() {
           Daily &amp; weekly repeats, plus the bad habits you&apos;re tracking.
         </p>
       </div>
+
+      {onVacation && (
+        <div className="mb-4 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-on-surface">
+          <span className="font-medium">On vacation.</span>{" "}
+          <span className="text-on-surface/80">
+            Missed days and slips count as neutral until you end vacation in
+            settings.
+          </span>
+        </div>
+      )}
 
       {!hasAnything ? (
         <div className="py-12 text-center">
@@ -385,6 +396,7 @@ function DailyRow({ stat }: { stat: DailyStat }) {
             completed={d.completed}
             isFuture={d.isFuture}
             isToday={d.isToday}
+            onVacation={d.onVacation}
           />
         ))}
       </div>
@@ -399,6 +411,7 @@ function DailyRow({ stat }: { stat: DailyStat }) {
             completed={d.completed}
             isToday={d.isToday}
             date={d.date}
+            onVacation={d.onVacation}
           />
         ))}
       </div>
@@ -434,22 +447,35 @@ function HeatCell({
   completed,
   isToday,
   date,
+  onVacation,
 }: {
   completed: boolean;
   isToday: boolean;
   date: number;
+  onVacation: boolean;
 }) {
-  const tone = completed ? "bg-success/80" : "bg-surface-hover";
+  // Vacation + missed = yellow (neutral). Vacation + completed still goes
+  // green so the user sees their effort. Plain misses stay grey.
+  const tone = completed
+    ? "bg-success/80"
+    : onVacation
+      ? "bg-warning/40"
+      : "bg-surface-hover";
   const ring = isToday ? " ring-1 ring-focus" : "";
   const title = new Date(date).toLocaleDateString(undefined, {
     weekday: "short",
     month: "short",
     day: "numeric",
   });
+  const suffix = completed
+    ? " — completed"
+    : onVacation
+      ? " — on vacation"
+      : "";
   return (
     <div
       className={`h-3 rounded-sm ${tone}${ring}`}
-      title={`${title}${completed ? " — completed" : ""}`}
+      title={`${title}${suffix}`}
     />
   );
 }
@@ -459,11 +485,13 @@ function DayPill({
   completed,
   isFuture,
   isToday,
+  onVacation,
 }: {
   label: string;
   completed: boolean;
   isFuture: boolean;
   isToday: boolean;
+  onVacation: boolean;
 }) {
   const base =
     "flex h-7 items-center justify-center rounded text-[10px] font-medium";
@@ -471,7 +499,9 @@ function DayPill({
     ? "bg-success/80 text-white"
     : isFuture
       ? "bg-surface-hover text-on-surface/40"
-      : "bg-surface-hover text-on-surface/60";
+      : onVacation
+        ? "bg-warning/40 text-on-surface/80"
+        : "bg-surface-hover text-on-surface/60";
   const ring = isToday ? " ring-1 ring-focus" : "";
   return <div className={`${base} ${tone}${ring}`}>{label}</div>;
 }
@@ -506,6 +536,7 @@ function WeeklyRow({ stat }: { stat: WeeklyStat }) {
             completed={w.completed}
             isFuture={w.isFuture}
             isCurrent={w.isCurrent}
+            onVacation={w.onVacation}
           />
         ))}
       </div>
@@ -518,11 +549,13 @@ function WeekPill({
   completed,
   isFuture,
   isCurrent,
+  onVacation,
 }: {
   label: string;
   completed: boolean;
   isFuture: boolean;
   isCurrent: boolean;
+  onVacation: boolean;
 }) {
   const base =
     "flex h-7 items-center justify-center rounded text-[10px] font-medium";
@@ -530,7 +563,9 @@ function WeekPill({
     ? "bg-success/80 text-white"
     : isFuture
       ? "bg-surface-hover text-on-surface/40"
-      : "bg-surface-hover text-on-surface/60";
+      : onVacation
+        ? "bg-warning/40 text-on-surface/80"
+        : "bg-surface-hover text-on-surface/60";
   const ring = isCurrent ? " ring-1 ring-focus" : "";
   return <div className={`${base} ${tone}${ring}`}>{label}</div>;
 }
@@ -604,6 +639,7 @@ function AvoidStatRow({ stat }: { stat: AvoidStat }) {
             slips={d.slips}
             isToday={d.isToday}
             date={d.date}
+            onVacation={d.onVacation}
           />
         ))}
       </div>
@@ -619,27 +655,36 @@ function SlipHeatCell({
   slips,
   isToday,
   date,
+  onVacation,
 }: {
   slips: number;
   isToday: boolean;
   date: number;
+  onVacation: boolean;
 }) {
   // Multiple slips on the same day deepen the tone so a binge stands out.
+  // Vacation slips stay yellow regardless of count: the user already opted
+  // out of the day counting against them.
   const tone =
     slips === 0
-      ? "bg-surface-hover"
-      : slips === 1
+      ? onVacation
+        ? "bg-warning/20"
+        : "bg-surface-hover"
+      : onVacation
         ? "bg-warning/60"
-        : "bg-danger/80";
+        : slips === 1
+          ? "bg-warning/60"
+          : "bg-danger/80";
   const ring = isToday ? " ring-1 ring-focus" : "";
   const dateLabel = new Date(date).toLocaleDateString(undefined, {
     weekday: "short",
     month: "short",
     day: "numeric",
   });
-  const label = `${dateLabel}${
-    slips > 0 ? ` — ${slips} slip${slips === 1 ? "" : "s"}` : " — no slips"
-  }`;
+  const slipText =
+    slips > 0 ? ` — ${slips} slip${slips === 1 ? "" : "s"}` : " — no slips";
+  const vacationText = onVacation ? " (on vacation)" : "";
+  const label = `${dateLabel}${slipText}${vacationText}`;
   return (
     <div
       className={`h-3 rounded-sm ${tone}${ring}`}

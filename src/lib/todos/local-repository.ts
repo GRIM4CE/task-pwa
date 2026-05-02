@@ -1,4 +1,10 @@
-import type { ArchiveDTO, StatsDTO, TodoDTO } from "@/lib/api-client";
+import type {
+  ArchiveDTO,
+  StatsDTO,
+  TodoDTO,
+  VacationDTO,
+  VacationPeriod,
+} from "@/lib/api-client";
 import {
   createTodoSchema,
   reorderTodosSchema,
@@ -24,6 +30,7 @@ import type {
 const STORAGE_KEY = "todo-pwa:guest:todos";
 const LEGACY_SUBTASKS_KEY = "todo-pwa:guest:subtasks";
 const COMPLETIONS_KEY = "todo-pwa:guest:completions";
+const VACATIONS_KEY = "todo-pwa:guest:vacations";
 const COMPLETIONS_RETENTION_MS = 120 * 24 * 60 * 60 * 1000;
 export const GUEST_USERNAME = "Guest";
 
@@ -133,6 +140,26 @@ function writeCompletions(events: CompletionEvent[]): void {
   window.localStorage.setItem(COMPLETIONS_KEY, JSON.stringify(pruned));
 }
 
+function readVacations(): VacationPeriod[] {
+  if (typeof window === "undefined") return [];
+  const raw = window.localStorage.getItem(VACATIONS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return (parsed as VacationPeriod[]).filter(
+      (v) => typeof v?.id === "string" && typeof v?.startsAt === "number"
+    );
+  } catch {
+    return [];
+  }
+}
+
+function writeVacations(periods: VacationPeriod[]): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(VACATIONS_KEY, JSON.stringify(periods));
+}
+
 export const localTodoRepository: TodoRepository = {
   async list() {
     const all = readAll();
@@ -183,7 +210,10 @@ export const localTodoRepository: TodoRepository = {
         limitPeriod: t.limitPeriod,
         completions: (byTodo.get(t.id) ?? []).sort((a, b) => a - b),
       }));
-    return ok({ todos, avoid });
+    const vacations = readVacations()
+      .filter((v) => v.endsAt === null || v.endsAt >= cutoff)
+      .sort((a, b) => a.startsAt - b.startsAt);
+    return ok({ todos, avoid, vacations });
   },
 
   async create(input: CreateTodoInput) {
@@ -395,6 +425,37 @@ export const localTodoRepository: TodoRepository = {
     return ok({ success: true as const });
   },
 
+  async vacation() {
+    const periods = readVacations().sort((a, b) => a.startsAt - b.startsAt);
+    const active = periods.find((p) => p.endsAt === null) ?? null;
+    return ok<VacationDTO>({ periods, active });
+  },
+
+  async setVacation(action: "start" | "end") {
+    const now = Date.now();
+    const periods = readVacations();
+    const open = periods.find((p) => p.endsAt === null) ?? null;
+    let next = periods;
+    if (action === "start") {
+      if (!open) {
+        next = [
+          ...periods,
+          { id: crypto.randomUUID(), startsAt: now, endsAt: null },
+        ];
+      }
+    } else {
+      if (open) {
+        next = periods.map((p) =>
+          p.id === open.id ? { ...p, endsAt: now } : p
+        );
+      }
+    }
+    writeVacations(next);
+    const sorted = next.sort((a, b) => a.startsAt - b.startsAt);
+    const active = sorted.find((p) => p.endsAt === null) ?? null;
+    return ok<VacationDTO>({ periods: sorted, active });
+  },
+
   async reorder(ids: string[], parentId: string | null) {
     const parsed = reorderTodosSchema.safeParse({ ids, parentId });
     if (!parsed.success) return err("Invalid request");
@@ -421,4 +482,5 @@ export function clearGuestTodos(): void {
   window.localStorage.removeItem(STORAGE_KEY);
   window.localStorage.removeItem(LEGACY_SUBTASKS_KEY);
   window.localStorage.removeItem(COMPLETIONS_KEY);
+  window.localStorage.removeItem(VACATIONS_KEY);
 }
