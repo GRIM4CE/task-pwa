@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { validateSession } from "@/lib/session";
 import { updateTodoSchema } from "@/lib/validation";
 
@@ -180,14 +180,15 @@ export async function PATCH(
       { status: 400 }
     );
   }
-  // Require the persisted row to already be "avoid" — not just the post-patch
-  // shape. Otherwise `{ kind: "avoid", recordSlip: true }` on a "do" row would
-  // pass the effectiveKind check but the slip insert below (gated on
-  // `current.kind`) would silently no-op, leaving lastCompletedAt advanced
-  // without a logged event. Same constraint for undoLastSlip.
+  // Slip operations require BOTH the persisted row and the post-patch shape
+  // to be avoid. The persisted check rules out `{ kind: "avoid",
+  // recordSlip: true }` on a do row (slip insert is gated on `current.kind`,
+  // would silently no-op). The post-patch check rules out `{ kind: "do",
+  // recordSlip: true }` on an avoid row (slip would be inserted while the
+  // row's kind is being flipped to do, leaving an orphaned event).
   if (
     (body.recordSlip === true || body.undoLastSlip === true) &&
-    existing[0].kind !== "avoid"
+    (existing[0].kind !== "avoid" || effectiveKind !== "avoid")
   ) {
     return NextResponse.json(
       { error: "Slip operations only apply to avoid todos" },
@@ -240,10 +241,41 @@ export async function PATCH(
     // unchecking later doesn't resurrect the pin.
     if (body.completed) updateData.pinnedToWeek = false;
   }
+  // Server-side oncePerDay enforcement: when the row carries oncePerDay, a
+  // recordSlip is suppressed if any slip exists in the prior 24h. The client's
+  // disabled button uses local-calendar-day boundaries; we use a 24h rolling
+  // window here because the server doesn't know the user's timezone. That's
+  // strictly stricter — the only edge case is multi-device usage near a daily
+  // boundary, where a legitimate slip on a new calendar day might land within
+  // 24h of the previous one and get suppressed. Acceptable for a single-user
+  // app. The check happens before the transaction; any race with a concurrent
+  // insert is bounded to one extra slip, which the client can still undo.
+  let suppressSlipForOncePerDay = false;
+  if (
+    body.recordSlip === true &&
+    existing[0].kind === "avoid" &&
+    existing[0].oncePerDay
+  ) {
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const recentSlip = await db
+      .select({ id: schema.todoCompletions.id })
+      .from(schema.todoCompletions)
+      .where(
+        and(
+          eq(schema.todoCompletions.todoId, id),
+          eq(schema.todoCompletions.userId, session.user.id),
+          gte(schema.todoCompletions.completedAt, oneDayAgo)
+        )
+      )
+      .limit(1);
+    if (recentSlip.length > 0) suppressSlipForOncePerDay = true;
+  }
+
   // recordSlip touches lastCompletedAt for "days since last slip" but doesn't
   // flip `completed` — avoid-todos stay in the active list so the next slip
-  // can be logged.
-  if (body.recordSlip === true) {
+  // can be logged. Skip the bump when oncePerDay suppresses the slip so the
+  // row's state stays in sync with the (unwritten) completion log.
+  if (body.recordSlip === true && !suppressSlipForOncePerDay) {
     updateData.lastCompletedAt = now;
   }
 
@@ -335,7 +367,13 @@ export async function PATCH(
     // Avoid todos: each slip is recorded as a completion event so analytics
     // can compute calendar-window slip counts and streak gaps. The row's
     // `completed` flag stays false — it's not a "done" event, just a tally.
-    if (body.recordSlip === true && current.kind === "avoid") {
+    // Suppressed for oncePerDay rows that already slipped in the last 24h,
+    // see the pre-transaction comment above.
+    if (
+      body.recordSlip === true &&
+      current.kind === "avoid" &&
+      !suppressSlipForOncePerDay
+    ) {
       await tx.insert(schema.todoCompletions).values({
         todoId: row.id,
         userId: session.user.id,
@@ -460,7 +498,10 @@ export async function PATCH(
           eq(schema.todoCompletions.userId, session.user.id),
           gte(schema.todoCompletions.completedAt, slipCutoff)
         )
-      );
+      )
+      // Match the GET /api/todos ordering so clients see a consistent shape:
+      // ascending by completedAt, latest at the end of the array.
+      .orderBy(asc(schema.todoCompletions.completedAt));
     recentSlips = slips.map((s) => s.completedAt.getTime());
   }
 

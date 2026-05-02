@@ -669,12 +669,17 @@ export function avoidStatusForTodo(
 
 // Whether the given completion list contains a slip on today's local
 // calendar day. Used by the once-per-day card mode to decide whether the
-// +1 button should be disabled.
+// +1 button should be disabled. Uses date arithmetic (addDays) for the
+// next-day boundary so DST transitions — where the next local midnight is
+// 23 or 25 hours away — don't shift the window.
 export function hasSlipToday(
   completions: number[],
   now: number = Date.now()
 ): boolean {
-  const todayStart = startOfDay(new Date(now)).getTime();
-  const tomorrowStart = todayStart + 24 * 60 * 60 * 1000;
-  return completions.some((ts) => ts >= todayStart && ts < tomorrowStart);
+  const todayStart = startOfDay(new Date(now));
+  const todayStartMs = todayStart.getTime();
+  const tomorrowStartMs = addDays(todayStart, 1).getTime();
+  return completions.some(
+    (ts) => ts >= todayStartMs && ts < tomorrowStartMs
+  );
 }

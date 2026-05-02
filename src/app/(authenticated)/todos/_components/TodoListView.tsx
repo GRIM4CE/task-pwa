@@ -397,10 +397,22 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
     setTodos((prev) =>
       prev.map((t) => {
         if (t.id !== id) return t;
-        // Optimistically drop the most recent slip and rebase
-        // lastCompletedAt onto the new latest (or null). Server confirms with
-        // the authoritative state below.
-        const remaining = t.recentSlips.slice(0, -1);
+        // Optimistically drop the most recent slip by max-timestamp rather
+        // than array position so the result is correct regardless of how
+        // recentSlips happens to be ordered. Rebase lastCompletedAt onto
+        // the new latest (or null); the server confirms the authoritative
+        // state below.
+        if (t.recentSlips.length === 0) {
+          return { ...t, lastCompletedAt: null };
+        }
+        let maxIdx = 0;
+        for (let i = 1; i < t.recentSlips.length; i++) {
+          if (t.recentSlips[i] > t.recentSlips[maxIdx]) maxIdx = i;
+        }
+        const remaining = [
+          ...t.recentSlips.slice(0, maxIdx),
+          ...t.recentSlips.slice(maxIdx + 1),
+        ];
         const nextLast =
           remaining.length === 0 ? null : Math.max(...remaining);
         return {
@@ -1494,7 +1506,7 @@ function AvoidRow({
   const buttonDisabled = slippedToday;
   // Days since the last slip — null when there's never been one. Anchored to
   // `lastCompletedAt` (which has no retention cap) rather than `recentSlips`
-  // (30-day window) so a 31+ day clean streak still renders the badge.
+  // (35-day window) so a 36+ day clean streak still renders the badge.
   const daysClean = (() => {
     if (todo.lastCompletedAt === null) return null;
     const lastDay = new Date(todo.lastCompletedAt);
@@ -1904,7 +1916,7 @@ function EditTodoModal({
                     placeholder="No limit"
                     className="w-24 rounded-lg border border-border bg-input px-3 py-2 text-input-text placeholder-input-placeholder focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
                   />
-                  <span className="text-sm text-text-muted">times in the last</span>
+                  <span className="text-sm text-text-muted">times per</span>
                   <select
                     value={limitPeriod ?? "week"}
                     onChange={(e) =>
@@ -1912,8 +1924,8 @@ function EditTodoModal({
                     }
                     className="rounded-lg border border-border bg-input px-3 py-2 text-input-text focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
                   >
-                    <option value="week">7 days</option>
-                    <option value="month">30 days</option>
+                    <option value="week">week (Mon–Sun)</option>
+                    <option value="month">calendar month</option>
                   </select>
                 </div>
                 <p className="mt-1 text-xs text-text-muted">

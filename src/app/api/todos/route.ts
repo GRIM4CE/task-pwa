@@ -86,7 +86,11 @@ export async function GET() {
           inArray(schema.todoCompletions.todoId, avoidIds),
           gte(schema.todoCompletions.completedAt, slipCutoff)
         )
-      );
+      )
+      // Ascending so the latest slip is always at the end of each todo's
+      // array. Lets clients identify "the most recent" by index without
+      // re-sorting on every render.
+      .orderBy(asc(schema.todoCompletions.completedAt));
     for (const s of slips) {
       const list = slipsByTodo.get(s.todoId) ?? [];
       list.push(s.completedAt.getTime());

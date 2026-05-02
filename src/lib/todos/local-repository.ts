@@ -1,4 +1,5 @@
 import type { ArchiveDTO, StatsDTO, TodoDTO } from "@/lib/api-client";
+import { hasSlipToday } from "@/lib/analytics";
 import {
   createTodoSchema,
   reorderTodosSchema,
@@ -39,8 +40,9 @@ function err<T>(error: string): RepoResult<T> {
 
 const SLIP_WINDOW_MS = 35 * 24 * 60 * 60 * 1000;
 
-// Filter the persisted completion log down to the last 30 days for a given
-// todo. Mirrors the avoid-todo `recentSlips` field the server returns on the
+// Filter the persisted completion log down to the last 35 days for a given
+// todo (long enough to cover a 31-day calendar month plus buffer). Mirrors
+// the avoid-todo `recentSlips` field the server returns on the
 // list/POST/PATCH responses.
 function recentSlipsFor(todoId: string, events: CompletionEvent[]): number[] {
   const cutoff = Date.now() - SLIP_WINDOW_MS;
@@ -347,6 +349,20 @@ export const localTodoRepository: TodoRepository = {
     // Avoid todos: each slip is logged as a completion event without
     // flipping `completed`. Mirror the server's recordSlip handling.
     if (parsed.data.recordSlip === true && previous.kind === "avoid") {
+      // Local repo can use the precise local-calendar-day check (vs. the
+      // server's 24h rolling fallback) since we have the user's timezone
+      // available client-side. Idempotent: a duplicate slip on the same
+      // local day is a no-op rather than an error so the optimistic UI
+      // doesn't roll back.
+      if (previous.oncePerDay) {
+        const existingEvents = readCompletions();
+        const todaySlip = existingEvents.some(
+          (e) => e.todoId === id && hasSlipToday([e.completedAt])
+        );
+        if (todaySlip) {
+          return ok(withRecentSlips(updated, existingEvents));
+        }
+      }
       const slipAt = Date.now();
       next[index] = { ...updated, lastCompletedAt: slipAt };
       writeAll(next);
