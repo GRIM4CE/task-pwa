@@ -6,6 +6,7 @@ import {
   computeStats,
   percent,
   type AtRiskTodo,
+  type AvoidStat,
   type DailyStat,
   type WeekdayConsistencyEntry,
   type WeeklyStat,
@@ -94,32 +95,40 @@ export default function StatsView() {
     );
   }
 
-  const stats = data ? computeStats(data.todos) : null;
+  const stats = data
+    ? computeStats(data.todos, new Date(), data.avoid ?? [])
+    : null;
   const hasAnyRecurring =
     !!stats && (stats.daily.length > 0 || stats.weekly.length > 0);
+  const hasAnyAvoid = !!stats && stats.avoid.length > 0;
+  const hasAnything = hasAnyRecurring || hasAnyAvoid;
 
   return (
     <>
       <div className="mb-6">
-        <h2 className="text-xl font-semibold text-text">Repeat task stats</h2>
+        <h2 className="text-xl font-semibold text-text">Habit stats</h2>
         <p className="text-sm text-text-muted">
-          How often you&apos;re hitting your daily and weekly repeats.
+          Daily &amp; weekly repeats, plus the bad habits you&apos;re tracking.
         </p>
       </div>
 
-      {!hasAnyRecurring ? (
+      {!hasAnything ? (
         <div className="py-12 text-center">
           <p className="text-text-muted">
-            No daily or weekly repeats yet. Set a repeat on a todo to start
-            tracking.
+            Nothing to show yet. Set a repeat on a todo, or mark one as an
+            &ldquo;avoid&rdquo; habit, to start tracking.
           </p>
         </div>
       ) : (
         <>
-          {stats && stats.global.atRiskToday.length > 0 && (
-            <AtRiskBanner items={stats.global.atRiskToday} />
+          {hasAnyRecurring && stats && (
+            <>
+              {stats.global.atRiskToday.length > 0 && (
+                <AtRiskBanner items={stats.global.atRiskToday} />
+              )}
+              <GlobalCard stats={stats.global} />
+            </>
           )}
-          {stats && <GlobalCard stats={stats.global} />}
           {stats && stats.daily.length > 0 && (
             <Section title="Daily" hint="This week (Mon–Sun)">
               <div className="space-y-2">
@@ -135,6 +144,15 @@ export default function StatsView() {
               <div className="space-y-2">
                 {stats.weekly.map((w) => (
                   <WeeklyRow key={w.id} stat={w} />
+                ))}
+              </div>
+            </Section>
+          )}
+          {stats && stats.avoid.length > 0 && (
+            <Section title="Avoid" hint="Slips &amp; clean streaks">
+              <div className="space-y-2">
+                {stats.avoid.map((a) => (
+                  <AvoidStatRow key={a.id} stat={a} />
                 ))}
               </div>
             </Section>
@@ -515,4 +533,119 @@ function WeekPill({
       : "bg-surface-hover text-on-surface/60";
   const ring = isCurrent ? " ring-1 ring-focus" : "";
   return <div className={`${base} ${tone}${ring}`}>{label}</div>;
+}
+
+function AvoidStatRow({ stat }: { stat: AvoidStat }) {
+  const periodLabel =
+    stat.limitPeriod === "week"
+      ? "this week"
+      : stat.limitPeriod === "month"
+        ? "this month"
+        : `last ${stat.windowDays}d`;
+  const tone =
+    stat.status === "over"
+      ? "border-danger/50"
+      : stat.status === "warn"
+        ? "border-warning/50"
+        : "border-border-on-surface";
+  const cleanLabel =
+    stat.daysClean === null
+      ? "No slips logged yet"
+      : stat.daysClean === 0
+        ? "Slipped today"
+        : stat.daysClean === 1
+          ? "1 day clean"
+          : `${stat.daysClean} days clean`;
+
+  return (
+    <div className={`rounded-lg border bg-surface px-4 py-3 ${tone}`}>
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="block min-w-0 flex-1 truncate text-on-surface">
+          {stat.title}
+        </span>
+        <span
+          className={`shrink-0 text-sm font-medium ${
+            stat.status === "over"
+              ? "text-danger"
+              : stat.status === "warn"
+                ? "text-warning"
+                : "text-on-surface/70"
+          }`}
+        >
+          {stat.limitCount !== null
+            ? `${stat.windowSlipCount} / ${stat.limitCount} ${periodLabel}`
+            : `${stat.windowSlipCount} ${periodLabel}`}
+        </span>
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-on-surface/60">
+        <span>{cleanLabel}</span>
+        {stat.bestStreakDays > 0 && (
+          <span>Best: {stat.bestStreakDays}d</span>
+        )}
+        {stat.totalSlips > 0 && (
+          <span>{stat.totalSlips} total slips</span>
+        )}
+      </div>
+      {stat.milestone !== null && (
+        <div className="mt-1 text-xs font-medium text-success">
+          🎯 {stat.milestone}-day milestone reached
+        </div>
+      )}
+      <div
+        className="mt-2 grid gap-[2px]"
+        style={{
+          gridTemplateColumns: `repeat(${stat.heatmap.length}, minmax(0, 1fr))`,
+        }}
+        aria-label="Last 30 days of slips"
+      >
+        {stat.heatmap.map((d) => (
+          <SlipHeatCell
+            key={d.date}
+            slips={d.slips}
+            isToday={d.isToday}
+            date={d.date}
+          />
+        ))}
+      </div>
+      <div className="mt-1 flex justify-between text-[10px] text-on-surface/50">
+        <span>30 days ago</span>
+        <span>Today</span>
+      </div>
+    </div>
+  );
+}
+
+function SlipHeatCell({
+  slips,
+  isToday,
+  date,
+}: {
+  slips: number;
+  isToday: boolean;
+  date: number;
+}) {
+  // Multiple slips on the same day deepen the tone so a binge stands out.
+  const tone =
+    slips === 0
+      ? "bg-surface-hover"
+      : slips === 1
+        ? "bg-warning/60"
+        : "bg-danger/80";
+  const ring = isToday ? " ring-1 ring-focus" : "";
+  const dateLabel = new Date(date).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+  const label = `${dateLabel}${
+    slips > 0 ? ` — ${slips} slip${slips === 1 ? "" : "s"}` : " — no slips"
+  }`;
+  return (
+    <div
+      className={`h-3 rounded-sm ${tone}${ring}`}
+      role="img"
+      aria-label={label}
+      title={label}
+    />
+  );
 }

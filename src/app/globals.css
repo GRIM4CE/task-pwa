@@ -20,6 +20,7 @@
   --c-flag-red: #c1292e;
   --c-sea-green: #32936f;
   --c-sunflower: #ffc145;
+  --c-amber: #e89c2a;          /* Warning — distinct from focus's brighter sunflower */
 }
 
 /*
@@ -43,6 +44,7 @@
   --color-primary-hover: var(--c-magenta-800);
   --color-danger: var(--c-flag-red);
   --color-success: var(--c-sea-green);
+  --color-warning: var(--c-amber);
   --color-focus: var(--c-sunflower);
   --color-select: var(--c-grape-700);
   --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -71,6 +73,7 @@
   --color-primary-hover: #3f3344;
   --color-danger: #744253;
   --color-success: #7be0ad;
+  --color-warning: #c98a2b;
   --color-focus: #8e7dbe;
   --color-select: #e0b0d5;
 }

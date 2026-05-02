@@ -37,6 +37,23 @@ function err<T>(error: string): RepoResult<T> {
   return { data: null, error };
 }
 
+const SLIP_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+// Filter the persisted completion log down to the last 30 days for a given
+// todo. Mirrors the avoid-todo `recentSlips` field the server returns on the
+// list/POST/PATCH responses.
+function recentSlipsFor(todoId: string, events: CompletionEvent[]): number[] {
+  const cutoff = Date.now() - SLIP_WINDOW_MS;
+  return events
+    .filter((e) => e.todoId === todoId && e.completedAt >= cutoff)
+    .map((e) => e.completedAt);
+}
+
+function withRecentSlips(todo: TodoDTO, events: CompletionEvent[]): TodoDTO {
+  if (todo.kind !== "avoid") return { ...todo, recentSlips: [] };
+  return { ...todo, recentSlips: recentSlipsFor(todo.id, events) };
+}
+
 function readAll(): TodoDTO[] {
   if (typeof window === "undefined") return [];
   const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -49,6 +66,12 @@ function readAll(): TodoDTO[] {
           ...t,
           pinnedToWeek: t.pinnedToWeek ?? false,
           parentId: t.parentId ?? null,
+          // Backfill kind/limit fields for guest data written before the
+          // avoid-habit feature shipped.
+          kind: t.kind ?? "do",
+          limitCount: t.limitCount ?? null,
+          limitPeriod: t.limitPeriod ?? null,
+          recentSlips: t.recentSlips ?? [],
         }));
       }
     } catch {
@@ -113,7 +136,10 @@ function writeCompletions(events: CompletionEvent[]): void {
 export const localTodoRepository: TodoRepository = {
   async list() {
     const all = readAll();
-    return ok(sortTodos(filterMainList(all)));
+    const events = readCompletions();
+    return ok(
+      sortTodos(filterMainList(all)).map((t) => withRecentSlips(t, events))
+    );
   },
 
   async archive() {
@@ -146,7 +172,18 @@ export const localTodoRepository: TodoRepository = {
         createdAt: t.createdAt,
         completions: (byTodo.get(t.id) ?? []).sort((a, b) => a - b),
       }));
-    return ok({ todos });
+    const avoid: StatsDTO["avoid"] = all
+      .filter((t) => t.kind === "avoid" && t.parentId === null)
+      .map((t) => ({
+        id: t.id,
+        title: t.title,
+        isPersonal: t.isPersonal,
+        createdAt: t.createdAt,
+        limitCount: t.limitCount,
+        limitPeriod: t.limitPeriod,
+        completions: (byTodo.get(t.id) ?? []).sort((a, b) => a - b),
+      }));
+    return ok({ todos, avoid });
   },
 
   async create(input: CreateTodoInput) {
@@ -156,15 +193,18 @@ export const localTodoRepository: TodoRepository = {
     const all = readAll();
     const parentId = parsed.data.parentId ?? null;
 
-    // Subtasks inherit isPersonal from the parent and can't have recurrence.
+    // Subtasks inherit isPersonal from the parent and can't have recurrence
+    // or be avoid-tracked (avoid-todos can't be subtasks at all).
     let isPersonal = parsed.data.isPersonal ?? false;
     let recurrence = parsed.data.recurrence ?? null;
+    let kind = parsed.data.kind ?? "do";
     if (parentId !== null) {
       const parent = all.find((t) => t.id === parentId);
       if (!parent) return err("Not found");
       if (parent.parentId !== null) return err("Parent must be top-level");
       isPersonal = parent.isPersonal;
       recurrence = null;
+      kind = "do";
     }
 
     const now = Date.now();
@@ -178,6 +218,10 @@ export const localTodoRepository: TodoRepository = {
       sortOrder: nextSortOrder(all, parentId),
       recurrence,
       pinnedToWeek: parsed.data.pinnedToWeek ?? false,
+      kind,
+      limitCount: kind === "avoid" ? parsed.data.limitCount ?? null : null,
+      limitPeriod: kind === "avoid" ? parsed.data.limitPeriod ?? null : null,
+      recentSlips: [],
       lastCompletedAt: null,
       createdAt: now,
       updatedAt: now,
@@ -237,6 +281,37 @@ export const localTodoRepository: TodoRepository = {
       };
     }
 
+    // Cross-field invariants involving the persisted row state — schema-level
+    // refinements only see the request body. Mirrors the server PATCH guards.
+    const effectiveKind = parsed.data.kind ?? previous.kind;
+    const effectiveParentId =
+      parsed.data.parentId !== undefined
+        ? parsed.data.parentId
+        : previous.parentId;
+    const effectiveRecurrenceForKind =
+      parsed.data.recurrence !== undefined
+        ? parsed.data.recurrence
+        : previous.recurrence;
+    if (effectiveKind === "avoid" && effectiveParentId !== null) {
+      return err("Avoid todos cannot be subtasks");
+    }
+    if (effectiveKind === "avoid" && effectiveRecurrenceForKind !== null) {
+      return err("Avoid todos cannot be recurring");
+    }
+    // Require the persisted row to already be avoid — see the matching guard
+    // in /api/todos/[id]/route.ts for why a same-patch kind switch is rejected.
+    if (parsed.data.recordSlip === true && previous.kind !== "avoid") {
+      return err("Slips can only be recorded on avoid todos");
+    }
+    if (effectiveKind !== "avoid") {
+      if (
+        (parsed.data.limitCount !== undefined && parsed.data.limitCount !== null) ||
+        (parsed.data.limitPeriod !== undefined && parsed.data.limitPeriod !== null)
+      ) {
+        return err("Limits only apply to avoid todos");
+      }
+    }
+
     const updated = applyUpdate(previous, effectivePatch);
     let next = [...all];
     next[index] = updated;
@@ -259,6 +334,20 @@ export const localTodoRepository: TodoRepository = {
       next = cascadeUncompleteChildren(next, id);
     }
     writeAll(next);
+
+    // Avoid todos: each slip is logged as a completion event without
+    // flipping `completed`. Mirror the server's recordSlip handling.
+    if (parsed.data.recordSlip === true && previous.kind === "avoid") {
+      const slipAt = Date.now();
+      next[index] = { ...updated, lastCompletedAt: slipAt };
+      writeAll(next);
+      const events = [
+        ...readCompletions(),
+        { todoId: id, completedAt: slipAt },
+      ];
+      writeCompletions(events);
+      return ok(withRecentSlips(next[index], events));
+    }
 
     if (
       parsed.data.completed === true &&
@@ -295,7 +384,7 @@ export const localTodoRepository: TodoRepository = {
         ]);
       }
     }
-    return ok(updated);
+    return ok(withRecentSlips(updated, readCompletions()));
   },
 
   async delete(id: string) {

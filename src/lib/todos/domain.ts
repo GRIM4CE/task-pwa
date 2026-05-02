@@ -84,6 +84,15 @@ export function applyUpdate(
   if (patch.sortOrder !== undefined) next.sortOrder = patch.sortOrder;
   if (patch.recurrence !== undefined) next.recurrence = patch.recurrence;
   if (patch.pinnedToWeek !== undefined) next.pinnedToWeek = patch.pinnedToWeek;
+  if (patch.kind !== undefined) next.kind = patch.kind;
+  if (patch.limitCount !== undefined) next.limitCount = patch.limitCount;
+  if (patch.limitPeriod !== undefined) next.limitPeriod = patch.limitPeriod;
+  // Switching kind back to "do" drops any stale limit fields. Mirrors the
+  // server PATCH handler so optimistic updates match the committed shape.
+  if (patch.kind === "do") {
+    next.limitCount = null;
+    next.limitPeriod = null;
+  }
   if (patch.parentId !== undefined) {
     next.parentId = patch.parentId;
     if (patch.parentId !== null) next.recurrence = null;

@@ -1,4 +1,11 @@
-import type { ArchiveDTO, Recurrence, StatsDTO, TodoDTO } from "@/lib/api-client";
+import type {
+  ArchiveDTO,
+  LimitPeriod,
+  Recurrence,
+  StatsDTO,
+  TodoDTO,
+  TodoKind,
+} from "@/lib/api-client";
 
 export type RepoResult<T> = { data: T; error: null } | { data: null; error: string };
 
@@ -9,6 +16,9 @@ export interface CreateTodoInput {
   recurrence?: Recurrence;
   pinnedToWeek?: boolean;
   parentId?: string | null;
+  kind?: TodoKind;
+  limitCount?: number | null;
+  limitPeriod?: LimitPeriod;
 }
 
 export interface UpdateTodoPatch {
@@ -20,6 +30,10 @@ export interface UpdateTodoPatch {
   pinnedToWeek?: boolean;
   parentId?: string | null;
   autoReset?: boolean;
+  kind?: TodoKind;
+  limitCount?: number | null;
+  limitPeriod?: LimitPeriod;
+  recordSlip?: boolean;
 }
 
 export interface TodoRepository {

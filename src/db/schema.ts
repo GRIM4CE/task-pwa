@@ -150,6 +150,14 @@ export const todos = sqliteTable(
     sortOrder: integer("sort_order").notNull().default(0),
     recurrence: text("recurrence", { enum: ["daily", "weekly"] }),
     pinnedToWeek: integer("pinned_to_week", { mode: "boolean" }).notNull().default(false),
+    // "do" = normal todo (default). "avoid" = bad-habit tracker: each tap
+    // logs a slip into todoCompletions instead of flipping completed, and the
+    // row never archives — it stays visible so future slips can be logged.
+    kind: text("kind", { enum: ["do", "avoid"] }).notNull().default("do"),
+    // Optional warning threshold for avoid-todos. limitCount slips within
+    // limitPeriod (rolling) trips an at/over-limit warning on the card.
+    limitCount: integer("limit_count"),
+    limitPeriod: text("limit_period", { enum: ["week", "month"] }),
     lastCompletedAt: integer("last_completed_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()

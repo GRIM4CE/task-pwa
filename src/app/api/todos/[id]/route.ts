@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { validateSession } from "@/lib/session";
 import { updateTodoSchema } from "@/lib/validation";
 
@@ -24,6 +24,10 @@ export async function PATCH(
     pinnedToWeek?: boolean;
     parentId?: string | null;
     autoReset?: boolean;
+    kind?: "do" | "avoid";
+    limitCount?: number | null;
+    limitPeriod?: "week" | "month" | null;
+    recordSlip?: boolean;
   };
   try {
     const raw = await request.json();
@@ -151,6 +155,55 @@ export async function PATCH(
     );
   }
 
+  // Cross-field invariants involving the existing row state. The schema-level
+  // refinements only see the request body — these need the persisted row to
+  // know whether the patch's effective shape is legal.
+  const effectiveKind: "do" | "avoid" =
+    body.kind !== undefined ? body.kind : existing[0].kind;
+  const effectiveParentId =
+    reparentTo === undefined
+      ? existing[0].parentId
+      : reparentTo === null
+        ? null
+        : reparentTo.id;
+  if (effectiveKind === "avoid" && effectiveParentId !== null) {
+    return NextResponse.json(
+      { error: "Avoid todos cannot be subtasks" },
+      { status: 400 }
+    );
+  }
+  if (effectiveKind === "avoid" && effectiveRecurrence !== null) {
+    return NextResponse.json(
+      { error: "Avoid todos cannot be recurring" },
+      { status: 400 }
+    );
+  }
+  // Require the persisted row to already be "avoid" — not just the post-patch
+  // shape. Otherwise `{ kind: "avoid", recordSlip: true }` on a "do" row would
+  // pass the effectiveKind check but the slip insert below (gated on
+  // `current.kind`) would silently no-op, leaving lastCompletedAt advanced
+  // without a logged event.
+  if (body.recordSlip === true && existing[0].kind !== "avoid") {
+    return NextResponse.json(
+      { error: "Slips can only be recorded on avoid todos" },
+      { status: 400 }
+    );
+  }
+  // limit fields are only meaningful for avoid todos. If the patch sets them
+  // on a non-avoid row (or a row being switched to "do" in the same patch),
+  // reject rather than silently dropping them.
+  if (effectiveKind !== "avoid") {
+    if (
+      (body.limitCount !== undefined && body.limitCount !== null) ||
+      (body.limitPeriod !== undefined && body.limitPeriod !== null)
+    ) {
+      return NextResponse.json(
+        { error: "Limits only apply to avoid todos" },
+        { status: 400 }
+      );
+    }
+  }
+
   const now = new Date();
   const updateData: Record<string, unknown> = { updatedAt: now };
   if (body.title !== undefined) updateData.title = body.title;
@@ -158,12 +211,27 @@ export async function PATCH(
   if (body.sortOrder !== undefined) updateData.sortOrder = body.sortOrder;
   if (body.recurrence !== undefined) updateData.recurrence = body.recurrence;
   if (body.pinnedToWeek !== undefined) updateData.pinnedToWeek = body.pinnedToWeek;
+  if (body.kind !== undefined) updateData.kind = body.kind;
+  if (body.limitCount !== undefined) updateData.limitCount = body.limitCount;
+  if (body.limitPeriod !== undefined) updateData.limitPeriod = body.limitPeriod;
+  // Switching kind away from avoid drops any stale limit fields so they don't
+  // linger as dead config on a non-avoid row.
+  if (body.kind === "do") {
+    updateData.limitCount = null;
+    updateData.limitPeriod = null;
+  }
   if (body.completed !== undefined) {
     updateData.completed = body.completed;
     updateData.lastCompletedAt = body.completed ? now : null;
     // Pinning is meant for "this week's open work"; clear it on completion so
     // unchecking later doesn't resurrect the pin.
     if (body.completed) updateData.pinnedToWeek = false;
+  }
+  // recordSlip touches lastCompletedAt for "days since last slip" but doesn't
+  // flip `completed` — avoid-todos stay in the active list so the next slip
+  // can be logged.
+  if (body.recordSlip === true) {
+    updateData.lastCompletedAt = now;
   }
 
   if (reparentTo !== undefined) {
@@ -192,6 +260,7 @@ export async function PATCH(
       .select({
         completed: schema.todos.completed,
         recurrence: schema.todos.recurrence,
+        kind: schema.todos.kind,
       })
       .from(schema.todos)
       .where(eq(schema.todos.id, id))
@@ -250,6 +319,17 @@ export async function PATCH(
         );
     }
 
+    // Avoid todos: each slip is recorded as a completion event so analytics
+    // can compute rolling-window slip counts and streak gaps. The row's
+    // `completed` flag stays false — it's not a "done" event, just a tally.
+    if (body.recordSlip === true && current.kind === "avoid") {
+      await tx.insert(schema.todoCompletions).values({
+        todoId: row.id,
+        userId: session.user.id,
+        completedAt: now,
+      });
+    }
+
     // Only recurring todos surface in stats, so non-recurring completions
     // aren't logged. Attribution is to the actor (session user) — joined
     // todos are editable by anyone, and stats are per-user.
@@ -304,6 +384,25 @@ export async function PATCH(
     .where(eq(schema.users.id, updated.userId))
     .limit(1);
 
+  // Refetch the 30-day slip window so the client can recompute the card's
+  // warning state without a separate /api/todos round-trip after a slip is
+  // logged (or after kind/limit fields change).
+  let recentSlips: number[] = [];
+  if (updated.kind === "avoid") {
+    const slipCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const slips = await db
+      .select({ completedAt: schema.todoCompletions.completedAt })
+      .from(schema.todoCompletions)
+      .where(
+        and(
+          eq(schema.todoCompletions.todoId, updated.id),
+          eq(schema.todoCompletions.userId, session.user.id),
+          gte(schema.todoCompletions.completedAt, slipCutoff)
+        )
+      );
+    recentSlips = slips.map((s) => s.completedAt.getTime());
+  }
+
   return NextResponse.json({
     id: updated.id,
     parentId: updated.parentId,
@@ -314,6 +413,10 @@ export async function PATCH(
     sortOrder: updated.sortOrder,
     recurrence: updated.recurrence,
     pinnedToWeek: updated.pinnedToWeek,
+    kind: updated.kind,
+    limitCount: updated.limitCount,
+    limitPeriod: updated.limitPeriod,
+    recentSlips,
     lastCompletedAt: updated.lastCompletedAt ? updated.lastCompletedAt.getTime() : null,
     createdAt: updated.createdAt.getTime(),
     updatedAt: updated.updatedAt.getTime(),

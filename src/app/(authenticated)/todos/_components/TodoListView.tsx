@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { type TodoDTO, type Recurrence } from "@/lib/api-client";
+import {
+  type LimitPeriod,
+  type Recurrence,
+  type TodoDTO,
+  type TodoKind,
+} from "@/lib/api-client";
+import { avoidStatusForTodo, type AvoidStatus } from "@/lib/analytics";
 import { isCompletedTodoExpired, isRecurringResetDue } from "@/lib/recurrence";
 import { notifyStatsMayHaveChanged } from "@/lib/stats-events";
 import {
@@ -316,6 +322,38 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
     }
   }
 
+  async function handleRecordSlip(todo: Todo) {
+    if (todo.kind !== "avoid") return;
+    if (pendingToggleRef.current.has(todo.id)) return;
+    pendingToggleRef.current.add(todo.id);
+
+    const previousTodos = todos;
+    setTodos((prev) =>
+      prev.map((t) => {
+        if (t.id !== todo.id) return t;
+        const now = Date.now();
+        return {
+          ...t,
+          recentSlips: [...t.recentSlips, now],
+          lastCompletedAt: now,
+        };
+      })
+    );
+
+    const { data, error } = await repo.update(todo.id, { recordSlip: true });
+    pendingToggleRef.current.delete(todo.id);
+    if (error) {
+      setTodos(previousTodos);
+      return;
+    }
+    if (data) {
+      setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
+      // The slip touches the completion log, which feeds /stats. Notify so a
+      // mounted stats page picks it up without needing a visibility change.
+      notifyStatsMayHaveChanged();
+    }
+  }
+
   async function handleAddSubtask(parentId: string, title: string) {
     const trimmed = title.trim();
     if (!trimmed) return;
@@ -344,7 +382,15 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
 
   async function handleEditSave(
     id: string,
-    patch: { title: string; description: string | null; recurrence: Recurrence; pinnedToWeek: boolean }
+    patch: {
+      title: string;
+      description: string | null;
+      recurrence: Recurrence;
+      pinnedToWeek: boolean;
+      kind: TodoKind;
+      limitCount: number | null;
+      limitPeriod: LimitPeriod;
+    }
   ) {
     const { data } = await repo.update(id, patch);
     if (data) {
@@ -411,6 +457,9 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
     if (dragged.isPersonal !== target.isPersonal) return;
     if (todos.some((t) => t.parentId === dragged.id)) return;
     if (dragged.recurrence !== null) return;
+    // Avoid todos can't be subtasks — they need their own card UI for the
+    // slip button and warning state.
+    if (dragged.kind === "avoid" || target.kind === "avoid") return;
 
     const previous = todos;
     // Optimistic: move locally, the API will renormalize sortOrder.
@@ -463,16 +512,34 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
   // animation finishes, so the user sees the confirmation where they tapped
   // before the row settles into Complete.
   const isActiveSlot = (t: Todo) => !t.completed || justCompletedIds.has(t.id);
+  // Avoid todos live in their own section and never appear in This Week /
+  // Daily / General — the slip button is conceptually different from a
+  // checkbox, and mixing them muddies the visual language.
+  const isDoTodo = (t: Todo) => t.kind === "do";
+  const avoidTodos = topLevel.filter((t) => t.kind === "avoid");
   const thisWeekTodos = topLevel.filter(
-    (t) => isActiveSlot(t) && (t.recurrence === "weekly" || t.pinnedToWeek)
+    (t) =>
+      isDoTodo(t) &&
+      isActiveSlot(t) &&
+      (t.recurrence === "weekly" || t.pinnedToWeek)
   );
   const dailyTodos = topLevel.filter(
-    (t) => isActiveSlot(t) && t.recurrence === "daily" && !t.pinnedToWeek
+    (t) =>
+      isDoTodo(t) &&
+      isActiveSlot(t) &&
+      t.recurrence === "daily" &&
+      !t.pinnedToWeek
   );
   const regularActive = topLevel.filter(
-    (t) => isActiveSlot(t) && t.recurrence === null && !t.pinnedToWeek
+    (t) =>
+      isDoTodo(t) &&
+      isActiveSlot(t) &&
+      t.recurrence === null &&
+      !t.pinnedToWeek
   );
-  const completedTodos = topLevel.filter((t) => t.completed && !justCompletedIds.has(t.id));
+  const completedTodos = topLevel.filter(
+    (t) => isDoTodo(t) && t.completed && !justCompletedIds.has(t.id)
+  );
 
   // Subtasks pinned to This Week. Subtasks inherit isPersonal from their parent
   // at create-time, so this filter mirrors the per-tab visibleTodos rule.
@@ -657,6 +724,22 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
               renderTopLevelTodo(todo, isDragging, isNestTarget)
             }
           />
+        </Section>
+      )}
+
+      {/* Avoid (bad-habit trackers) */}
+      {avoidTodos.length > 0 && (
+        <Section title="Avoid" hint="Tap +1 to log a slip">
+          <div className="space-y-2">
+            {sortTodos(avoidTodos).map((todo) => (
+              <AvoidRow
+                key={todo.id}
+                todo={todo}
+                onSlip={() => handleRecordSlip(todo)}
+                onOpen={() => setEditing(todo)}
+              />
+            ))}
+          </div>
         </Section>
       )}
 
@@ -1303,6 +1386,141 @@ function SubtaskRow({
   );
 }
 
+function AvoidRow({
+  todo,
+  onSlip,
+  onOpen,
+}: {
+  todo: Todo;
+  onSlip: () => void;
+  onOpen: () => void;
+}) {
+  const { count, status, windowDays } = avoidStatusForTodo(
+    todo.recentSlips,
+    todo.limitCount,
+    todo.limitPeriod
+  );
+  // Days since the last slip — null when there's never been one. Anchored to
+  // `lastCompletedAt` (which has no retention cap) rather than `recentSlips`
+  // (30-day window) so a 31+ day clean streak still renders the badge.
+  const daysClean = (() => {
+    if (todo.lastCompletedAt === null) return null;
+    const lastDay = new Date(todo.lastCompletedAt);
+    const today = new Date();
+    const lastStart = new Date(
+      lastDay.getFullYear(),
+      lastDay.getMonth(),
+      lastDay.getDate()
+    ).getTime();
+    const todayStart = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate()
+    ).getTime();
+    return Math.max(
+      0,
+      Math.round((todayStart - lastStart) / (24 * 60 * 60 * 1000))
+    );
+  })();
+  const periodLabel =
+    todo.limitPeriod === "week"
+      ? "this week"
+      : todo.limitPeriod === "month"
+        ? "this month"
+        : `last ${windowDays}d`;
+
+  const tone = avoidToneClasses(status);
+
+  return (
+    <div
+      className={`flex items-center gap-3 rounded-lg border px-4 py-3 ${tone.row}`}
+    >
+      <button
+        onClick={onSlip}
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-focus ${tone.button}`}
+        aria-label="Record a slip"
+      >
+        +1
+      </button>
+      <div className="min-w-0 flex-1">
+        <span className="block break-words text-on-surface">{todo.title}</span>
+        {todo.description && (
+          <span className="mt-0.5 block break-words text-xs text-on-surface/60">
+            {todo.description}
+          </span>
+        )}
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
+          {todo.limitCount !== null ? (
+            <span className={tone.count}>
+              {count} / {todo.limitCount} {periodLabel}
+            </span>
+          ) : (
+            <span className="text-on-surface/60">
+              {count} slip{count === 1 ? "" : "s"} {periodLabel}
+            </span>
+          )}
+          {daysClean !== null && status !== "over" && (
+            <span className="text-on-surface/60">
+              {daysClean === 0
+                ? "Slipped today"
+                : daysClean === 1
+                  ? "1 day clean"
+                  : `${daysClean} days clean`}
+            </span>
+          )}
+          {status === "warn" && (
+            <span className="font-medium text-warning">Close to limit</span>
+          )}
+          {status === "over" && (
+            <span className="font-medium text-danger">Over limit</span>
+          )}
+        </div>
+      </div>
+      <button
+        onClick={onOpen}
+        className="shrink-0 rounded p-1 text-on-surface/60 hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+        aria-label="Avoid todo settings"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className="h-4 w-4"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+        >
+          <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+function avoidToneClasses(status: AvoidStatus): {
+  row: string;
+  button: string;
+  count: string;
+} {
+  if (status === "over") {
+    return {
+      row: "border-danger/50 bg-danger/5",
+      button: "border-2 border-danger bg-danger/10 text-danger hover:bg-danger/20",
+      count: "font-medium text-danger",
+    };
+  }
+  if (status === "warn") {
+    return {
+      row: "border-warning/50 bg-warning/5",
+      button: "border-2 border-warning bg-warning/10 text-warning hover:bg-warning/20",
+      count: "font-medium text-warning",
+    };
+  }
+  return {
+    row: "border-border-on-surface bg-surface",
+    button:
+      "border-2 border-border text-on-surface/70 hover:border-focus hover:text-on-surface",
+    count: "text-on-surface/70",
+  };
+}
+
 function AddSubtaskForm({ onAdd }: { onAdd: (title: string) => void | Promise<void> }) {
   const [title, setTitle] = useState("");
   const [adding, setAdding] = useState(false);
@@ -1345,30 +1563,62 @@ function EditTodoModal({
 }: {
   todo: Todo;
   onCancel: () => void;
-  onSave: (patch: { title: string; description: string | null; recurrence: Recurrence; pinnedToWeek: boolean }) => void | Promise<void>;
+  onSave: (patch: {
+    title: string;
+    description: string | null;
+    recurrence: Recurrence;
+    pinnedToWeek: boolean;
+    kind: TodoKind;
+    limitCount: number | null;
+    limitPeriod: LimitPeriod;
+  }) => void | Promise<void>;
   onDelete: () => void;
 }) {
   const [title, setTitle] = useState(todo.title);
   const [description, setDescription] = useState(todo.description ?? "");
   const [recurrence, setRecurrence] = useState<Recurrence>(todo.recurrence);
   const [pinnedToWeek, setPinnedToWeek] = useState(todo.pinnedToWeek);
+  const [kind, setKind] = useState<TodoKind>(todo.kind);
+  const [limitCountInput, setLimitCountInput] = useState<string>(
+    todo.limitCount !== null ? String(todo.limitCount) : ""
+  );
+  const [limitPeriod, setLimitPeriod] = useState<LimitPeriod>(
+    todo.limitPeriod ?? "week"
+  );
   const [saving, setSaving] = useState(false);
 
+  const isAvoid = kind === "avoid";
   // Recurring todos can't be pinned: daily are excluded from This Week, and
-  // weekly already surface there. Force the pin off when the user picks any
-  // recurrence; the API would reject the combination otherwise.
-  const pinDisabled = recurrence !== null;
+  // weekly already surface there. Avoid todos can't recur or be pinned at
+  // all — they live in their own section and the API would reject either combo.
+  const pinDisabled = recurrence !== null || isAvoid;
+  const recurrenceDisabled = isAvoid;
   const effectivePinned = pinDisabled ? false : pinnedToWeek;
+  const effectiveRecurrence: Recurrence = recurrenceDisabled ? null : recurrence;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
+    // Empty input means "no limit" — both fields drop together so the
+    // server-side refinement (count⇔period) is satisfied.
+    const trimmedLimit = limitCountInput.trim();
+    const parsedLimit = trimmedLimit === "" ? null : Number(trimmedLimit);
+    if (
+      isAvoid &&
+      parsedLimit !== null &&
+      (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 999)
+    ) {
+      return;
+    }
     setSaving(true);
     await onSave({
       title: title.trim(),
       description: description.trim() ? description.trim() : null,
-      recurrence,
+      recurrence: effectiveRecurrence,
       pinnedToWeek: effectivePinned,
+      kind,
+      limitCount: isAvoid ? parsedLimit : null,
+      limitPeriod: isAvoid && parsedLimit !== null ? limitPeriod : null,
     });
     setSaving(false);
   }
@@ -1426,18 +1676,106 @@ function EditTodoModal({
               />
             </label>
 
-            <label className="mb-4 block">
+            <fieldset className="mb-4">
+              <legend className="mb-1 block text-sm text-text-muted">
+                Track type
+              </legend>
+              <div className="grid grid-cols-2 gap-2">
+                <label
+                  className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                    kind === "do"
+                      ? "border-focus bg-surface-hover text-text"
+                      : "border-border bg-input text-text-muted"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="kind"
+                    value="do"
+                    checked={kind === "do"}
+                    onChange={() => setKind("do")}
+                    className="sr-only"
+                  />
+                  <span>Do this</span>
+                </label>
+                <label
+                  className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                    kind === "avoid"
+                      ? "border-warning bg-surface-hover text-text"
+                      : "border-border bg-input text-text-muted"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="kind"
+                    value="avoid"
+                    checked={kind === "avoid"}
+                    onChange={() => setKind("avoid")}
+                    className="sr-only"
+                  />
+                  <span>Avoid this</span>
+                </label>
+              </div>
+              <p className="mt-1 text-xs text-text-muted">
+                {isAvoid
+                  ? "Tap +1 to log a slip; analytics tracks slip count and clean streak."
+                  : "Standard checkbox todo."}
+              </p>
+            </fieldset>
+
+            <label className={`mb-4 block ${recurrenceDisabled ? "opacity-50" : ""}`}>
               <span className="mb-1 block text-sm text-text-muted">Repeats</span>
               <select
-                value={recurrence ?? ""}
+                value={effectiveRecurrence ?? ""}
                 onChange={(e) => setRecurrence((e.target.value || null) as Recurrence)}
-                className="w-full rounded-lg border border-border bg-input px-3 py-2 text-input-text focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+                disabled={recurrenceDisabled}
+                className="w-full rounded-lg border border-border bg-input px-3 py-2 text-input-text focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus disabled:cursor-not-allowed"
               >
                 <option value="">No repeat</option>
                 <option value="daily">Daily — resets at local midnight</option>
                 <option value="weekly">Weekly — resets 7 days later at local midnight</option>
               </select>
+              {recurrenceDisabled && (
+                <span className="mt-1 block text-xs text-text-muted">
+                  Avoid todos don&apos;t use recurrence — they always stay visible
+                  so you can log slips.
+                </span>
+              )}
             </label>
+
+            {isAvoid && (
+              <fieldset className="mb-4">
+                <legend className="mb-1 block text-sm text-text-muted">
+                  Warn me if I slip more than
+                </legend>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={999}
+                    value={limitCountInput}
+                    onChange={(e) => setLimitCountInput(e.target.value)}
+                    placeholder="No limit"
+                    className="w-24 rounded-lg border border-border bg-input px-3 py-2 text-input-text placeholder-input-placeholder focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+                  />
+                  <span className="text-sm text-text-muted">times in the last</span>
+                  <select
+                    value={limitPeriod ?? "week"}
+                    onChange={(e) =>
+                      setLimitPeriod(e.target.value as "week" | "month")
+                    }
+                    className="rounded-lg border border-border bg-input px-3 py-2 text-input-text focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+                  >
+                    <option value="week">7 days</option>
+                    <option value="month">30 days</option>
+                  </select>
+                </div>
+                <p className="mt-1 text-xs text-text-muted">
+                  Leave blank to track without a limit.
+                </p>
+              </fieldset>
+            )}
 
             <label className={`mb-4 flex items-center gap-2 ${pinDisabled ? "opacity-50" : ""}`}>
               <input
