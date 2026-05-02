@@ -68,8 +68,19 @@ export interface WeeklyStat {
 export interface GlobalStats {
   dailyCount: number;
   weeklyCount: number;
+  // Daily-this-week numerator/denominator counted only over the elapsed
+  // window (Mon..today inclusive), and only for days at or after each
+  // habit's creation date so habits added mid-week don't drag the score.
   weekCompletedDays: number;
   weekTotalDays: number;
+  // Same partial-window logic applied to last week (e.g. Mon..Sat last
+  // week if today is Saturday) so the "vs last week" delta is apples to
+  // apples. Null when last week's window has no countable days (all
+  // habits were created this week).
+  lastWeekCompletedDays: number | null;
+  lastWeekTotalDays: number | null;
+  // Weekly-this-month over elapsed weeks (including the in-progress one),
+  // restricted to weeks at or after each habit's first active week.
   monthCompletedWeeks: number;
   monthTotalWeeks: number;
 }
@@ -227,6 +238,61 @@ function weeklyForTodo(
   };
 }
 
+// Sums completed and possible day-instances across `dailyTodos` over the
+// half-open window [windowStart, windowEndExclusive). A day counts toward
+// a habit's denominator only when it's on or after the habit's creation
+// day, so a habit added Wednesday isn't penalised for Mon/Tue.
+function elapsedDailyTotals(
+  dailyTodos: RecurringTodoStats[],
+  windowStart: Date,
+  windowEndExclusive: Date
+): { completed: number; total: number } {
+  let completed = 0;
+  let total = 0;
+  const endMs = windowEndExclusive.getTime();
+  for (const t of dailyTodos) {
+    const habitDayStart = startOfDay(new Date(t.createdAt)).getTime();
+    const completedSet = completedDaySet(t.completions);
+    let cursor = new Date(windowStart);
+    while (cursor.getTime() < endMs) {
+      const ms = cursor.getTime();
+      if (ms >= habitDayStart) {
+        total++;
+        if (completedSet.has(ms)) completed++;
+      }
+      cursor = addDays(cursor, 1);
+    }
+  }
+  return { completed, total };
+}
+
+// Sums completed and possible week-instances across `weeklyTodos` over
+// the elapsed weeks of the current month (weeks whose Monday is on or
+// before this Monday). Same per-habit gate by creation week.
+function elapsedWeeklyTotals(
+  weeklyTodos: RecurringTodoStats[],
+  monthWeeks: { start: Date; end: Date }[],
+  thisWeekStart: Date
+): { completed: number; total: number } {
+  const elapsed = monthWeeks.filter(
+    (w) => w.start.getTime() <= thisWeekStart.getTime()
+  );
+  let completed = 0;
+  let total = 0;
+  for (const t of weeklyTodos) {
+    const habitWeekStart = startOfWeek(new Date(t.createdAt)).getTime();
+    const completedSet = completedWeekSet(t.completions);
+    for (const w of elapsed) {
+      const ms = w.start.getTime();
+      if (ms >= habitWeekStart) {
+        total++;
+        if (completedSet.has(ms)) completed++;
+      }
+    }
+  }
+  return { completed, total };
+}
+
 export function computeStats(
   todos: RecurringTodoStats[],
   now: Date = new Date()
@@ -243,13 +309,24 @@ export function computeStats(
   const daily = dailyTodos.map((t) => dailyForTodo(t, weekStart, todayStart));
   const weekly = weeklyTodos.map((t) => weeklyForTodo(t, monthWeeks, weekStart));
 
-  const weekCompletedDays = daily.reduce((acc, d) => acc + d.completedCount, 0);
-  const weekTotalDays = daily.length * DAYS_IN_WEEK;
-  const monthCompletedWeeks = weekly.reduce(
-    (acc, w) => acc + w.completedCount,
-    0
-  );
-  const monthTotalWeeks = weekly.length * monthWeeks.length;
+  // Elapsed window = Mon..today inclusive. Half-open end is the day after
+  // today so today itself is always counted (matches the spec's "today is
+  // always included" rule).
+  const elapsedEnd = addDays(todayStart, 1);
+  const { completed: weekCompletedDays, total: weekTotalDays } =
+    elapsedDailyTotals(dailyTodos, weekStart, elapsedEnd);
+
+  // Last-week comparison uses the same number of elapsed days, anchored
+  // at last Monday — e.g. if today is Saturday (day 6), compare Mon..Sat
+  // both weeks rather than against last week's full Mon..Sun.
+  const elapsedDayCount =
+    Math.round((elapsedEnd.getTime() - weekStart.getTime()) / 86_400_000);
+  const lastWeekStart = addDays(weekStart, -DAYS_IN_WEEK);
+  const lastWeekEnd = addDays(lastWeekStart, elapsedDayCount);
+  const lastWeek = elapsedDailyTotals(dailyTodos, lastWeekStart, lastWeekEnd);
+
+  const { completed: monthCompletedWeeks, total: monthTotalWeeks } =
+    elapsedWeeklyTotals(weeklyTodos, monthWeeks, weekStart);
 
   return {
     daily,
@@ -259,6 +336,8 @@ export function computeStats(
       weeklyCount: weekly.length,
       weekCompletedDays,
       weekTotalDays,
+      lastWeekCompletedDays: lastWeek.total > 0 ? lastWeek.completed : null,
+      lastWeekTotalDays: lastWeek.total > 0 ? lastWeek.total : null,
       monthCompletedWeeks,
       monthTotalWeeks,
     },

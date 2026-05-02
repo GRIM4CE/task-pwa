@@ -164,13 +164,26 @@ function GlobalCard({
 }: {
   stats: ReturnType<typeof computeStats>["global"];
 }) {
-  const weekPct = percent(stats.weekCompletedDays, stats.weekTotalDays);
-  const monthPct = percent(stats.monthCompletedWeeks, stats.monthTotalWeeks);
+  const hasWeekData = stats.dailyCount > 0 && stats.weekTotalDays > 0;
+  const hasMonthData = stats.weeklyCount > 0 && stats.monthTotalWeeks > 0;
+  const weekPct = hasWeekData
+    ? percent(stats.weekCompletedDays, stats.weekTotalDays)
+    : null;
+  const monthPct = hasMonthData
+    ? percent(stats.monthCompletedWeeks, stats.monthTotalWeeks)
+    : null;
+  const lastWeekPct =
+    stats.lastWeekTotalDays !== null && stats.lastWeekCompletedDays !== null
+      ? percent(stats.lastWeekCompletedDays, stats.lastWeekTotalDays)
+      : null;
+  const weekDelta =
+    weekPct !== null && lastWeekPct !== null ? weekPct - lastWeekPct : null;
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <Tile
         label="Daily this week"
-        value={stats.dailyCount === 0 ? "—" : `${weekPct}%`}
+        value={weekPct === null ? "—" : `${weekPct}%`}
+        accent={weekDelta !== null ? <DeltaBadge delta={weekDelta} /> : null}
         sub={
           stats.dailyCount === 0
             ? "No daily repeats"
@@ -179,7 +192,7 @@ function GlobalCard({
       />
       <Tile
         label="Weekly this month"
-        value={stats.weeklyCount === 0 ? "—" : `${monthPct}%`}
+        value={monthPct === null ? "—" : `${monthPct}%`}
         sub={
           stats.weeklyCount === 0
             ? "No weekly repeats"
@@ -194,19 +207,42 @@ function Tile({
   label,
   value,
   sub,
+  accent,
 }: {
   label: string;
   value: string;
   sub: string;
+  accent?: React.ReactNode;
 }) {
   return (
     <div className="rounded-lg border border-border-on-surface bg-surface px-4 py-3">
       <div className="text-xs uppercase tracking-wide text-on-surface/60">
         {label}
       </div>
-      <div className="mt-1 text-2xl font-semibold text-on-surface">{value}</div>
+      <div className="mt-1 flex items-baseline gap-2">
+        <div className="text-2xl font-semibold text-on-surface">{value}</div>
+        {accent}
+      </div>
       <div className="mt-1 text-xs text-on-surface/60">{sub}</div>
     </div>
+  );
+}
+
+function DeltaBadge({ delta }: { delta: number }) {
+  // U+2212 (minus) keeps the sign visually balanced with "+"; "0pp" stays
+  // unsigned to read as a plain neutral.
+  const sign = delta > 0 ? "+" : delta < 0 ? "−" : "";
+  const tone =
+    delta > 0
+      ? "text-success"
+      : delta < 0
+        ? "text-danger"
+        : "text-on-surface/60";
+  return (
+    <span className={`text-xs font-medium ${tone}`}>
+      {sign}
+      {Math.abs(delta)}pp vs last week
+    </span>
   );
 }
 
