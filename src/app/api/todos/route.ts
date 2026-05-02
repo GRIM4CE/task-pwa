@@ -14,7 +14,9 @@ export async function GET() {
   // Non-recurring completed todos are kept in the DB so the archive can show
   // them, but are hidden from the main list 24h after completion. Subtasks of
   // recurring parents are exempt from that cutoff because they ride the
-  // parent's reset cycle and need to remain visible across it.
+  // parent's reset cycle and need to remain visible across it. Avoid todos
+  // never have completed=true (slips are logged separately) so they pass
+  // through this filter naturally.
   const recentCompletedCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const recurringParentIds = db
     .select({ id: schema.todos.id })
@@ -33,6 +35,9 @@ export async function GET() {
       sortOrder: schema.todos.sortOrder,
       recurrence: schema.todos.recurrence,
       pinnedToWeek: schema.todos.pinnedToWeek,
+      kind: schema.todos.kind,
+      limitCount: schema.todos.limitCount,
+      limitPeriod: schema.todos.limitPeriod,
       lastCompletedAt: schema.todos.lastCompletedAt,
       createdAt: schema.todos.createdAt,
       updatedAt: schema.todos.updatedAt,
@@ -59,6 +64,34 @@ export async function GET() {
     )
     .orderBy(asc(schema.todos.sortOrder), desc(schema.todos.createdAt));
 
+  // Avoid-todos need a 30-day slip history so the card can compute its
+  // rolling-window warning state locally without a /stats round-trip.
+  const avoidIds = todoList
+    .filter((t) => t.kind === "avoid")
+    .map((t) => t.id);
+  const slipsByTodo = new Map<string, number[]>();
+  if (avoidIds.length > 0) {
+    const slipCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const slips = await db
+      .select({
+        todoId: schema.todoCompletions.todoId,
+        completedAt: schema.todoCompletions.completedAt,
+      })
+      .from(schema.todoCompletions)
+      .where(
+        and(
+          eq(schema.todoCompletions.userId, session.user.id),
+          inArray(schema.todoCompletions.todoId, avoidIds),
+          gte(schema.todoCompletions.completedAt, slipCutoff)
+        )
+      );
+    for (const s of slips) {
+      const list = slipsByTodo.get(s.todoId) ?? [];
+      list.push(s.completedAt.getTime());
+      slipsByTodo.set(s.todoId, list);
+    }
+  }
+
   return NextResponse.json(
     todoList.map((t) => ({
       id: t.id,
@@ -70,6 +103,11 @@ export async function GET() {
       sortOrder: t.sortOrder,
       recurrence: t.recurrence,
       pinnedToWeek: t.pinnedToWeek,
+      kind: t.kind,
+      limitCount: t.limitCount,
+      limitPeriod: t.limitPeriod,
+      recentSlips:
+        t.kind === "avoid" ? slipsByTodo.get(t.id) ?? [] : [],
       lastCompletedAt: t.lastCompletedAt ? t.lastCompletedAt.getTime() : null,
       createdAt: t.createdAt.getTime(),
       updatedAt: t.updatedAt.getTime(),
@@ -91,6 +129,9 @@ export async function POST(request: NextRequest) {
     recurrence?: "daily" | "weekly" | null;
     pinnedToWeek?: boolean;
     parentId?: string | null;
+    kind?: "do" | "avoid";
+    limitCount?: number | null;
+    limitPeriod?: "week" | "month" | null;
   };
   try {
     const raw = await request.json();
@@ -131,6 +172,13 @@ export async function POST(request: NextRequest) {
     );
   const nextSortOrder = (maxOrderRow[0]?.max ?? -1) + 1;
 
+  // Subtasks inherit isPersonal/recurrence/kind from the parent context: kind
+  // collapses to "do" because avoid-todos can't have subtasks (validation
+  // rejects parentId on avoid). limit fields are stripped for non-avoid rows.
+  const kind = parentRow ? "do" : (body.kind ?? "do");
+  const limitCount = kind === "avoid" ? body.limitCount ?? null : null;
+  const limitPeriod = kind === "avoid" ? body.limitPeriod ?? null : null;
+
   const [todo] = await db
     .insert(schema.todos)
     .values({
@@ -141,6 +189,9 @@ export async function POST(request: NextRequest) {
       isPersonal: parentRow ? parentRow.isPersonal : (body.isPersonal ?? false),
       recurrence: parentRow ? null : (body.recurrence ?? null),
       pinnedToWeek: body.pinnedToWeek ?? false,
+      kind,
+      limitCount,
+      limitPeriod,
       sortOrder: nextSortOrder,
     })
     .returning();
@@ -156,6 +207,10 @@ export async function POST(request: NextRequest) {
       sortOrder: todo.sortOrder,
       recurrence: todo.recurrence,
       pinnedToWeek: todo.pinnedToWeek,
+      kind: todo.kind,
+      limitCount: todo.limitCount,
+      limitPeriod: todo.limitPeriod,
+      recentSlips: [],
       lastCompletedAt: todo.lastCompletedAt ? todo.lastCompletedAt.getTime() : null,
       createdAt: todo.createdAt.getTime(),
       updatedAt: todo.updatedAt.getTime(),

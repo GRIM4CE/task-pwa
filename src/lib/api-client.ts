@@ -26,6 +26,8 @@ async function apiRequest<T>(
 }
 
 export type Recurrence = "daily" | "weekly" | null;
+export type TodoKind = "do" | "avoid";
+export type LimitPeriod = "week" | "month" | null;
 
 export interface TodoDTO {
   id: string;
@@ -37,6 +39,13 @@ export interface TodoDTO {
   sortOrder: number;
   recurrence: Recurrence;
   pinnedToWeek: boolean;
+  kind: TodoKind;
+  limitCount: number | null;
+  limitPeriod: LimitPeriod;
+  // For avoid-todos only: completion timestamps within the last 30 days
+  // (the maximum rolling window). Lets the card compute its own warning state
+  // without a second round-trip to /api/todos/stats. Empty for non-avoid rows.
+  recentSlips: number[];
   lastCompletedAt: number | null;
   createdAt: number;
   updatedAt: number;
@@ -56,8 +65,19 @@ export interface RecurringTodoStats {
   completions: number[];
 }
 
+export interface AvoidTodoStats {
+  id: string;
+  title: string;
+  isPersonal: boolean;
+  createdAt: number;
+  limitCount: number | null;
+  limitPeriod: LimitPeriod;
+  completions: number[];
+}
+
 export interface StatsDTO {
   todos: RecurringTodoStats[];
+  avoid: AvoidTodoStats[];
 }
 
 export const api = {
@@ -76,9 +96,9 @@ export const api = {
     list: () => apiRequest<TodoDTO[]>("/api/todos"),
     archive: () => apiRequest<ArchiveDTO>("/api/todos/archive"),
     stats: () => apiRequest<StatsDTO>("/api/todos/stats"),
-    create: (body: { title: string; description?: string; isPersonal?: boolean; recurrence?: Recurrence; pinnedToWeek?: boolean; parentId?: string | null }) =>
+    create: (body: { title: string; description?: string; isPersonal?: boolean; recurrence?: Recurrence; pinnedToWeek?: boolean; parentId?: string | null; kind?: TodoKind; limitCount?: number | null; limitPeriod?: LimitPeriod }) =>
       apiRequest<TodoDTO>("/api/todos", { method: "POST", body: JSON.stringify(body) }),
-    update: (id: string, body: { title?: string; description?: string | null; completed?: boolean; sortOrder?: number; recurrence?: Recurrence; pinnedToWeek?: boolean; parentId?: string | null; autoReset?: boolean }) =>
+    update: (id: string, body: { title?: string; description?: string | null; completed?: boolean; sortOrder?: number; recurrence?: Recurrence; pinnedToWeek?: boolean; parentId?: string | null; autoReset?: boolean; kind?: TodoKind; limitCount?: number | null; limitPeriod?: LimitPeriod; recordSlip?: boolean }) =>
       apiRequest<TodoDTO>(`/api/todos/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     reorder: (ids: string[], parentId?: string | null) =>
       apiRequest<{ success: boolean }>("/api/todos/reorder", { method: "POST", body: JSON.stringify({ ids, parentId: parentId ?? null }) }),

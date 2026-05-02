@@ -43,6 +43,13 @@
       "when": 1777637774631,
       "tag": "0005_unify_todos_and_subtasks",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1777730404675,
+      "tag": "0006_avoid_habits",
+      "breakpoints": true
     }
   ]
 }
