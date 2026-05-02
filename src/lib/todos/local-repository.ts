@@ -1,4 +1,5 @@
 import type { ArchiveDTO, StatsDTO, TodoDTO } from "@/lib/api-client";
+import { hasSlipToday } from "@/lib/analytics";
 import {
   createTodoSchema,
   reorderTodosSchema,
@@ -37,10 +38,11 @@ function err<T>(error: string): RepoResult<T> {
   return { data: null, error };
 }
 
-const SLIP_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const SLIP_WINDOW_MS = 35 * 24 * 60 * 60 * 1000;
 
-// Filter the persisted completion log down to the last 30 days for a given
-// todo. Mirrors the avoid-todo `recentSlips` field the server returns on the
+// Filter the persisted completion log down to the last 35 days for a given
+// todo (long enough to cover a 31-day calendar month plus buffer). Mirrors
+// the avoid-todo `recentSlips` field the server returns on the
 // list/POST/PATCH responses.
 function recentSlipsFor(todoId: string, events: CompletionEvent[]): number[] {
   const cutoff = Date.now() - SLIP_WINDOW_MS;
@@ -71,6 +73,7 @@ function readAll(): TodoDTO[] {
           kind: t.kind ?? "do",
           limitCount: t.limitCount ?? null,
           limitPeriod: t.limitPeriod ?? null,
+          oncePerDay: t.oncePerDay ?? false,
           recentSlips: t.recentSlips ?? [],
         }));
       }
@@ -181,6 +184,7 @@ export const localTodoRepository: TodoRepository = {
         createdAt: t.createdAt,
         limitCount: t.limitCount,
         limitPeriod: t.limitPeriod,
+        oncePerDay: t.oncePerDay,
         completions: (byTodo.get(t.id) ?? []).sort((a, b) => a - b),
       }));
     return ok({ todos, avoid });
@@ -221,6 +225,7 @@ export const localTodoRepository: TodoRepository = {
       kind,
       limitCount: kind === "avoid" ? parsed.data.limitCount ?? null : null,
       limitPeriod: kind === "avoid" ? parsed.data.limitPeriod ?? null : null,
+      oncePerDay: kind === "avoid" ? parsed.data.oncePerDay ?? false : false,
       recentSlips: [],
       lastCompletedAt: null,
       createdAt: now,
@@ -300,8 +305,11 @@ export const localTodoRepository: TodoRepository = {
     }
     // Require the persisted row to already be avoid — see the matching guard
     // in /api/todos/[id]/route.ts for why a same-patch kind switch is rejected.
-    if (parsed.data.recordSlip === true && previous.kind !== "avoid") {
-      return err("Slips can only be recorded on avoid todos");
+    if (
+      (parsed.data.recordSlip === true || parsed.data.undoLastSlip === true) &&
+      previous.kind !== "avoid"
+    ) {
+      return err("Slip operations only apply to avoid todos");
     }
     if (effectiveKind !== "avoid") {
       if (
@@ -309,6 +317,9 @@ export const localTodoRepository: TodoRepository = {
         (parsed.data.limitPeriod !== undefined && parsed.data.limitPeriod !== null)
       ) {
         return err("Limits only apply to avoid todos");
+      }
+      if (parsed.data.oncePerDay === true) {
+        return err("Once-per-day only applies to avoid todos");
       }
     }
 
@@ -338,6 +349,20 @@ export const localTodoRepository: TodoRepository = {
     // Avoid todos: each slip is logged as a completion event without
     // flipping `completed`. Mirror the server's recordSlip handling.
     if (parsed.data.recordSlip === true && previous.kind === "avoid") {
+      // Local repo can use the precise local-calendar-day check (vs. the
+      // server's 24h rolling fallback) since we have the user's timezone
+      // available client-side. Idempotent: a duplicate slip on the same
+      // local day is a no-op rather than an error so the optimistic UI
+      // doesn't roll back.
+      if (previous.oncePerDay) {
+        const existingEvents = readCompletions();
+        const todaySlip = existingEvents.some(
+          (e) => e.todoId === id && hasSlipToday([e.completedAt])
+        );
+        if (todaySlip) {
+          return ok(withRecentSlips(updated, existingEvents));
+        }
+      }
       const slipAt = Date.now();
       next[index] = { ...updated, lastCompletedAt: slipAt };
       writeAll(next);
@@ -347,6 +372,42 @@ export const localTodoRepository: TodoRepository = {
       ];
       writeCompletions(events);
       return ok(withRecentSlips(next[index], events));
+    }
+
+    // Undo the most recent slip. Mirrors the server transaction: drop the
+    // latest event and rebase lastCompletedAt onto the new latest (or null).
+    if (parsed.data.undoLastSlip === true && previous.kind === "avoid") {
+      const events = readCompletions();
+      let latestIdx = -1;
+      let latestAt = -Infinity;
+      for (let i = 0; i < events.length; i++) {
+        if (events[i].todoId === id && events[i].completedAt > latestAt) {
+          latestAt = events[i].completedAt;
+          latestIdx = i;
+        }
+      }
+      if (latestIdx === -1) {
+        // No slip to undo — return the row as-is.
+        writeAll(next);
+        return ok(withRecentSlips(updated, events));
+      }
+      const remaining = [
+        ...events.slice(0, latestIdx),
+        ...events.slice(latestIdx + 1),
+      ];
+      writeCompletions(remaining);
+      let nextLastCompletedAt: number | null = null;
+      for (const e of remaining) {
+        if (
+          e.todoId === id &&
+          (nextLastCompletedAt === null || e.completedAt > nextLastCompletedAt)
+        ) {
+          nextLastCompletedAt = e.completedAt;
+        }
+      }
+      next[index] = { ...updated, lastCompletedAt: nextLastCompletedAt };
+      writeAll(next);
+      return ok(withRecentSlips(next[index], remaining));
     }
 
     if (

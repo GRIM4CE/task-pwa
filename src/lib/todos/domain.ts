@@ -87,11 +87,13 @@ export function applyUpdate(
   if (patch.kind !== undefined) next.kind = patch.kind;
   if (patch.limitCount !== undefined) next.limitCount = patch.limitCount;
   if (patch.limitPeriod !== undefined) next.limitPeriod = patch.limitPeriod;
-  // Switching kind back to "do" drops any stale limit fields. Mirrors the
-  // server PATCH handler so optimistic updates match the committed shape.
+  if (patch.oncePerDay !== undefined) next.oncePerDay = patch.oncePerDay;
+  // Switching kind back to "do" drops any stale avoid-only fields. Mirrors
+  // the server PATCH handler so optimistic updates match the committed shape.
   if (patch.kind === "do") {
     next.limitCount = null;
     next.limitPeriod = null;
+    next.oncePerDay = false;
   }
   if (patch.parentId !== undefined) {
     next.parentId = patch.parentId;

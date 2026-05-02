@@ -36,6 +36,7 @@ export const createTodoSchema = z
     kind: todoKindSchema.optional(),
     limitCount: limitCountSchema.optional(),
     limitPeriod: limitPeriodSchema.optional(),
+    oncePerDay: z.boolean().optional(),
   })
   .refine((v) => !(v.recurrence != null && v.pinnedToWeek === true), {
     message: "Recurring todos cannot be pinned",
@@ -65,6 +66,10 @@ export const createTodoSchema = z
       path: ["limitCount"],
     }
   )
+  .refine((v) => !(v.kind !== "avoid" && v.oncePerDay === true), {
+    message: "Once-per-day only applies to avoid todos",
+    path: ["oncePerDay"],
+  })
   .refine((v) => (v.limitCount == null) === (v.limitPeriod == null), {
     message: "Set both limit count and period, or neither",
     path: ["limitCount"],
@@ -88,9 +93,14 @@ export const updateTodoSchema = z
     kind: todoKindSchema.optional(),
     limitCount: limitCountSchema.optional(),
     limitPeriod: limitPeriodSchema.optional(),
+    oncePerDay: z.boolean().optional(),
     // For avoid todos: log a slip into todoCompletions without flipping
     // `completed`. Mutually exclusive with `completed` in the same patch.
     recordSlip: z.boolean().optional(),
+    // For avoid todos: delete the most recent slip event for this todo
+    // (and reset lastCompletedAt to the new latest, or null). Powers the
+    // post-slip Undo toast. Mutually exclusive with recordSlip and completed.
+    undoLastSlip: z.boolean().optional(),
   })
   // These refinements catch cases where both fields are in the same patch.
   // Cases involving the existing row state are checked in the PATCH handler.
@@ -105,6 +115,14 @@ export const updateTodoSchema = z
   .refine((v) => !(v.recordSlip === true && v.completed !== undefined), {
     message: "Cannot record slip and toggle completion in the same request",
     path: ["recordSlip"],
+  })
+  .refine((v) => !(v.undoLastSlip === true && v.recordSlip === true), {
+    message: "Cannot record and undo a slip in the same request",
+    path: ["undoLastSlip"],
+  })
+  .refine((v) => !(v.undoLastSlip === true && v.completed !== undefined), {
+    message: "Cannot undo slip and toggle completion in the same request",
+    path: ["undoLastSlip"],
   })
   .refine((v) => (v.limitCount == null) === (v.limitPeriod == null), {
     message: "Set both limit count and period, or neither",

@@ -1,0 +1,1 @@
+ALTER TABLE `todos` ADD `once_per_day` integer DEFAULT false NOT NULL;
