@@ -44,6 +44,7 @@ export interface DailyStat {
   totalDays: number;
   days: DayCell[];
   streak: number;
+  bestStreak: number;
   heatmap: DayCell[];
 }
 
@@ -63,6 +64,13 @@ export interface WeeklyStat {
   totalWeeks: number;
   weeks: WeekCell[];
   streak: number;
+  bestStreak: number;
+}
+
+export interface AtRiskTodo {
+  id: string;
+  title: string;
+  currentStreak: number;
 }
 
 export interface GlobalStats {
@@ -70,8 +78,21 @@ export interface GlobalStats {
   weeklyCount: number;
   weekCompletedDays: number;
   weekTotalDays: number;
+  prevWeekCompletedDays: number;
+  // Days in the prior week where at least one daily todo existed at
+  // the start of the day. Zero when there's no comparable history,
+  // which the UI uses to hide the velocity delta.
+  prevWeekEligibleDays: number;
   monthCompletedWeeks: number;
   monthTotalWeeks: number;
+  prevMonthCompletedWeeks: number;
+  prevMonthEligibleWeeks: number;
+  atRiskToday: AtRiskTodo[];
+  // Mon..Sun completion summary across all daily todos over the
+  // trailing 30-day window, excluding today (in-progress) and days
+  // before each todo was created. `rate` is null when no eligible
+  // samples landed in the bucket.
+  weekdayConsistency: WeekdayConsistencyEntry[];
 }
 
 export interface ComputedStats {
@@ -135,6 +156,43 @@ function weeklyStreak(completions: number[], thisWeekStart: Date): number {
   return count;
 }
 
+// Longest-ever consecutive-day run within the API's 120-day window.
+// Uses date arithmetic rather than ms subtraction so DST transitions
+// don't break the streak.
+function longestDailyRun(completions: number[]): number {
+  if (completions.length === 0) return 0;
+  const days = [...completedDaySet(completions)].sort((a, b) => a - b);
+  let best = 1;
+  let run = 1;
+  for (let i = 1; i < days.length; i++) {
+    const expected = addDays(new Date(days[i - 1]), 1).getTime();
+    if (days[i] === expected) {
+      run++;
+      if (run > best) best = run;
+    } else {
+      run = 1;
+    }
+  }
+  return best;
+}
+
+function longestWeeklyRun(completions: number[]): number {
+  if (completions.length === 0) return 0;
+  const weeks = [...completedWeekSet(completions)].sort((a, b) => a - b);
+  let best = 1;
+  let run = 1;
+  for (let i = 1; i < weeks.length; i++) {
+    const expected = addDays(new Date(weeks[i - 1]), DAYS_IN_WEEK).getTime();
+    if (weeks[i] === expected) {
+      run++;
+      if (run > best) best = run;
+    } else {
+      run = 1;
+    }
+  }
+  return best;
+}
+
 function dailyHeatmap(completions: number[], todayStart: Date): DayCell[] {
   const days = completedDaySet(completions);
   const cells: DayCell[] = [];
@@ -181,6 +239,7 @@ function dailyForTodo(
     totalDays: DAYS_IN_WEEK,
     days,
     streak: dailyStreak(todo.completions, todayStart),
+    bestStreak: longestDailyRun(todo.completions),
     heatmap: dailyHeatmap(todo.completions, todayStart),
   };
 }
@@ -224,7 +283,125 @@ function weeklyForTodo(
     totalWeeks: cells.length,
     weeks: cells,
     streak: weeklyStreak(todo.completions, thisWeekStart),
+    bestStreak: longestWeeklyRun(todo.completions),
   };
+}
+
+function countCompletionsInRange(
+  completions: number[],
+  startMs: number,
+  endMs: number
+): number {
+  let n = 0;
+  for (const c of completions) {
+    if (c >= startMs && c < endMs) n++;
+  }
+  return n;
+}
+
+// Eligibility-aware prev-week aggregate: a daily todo only contributes
+// (createdAt, day) pairs where it actually existed at the start of the
+// day, so a todo created mid-period doesn't deflate the prior-period
+// percentage with phantom 0s.
+function prevWeekStats(
+  dailyTodos: RecurringTodoStats[],
+  weekStart: Date
+): { completed: number; eligible: number } {
+  const prevStart = addDays(weekStart, -DAYS_IN_WEEK);
+  const prevEndMs = weekStart.getTime();
+  let completed = 0;
+  let eligible = 0;
+  for (const t of dailyTodos) {
+    const completedDays = new Set<number>();
+    for (const c of t.completions) {
+      if (c >= prevStart.getTime() && c < prevEndMs) {
+        completedDays.add(startOfDay(new Date(c)).getTime());
+      }
+    }
+    for (let i = 0; i < DAYS_IN_WEEK; i++) {
+      const dayMs = addDays(prevStart, i).getTime();
+      if (t.createdAt > dayMs) continue;
+      eligible++;
+      if (completedDays.has(dayMs)) completed++;
+    }
+  }
+  return { completed, eligible };
+}
+
+function prevMonthRange(monthStart: Date): { start: Date; end: Date } {
+  const start = new Date(
+    monthStart.getFullYear(),
+    monthStart.getMonth() - 1,
+    1,
+    0,
+    0,
+    0,
+    0
+  );
+  return { start, end: monthStart };
+}
+
+// Eligibility-aware prev-month aggregate: only weeks where the weekly
+// todo existed at the start of the week count toward the denominator.
+function prevMonthStats(
+  weeklyTodos: RecurringTodoStats[],
+  prevWeeks: { start: Date; end: Date }[]
+): { completed: number; eligible: number } {
+  let completed = 0;
+  let eligible = 0;
+  for (const t of weeklyTodos) {
+    for (const w of prevWeeks) {
+      if (t.createdAt > w.start.getTime()) continue;
+      eligible++;
+      if (
+        countCompletionsInRange(t.completions, w.start.getTime(), w.end.getTime()) > 0
+      ) {
+        completed++;
+      }
+    }
+  }
+  return { completed, eligible };
+}
+
+export interface WeekdayConsistencyEntry {
+  // null when no eligible samples landed in this weekday in the
+  // 30-day window (e.g., todo too new). Distinguishes "no data"
+  // from a genuine 0% completion day.
+  rate: number | null;
+  samples: number;
+}
+
+function weekdayConsistency(
+  dailyTodos: RecurringTodoStats[],
+  todayStart: Date
+): WeekdayConsistencyEntry[] {
+  const buckets: number[][] = Array.from({ length: 7 }, () => []);
+  if (dailyTodos.length === 0) {
+    return buckets.map(() => ({ rate: null, samples: 0 }));
+  }
+  const sets = dailyTodos.map((t) => completedDaySet(t.completions));
+  // Walk the past 30 days, skipping today (still in progress).
+  for (let i = 1; i <= HEATMAP_DAYS; i++) {
+    const day = addDays(todayStart, -i);
+    const dayMs = day.getTime();
+    const weekday = (day.getDay() + 6) % 7;
+    let eligible = 0;
+    let completed = 0;
+    for (let j = 0; j < dailyTodos.length; j++) {
+      if (dailyTodos[j].createdAt > dayMs) continue;
+      eligible++;
+      if (sets[j].has(dayMs)) completed++;
+    }
+    if (eligible > 0) buckets[weekday].push(completed / eligible);
+  }
+  return buckets.map((arr) =>
+    arr.length === 0
+      ? { rate: null, samples: 0 }
+      : {
+          rate: arr.reduce((a, b) => a + b, 0) / arr.length,
+          samples: arr.length,
+        }
+  );
 }
 
 export function computeStats(
@@ -251,6 +428,19 @@ export function computeStats(
   );
   const monthTotalWeeks = weekly.length * monthWeeks.length;
 
+  const prevWeek = prevWeekStats(dailyTodos, weekStart);
+
+  const prevMonth = prevMonthRange(monthStart);
+  const prevMonthWeeks = weeksInMonth(prevMonth.start, prevMonth.end);
+  const prevMonthAgg = prevMonthStats(weeklyTodos, prevMonthWeeks);
+
+  const atRiskToday: AtRiskTodo[] = daily
+    .filter((d) => {
+      const todayCell = d.days.find((c) => c.isToday);
+      return d.streak > 0 && !todayCell?.completed;
+    })
+    .map((d) => ({ id: d.id, title: d.title, currentStreak: d.streak }));
+
   return {
     daily,
     weekly,
@@ -259,8 +449,14 @@ export function computeStats(
       weeklyCount: weekly.length,
       weekCompletedDays,
       weekTotalDays,
+      prevWeekCompletedDays: prevWeek.completed,
+      prevWeekEligibleDays: prevWeek.eligible,
       monthCompletedWeeks,
       monthTotalWeeks,
+      prevMonthCompletedWeeks: prevMonthAgg.completed,
+      prevMonthEligibleWeeks: prevMonthAgg.eligible,
+      atRiskToday,
+      weekdayConsistency: weekdayConsistency(dailyTodos, todayStart),
     },
   };
 }

@@ -5,7 +5,9 @@ import type { StatsDTO } from "@/lib/api-client";
 import {
   computeStats,
   percent,
+  type AtRiskTodo,
   type DailyStat,
+  type WeekdayConsistencyEntry,
   type WeeklyStat,
 } from "@/lib/analytics";
 import { subscribeStatsMayHaveChanged } from "@/lib/stats-events";
@@ -114,6 +116,9 @@ export default function StatsView() {
         </div>
       ) : (
         <>
+          {stats && stats.global.atRiskToday.length > 0 && (
+            <AtRiskBanner items={stats.global.atRiskToday} />
+          )}
           {stats && <GlobalCard stats={stats.global} />}
           {stats && stats.daily.length > 0 && (
             <Section title="Daily" hint="This week (Mon–Sun)">
@@ -122,6 +127,7 @@ export default function StatsView() {
                   <DailyRow key={d.id} stat={d} />
                 ))}
               </div>
+              <WeekdayConsistency entries={stats.global.weekdayConsistency} />
             </Section>
           )}
           {stats && stats.weekly.length > 0 && (
@@ -166,6 +172,14 @@ function GlobalCard({
 }) {
   const weekPct = percent(stats.weekCompletedDays, stats.weekTotalDays);
   const monthPct = percent(stats.monthCompletedWeeks, stats.monthTotalWeeks);
+  const prevWeekPct = percent(
+    stats.prevWeekCompletedDays,
+    stats.prevWeekEligibleDays
+  );
+  const prevMonthPct = percent(
+    stats.prevMonthCompletedWeeks,
+    stats.prevMonthEligibleWeeks
+  );
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <Tile
@@ -176,6 +190,11 @@ function GlobalCard({
             ? "No daily repeats"
             : `${stats.weekCompletedDays} / ${stats.weekTotalDays} day-completions`
         }
+        delta={
+          stats.prevWeekEligibleDays === 0
+            ? null
+            : { current: weekPct, previous: prevWeekPct, label: "vs last week" }
+        }
       />
       <Tile
         label="Weekly this month"
@@ -185,7 +204,98 @@ function GlobalCard({
             ? "No weekly repeats"
             : `${stats.monthCompletedWeeks} / ${stats.monthTotalWeeks} week-completions`
         }
+        delta={
+          stats.prevMonthEligibleWeeks === 0
+            ? null
+            : {
+                current: monthPct,
+                previous: prevMonthPct,
+                label: "vs last month",
+              }
+        }
       />
+    </div>
+  );
+}
+
+function AtRiskBanner({ items }: { items: AtRiskTodo[] }) {
+  return (
+    <div className="mb-3 rounded-lg border border-focus/40 bg-focus/10 px-4 py-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="text-sm font-medium text-on-surface">
+          Streaks at risk today
+        </div>
+        <div className="text-xs text-on-surface/60">
+          {items.length} {items.length === 1 ? "todo" : "todos"}
+        </div>
+      </div>
+      <ul className="mt-1 space-y-0.5 text-sm text-on-surface/80">
+        {items.map((item) => (
+          <li key={item.id} className="flex items-baseline justify-between gap-2">
+            <span className="truncate">{item.title}</span>
+            <span className="shrink-0 text-xs text-on-surface/60">
+              {item.currentStreak}-day streak
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+const WEEKDAY_FULL_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function WeekdayConsistency({
+  entries,
+}: {
+  entries: WeekdayConsistencyEntry[];
+}) {
+  const withData = entries
+    .map((e) => e.rate)
+    .filter((r): r is number => r !== null);
+  if (withData.length === 0) return null;
+  const max = Math.max(...withData);
+  const min = Math.min(...withData);
+  const hasVariance = max > min;
+  return (
+    <div className="mt-3 rounded-lg border border-border-on-surface bg-surface px-4 py-3">
+      <div className="mb-2 flex items-baseline justify-between">
+        <div className="text-xs uppercase tracking-wide text-on-surface/60">
+          Weekday consistency
+        </div>
+        <div className="text-[10px] text-on-surface/50">Last 30 days</div>
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {entries.map((entry, i) => {
+          const rate = entry.rate;
+          const isBest = rate !== null && rate === max && hasVariance;
+          const isWorst = rate !== null && rate === min && hasVariance;
+          const tone =
+            rate === null
+              ? "bg-surface-hover text-on-surface/40"
+              : isBest
+                ? "bg-success/80 text-white"
+                : isWorst
+                  ? "bg-focus/30 text-on-surface"
+                  : "bg-surface-hover text-on-surface/70";
+          const title =
+            rate === null
+              ? `${WEEKDAY_FULL_LABELS[i]}: no data`
+              : `${WEEKDAY_FULL_LABELS[i]}: ${Math.round(rate * 100)}% of daily todos completed (${entry.samples} ${entry.samples === 1 ? "day" : "days"} sampled)`;
+          return (
+            <div
+              key={i}
+              className={`flex flex-col items-center rounded px-1 py-1.5 text-[10px] ${tone}`}
+              title={title}
+            >
+              <span className="font-medium">{WEEKDAY_FULL_LABELS[i][0]}</span>
+              <span className="text-[10px] opacity-90">
+                {rate === null ? "—" : `${Math.round(rate * 100)}%`}
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -194,17 +304,36 @@ function Tile({
   label,
   value,
   sub,
+  delta,
 }: {
   label: string;
   value: string;
   sub: string;
+  delta?: { current: number; previous: number; label: string } | null;
 }) {
+  const diff = delta ? delta.current - delta.previous : null;
   return (
     <div className="rounded-lg border border-border-on-surface bg-surface px-4 py-3">
       <div className="text-xs uppercase tracking-wide text-on-surface/60">
         {label}
       </div>
-      <div className="mt-1 text-2xl font-semibold text-on-surface">{value}</div>
+      <div className="mt-1 flex items-baseline gap-2">
+        <span className="text-2xl font-semibold text-on-surface">{value}</span>
+        {diff !== null && (
+          <span
+            className={`text-xs font-medium ${
+              diff > 0
+                ? "text-success"
+                : diff < 0
+                  ? "text-danger"
+                  : "text-on-surface/60"
+            }`}
+          >
+            {diff > 0 ? "+" : ""}
+            {diff}pp {delta!.label}
+          </span>
+        )}
+      </div>
       <div className="mt-1 text-xs text-on-surface/60">{sub}</div>
     </div>
   );
@@ -216,9 +345,11 @@ function DailyRow({ stat }: { stat: DailyStat }) {
       <div className="flex items-baseline justify-between gap-3">
         <div className="min-w-0 flex-1">
           <span className="block truncate text-on-surface">{stat.title}</span>
-          {stat.streak > 0 && (
-            <StreakBadge label={`${stat.streak}-day streak`} />
-          )}
+          <StreakLine
+            current={stat.streak}
+            best={stat.bestStreak}
+            unit="day"
+          />
         </div>
         <span className="shrink-0 text-sm font-medium text-on-surface/70">
           {stat.completedCount} / {stat.totalDays}
@@ -261,10 +392,22 @@ function DailyRow({ stat }: { stat: DailyStat }) {
   );
 }
 
-function StreakBadge({ label }: { label: string }) {
+function StreakLine({
+  current,
+  best,
+  unit,
+}: {
+  current: number;
+  best: number;
+  unit: "day" | "week";
+}) {
+  if (current === 0 && best === 0) return null;
+  const parts: string[] = [];
+  if (current > 0) parts.push(`${current}-${unit} streak`);
+  if (best > current) parts.push(`best ${best}`);
   return (
     <span className="mt-0.5 inline-block text-xs text-on-surface/60">
-      {label}
+      {parts.join(" · ")}
     </span>
   );
 }
@@ -321,9 +464,11 @@ function WeeklyRow({ stat }: { stat: WeeklyStat }) {
       <div className="flex items-baseline justify-between gap-3">
         <div className="min-w-0 flex-1">
           <span className="block truncate text-on-surface">{stat.title}</span>
-          {stat.streak > 0 && (
-            <StreakBadge label={`${stat.streak}-week streak`} />
-          )}
+          <StreakLine
+            current={stat.streak}
+            best={stat.bestStreak}
+            unit="week"
+          />
         </div>
         <span className="shrink-0 text-sm font-medium text-on-surface/70">
           {stat.completedCount} / {stat.totalWeeks}
