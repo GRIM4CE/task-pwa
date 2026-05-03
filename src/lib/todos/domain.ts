@@ -56,18 +56,14 @@ export function filterMainList(list: TodoDTO[], now: number = Date.now()): TodoD
   });
 }
 
-// Mirrors /api/todos/archive GET: completed, non-recurring rows, excluding
-// subtasks of recurring parents (those reset with the parent rather than
-// archiving).
+// Mirrors /api/todos/archive GET: completed rows that are either top-level
+// non-recurring or subtasks (subtasks always have recurrence === null). Top-
+// level recurring rows reset rather than archive. Subtasks of recurring
+// parents still surface here so the user can uncomplete an accidental check
+// without waiting for the parent's next reset.
 export function filterArchive(list: TodoDTO[]): TodoDTO[] {
-  const recurringParentIds = getRecurringParentIds(list);
   return list
-    .filter(
-      (t) =>
-        t.completed &&
-        t.recurrence === null &&
-        !(t.parentId !== null && recurringParentIds.has(t.parentId))
-    )
+    .filter((t) => t.completed && t.recurrence === null)
     .sort((a, b) => (b.lastCompletedAt ?? 0) - (a.lastCompletedAt ?? 0));
 }
 

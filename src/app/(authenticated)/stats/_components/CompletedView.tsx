@@ -31,6 +31,7 @@ export default function CompletedView() {
   const [items, setItems] = useState<ArchiveItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -43,6 +44,26 @@ export default function CompletedView() {
       cancelled = true;
     };
   }, [repo]);
+
+  async function handleUncomplete(item: ArchiveItem) {
+    if (pendingIds.has(item.todo.id)) return;
+    setPendingIds((prev) => {
+      const next = new Set(prev);
+      next.add(item.todo.id);
+      return next;
+    });
+    const previous = items;
+    setItems((prev) => prev.filter((i) => i.todo.id !== item.todo.id));
+    const { error } = await repo.update(item.todo.id, { completed: false });
+    setPendingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(item.todo.id);
+      return next;
+    });
+    if (error) {
+      setItems(previous);
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -93,14 +114,18 @@ export default function CompletedView() {
         <ul className="space-y-2">
           {filtered.map((item) => {
             const isSubtask = item.todo.parentId !== null;
+            const isPending = pendingIds.has(item.todo.id);
             return (
               <li
                 key={item.todo.id}
                 className="flex items-start gap-3 rounded-lg border border-border-on-surface bg-surface px-4 py-3"
               >
-                <div
-                  aria-hidden
-                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 border-success bg-success/20"
+                <button
+                  type="button"
+                  onClick={() => handleUncomplete(item)}
+                  disabled={isPending}
+                  aria-label={`Mark "${item.todo.title}" as incomplete`}
+                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 border-success bg-success/20 hover:bg-success/10 focus:outline-none focus:ring-2 focus:ring-success disabled:opacity-50"
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -114,7 +139,7 @@ export default function CompletedView() {
                       clipRule="evenodd"
                     />
                   </svg>
-                </div>
+                </button>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-on-surface/60 line-through">{item.todo.title}</p>
                   {isSubtask && item.parentTitle && (

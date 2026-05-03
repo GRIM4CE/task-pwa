@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { and, eq, inArray, isNotNull, isNull, notInArray, or } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { validateSession } from "@/lib/session";
 
 export async function GET() {
@@ -9,14 +9,11 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Top-level recurring todos reset rather than archive. Subtasks of recurring
-  // parents also reset with the parent each cycle, so they're not archive
-  // candidates either; only subtasks of non-recurring parents archive.
-  const recurringParentIds = db
-    .select({ id: schema.todos.id })
-    .from(schema.todos)
-    .where(and(isNull(schema.todos.parentId), isNotNull(schema.todos.recurrence)));
-
+  // Top-level recurring todos reset rather than archive, so they're excluded.
+  // Subtasks always archive (regardless of parent recurrence) so the user can
+  // uncomplete them from the Completed view — they ride the parent's reset
+  // cycle but the cleanup cron won't delete them, so showing them here is the
+  // only way to undo an accidental check.
   const rows = await db
     .select({
       id: schema.todos.id,
@@ -41,10 +38,6 @@ export async function GET() {
         or(
           isNull(schema.todos.recurrence),
           isNotNull(schema.todos.parentId)
-        ),
-        or(
-          isNull(schema.todos.parentId),
-          notInArray(schema.todos.parentId, recurringParentIds)
         ),
         or(
           eq(schema.todos.isPersonal, false),
