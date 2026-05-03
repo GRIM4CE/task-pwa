@@ -17,7 +17,6 @@ import { notifyStatsMayHaveChanged } from "@/lib/stats-events";
 import {
   cascadeCompleteChildren,
   cascadeUncompleteChildren,
-  getRecurringParentIds,
   sortSubtasks,
   sortTodos,
 } from "@/lib/todos/domain";
@@ -84,33 +83,23 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
   const completionTimersRef = useRef<Map<string, number>>(new Map());
   const recentlyToggledRef = useRef(false);
 
-  // Delete completed non-recurring rows (top-level or nested) once the user's
-  // local clock has crossed midnight after they were completed. Mirrors the
-  // server cron's intent but honors the browser's IANA timezone, so a todo
-  // completed at 11pm disappears at 00:00 local rather than 24h after the fact.
+  // Delete completed top-level non-recurring rows once the user's local clock
+  // has crossed midnight after they were completed. Mirrors the server cron's
+  // intent but honors the browser's IANA timezone, so a todo completed at
+  // 11pm disappears at 00:00 local rather than 24h after the fact. Subtasks
+  // are intentionally excluded — they linger under their parent as a record
+  // of progress and only get removed when the parent itself is archived
+  // (FK ON DELETE CASCADE handles the cleanup).
   const expireCompleted = useCallback(
     async (list: Todo[]) => {
       const now = Date.now();
-      // Subtasks of recurring parents reset with the parent each cycle, so
-      // they must not be expired by the local 24h cleanup.
-      const recurringParentIds = getRecurringParentIds(list);
-      const eligible = list.filter(
+      const toDelete = list.filter(
         (t) =>
+          t.parentId === null &&
           t.completed &&
           t.recurrence === null &&
-          !(t.parentId !== null && recurringParentIds.has(t.parentId)) &&
           !expiringRef.current.has(t.id) &&
           isCompletedTodoExpired(t.lastCompletedAt, now)
-      );
-      // Skip subtasks whose parent is also expiring in this pass — both the
-      // DB (ON DELETE CASCADE) and the local repo drop orphans for us, so an
-      // explicit delete would race and return "Not found", leaving the row
-      // stuck in client state until next load.
-      const expiringParentIds = new Set(
-        eligible.filter((t) => t.parentId === null).map((t) => t.id)
-      );
-      const toDelete = eligible.filter(
-        (t) => t.parentId === null || !expiringParentIds.has(t.parentId)
       );
       if (toDelete.length === 0) return;
 
@@ -656,6 +645,27 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
       !justCompletedIds.has(t.id) &&
       !(t.recurrence === "weekly" && isCompletedTodoExpired(t.lastCompletedAt, nowMs))
   );
+  // Subtasks completed today surface in the Complete section so a same-day
+  // subtask check is visible at a glance, then drop out at local midnight
+  // (next-day) — they remain marked complete under their parent indefinitely.
+  // Skip subtasks whose parent is itself completed (including parents still
+  // in the just-completed animation window, which haven't moved to
+  // completedTodos yet) so cascade-completed children don't dump into the
+  // list as noise alongside the parent that already represents the action.
+  const completedTopLevelIds = new Set(
+    topLevel.filter((t) => t.completed).map((t) => t.id)
+  );
+  const completedSubtasksToday = sortSubtasks(
+    visibleTodos.filter(
+      (t) =>
+        t.parentId !== null &&
+        t.completed &&
+        t.lastCompletedAt !== null &&
+        !justCompletedIds.has(t.id) &&
+        !completedTopLevelIds.has(t.parentId) &&
+        !isCompletedTodoExpired(t.lastCompletedAt, nowMs)
+    )
+  );
 
   // Subtasks pinned to This Week. Subtasks inherit isPersonal from their parent
   // at create-time, so this filter mirrors the per-tab visibleTodos rule.
@@ -777,7 +787,8 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
           {(() => {
             const todoToday = dailyTodos.length;
             const todoThisWeek = thisWeekTodos.length + thisWeekSubtasks.length;
-            const completeToday = completedTodos.length;
+            const completeToday =
+              completedTodos.length + completedSubtasksToday.length;
             const parts: string[] = [];
             if (todoToday > 0) parts.push(`${todoToday} todo today`);
             if (todoThisWeek > 0) parts.push(`${todoThisWeek} todo this week`);
@@ -889,13 +900,26 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
         />
       )}
 
-      {/* Complete todos (any recurrence) */}
-      {completedTodos.length > 0 && (
+      {/* Complete todos (any recurrence) + subtasks completed today */}
+      {(completedTodos.length > 0 || completedSubtasksToday.length > 0) && (
         <Section title="Complete">
           <div className="space-y-2">
             {completedTodos.map((todo) => (
               <div key={todo.id}>{renderTopLevelTodo(todo)}</div>
             ))}
+            {completedSubtasksToday.map((s) => {
+              const parent = todos.find((t) => t.id === s.parentId);
+              return (
+                <SubtaskRow
+                  key={s.id}
+                  subtask={s}
+                  parentTitle={parent?.title ?? "—"}
+                  onToggle={() => handleToggle(s)}
+                  onTogglePin={() => handleTogglePin(s)}
+                  onOpen={() => setEditing(s)}
+                />
+              );
+            })}
           </div>
         </Section>
       )}
