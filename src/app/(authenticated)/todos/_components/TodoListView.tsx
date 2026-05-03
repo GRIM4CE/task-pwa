@@ -648,15 +648,19 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
   // Subtasks completed today surface in the Complete section so a same-day
   // subtask check is visible at a glance, then drop out at local midnight
   // (next-day) — they remain marked complete under their parent indefinitely.
-  // Skip subtasks whose parent is also in completedTodos: the parent row in
-  // the section already represents that completion, and the cascade would
-  // otherwise dump every child into the list as noise.
-  const completedTopLevelIds = new Set(completedTodos.map((t) => t.id));
+  // Skip subtasks whose parent is itself completed (including parents still
+  // in the just-completed animation window, which haven't moved to
+  // completedTodos yet) so cascade-completed children don't dump into the
+  // list as noise alongside the parent that already represents the action.
+  const completedTopLevelIds = new Set(
+    topLevel.filter((t) => t.completed).map((t) => t.id)
+  );
   const completedSubtasksToday = sortSubtasks(
     visibleTodos.filter(
       (t) =>
         t.parentId !== null &&
         t.completed &&
+        t.lastCompletedAt !== null &&
         !justCompletedIds.has(t.id) &&
         !completedTopLevelIds.has(t.parentId) &&
         !isCompletedTodoExpired(t.lastCompletedAt, nowMs)

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/db";
-import { eq, and, lt, isNull } from "drizzle-orm";
+import { eq, and, lt, isNull, isNotNull } from "drizzle-orm";
 
 export async function GET(request: NextRequest) {
   // Verify the caller (e.g. EventBridge Scheduler) presents the shared secret
@@ -10,11 +10,13 @@ export async function GET(request: NextRequest) {
   }
 
   // Delete completed top-level non-recurring todos that were completed more
-  // than 24 hours ago. Their subtasks ride along via ON DELETE CASCADE.
-  // Subtasks themselves are intentionally not archived — a completed subtask
-  // stays under its parent as a record of progress until the parent is
-  // archived (or the user uncompletes/removes it). Recurring top-level todos
-  // reset rather than archive, so they're excluded too.
+  // than 24 hours ago. Cutoff is on lastCompletedAt rather than updatedAt so
+  // editing a completed row's title doesn't reset the 24h archive clock.
+  // Their subtasks ride along via ON DELETE CASCADE. Subtasks themselves are
+  // intentionally not archived — a completed subtask stays under its parent
+  // as a record of progress until the parent is archived (or the user
+  // uncompletes/removes it). Recurring top-level todos reset rather than
+  // archive, so they're excluded too.
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
   const deleted = await db
@@ -24,7 +26,8 @@ export async function GET(request: NextRequest) {
         eq(schema.todos.completed, true),
         isNull(schema.todos.parentId),
         isNull(schema.todos.recurrence),
-        lt(schema.todos.updatedAt, cutoff)
+        isNotNull(schema.todos.lastCompletedAt),
+        lt(schema.todos.lastCompletedAt, cutoff)
       )
     )
     .returning({ id: schema.todos.id });
