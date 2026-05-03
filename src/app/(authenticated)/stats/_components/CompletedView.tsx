@@ -52,7 +52,6 @@ export default function CompletedView() {
       next.add(item.todo.id);
       return next;
     });
-    const previous = items;
     setItems((prev) => prev.filter((i) => i.todo.id !== item.todo.id));
     const { error } = await repo.update(item.todo.id, { completed: false });
     setPendingIds((prev) => {
@@ -61,7 +60,15 @@ export default function CompletedView() {
       return next;
     });
     if (error) {
-      setItems(previous);
+      // Re-insert just this row at its sorted position. Restoring a pre-click
+      // snapshot would resurrect rows that other concurrent uncomplete clicks
+      // have already successfully removed.
+      setItems((prev) => {
+        const ts = item.todo.lastCompletedAt ?? 0;
+        const idx = prev.findIndex((i) => (i.todo.lastCompletedAt ?? 0) < ts);
+        if (idx === -1) return [...prev, item];
+        return [...prev.slice(0, idx), item, ...prev.slice(idx)];
+      });
     }
   }
 
