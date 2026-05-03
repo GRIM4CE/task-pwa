@@ -653,6 +653,13 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
     const activeSubtasks = sortSubtasks(
       childSubtasks.filter((s) => !s.completed || justCompletedIds.has(s.id))
     );
+    // Completed subtasks linger under the parent so an accidental check can
+    // be undone without leaving the todos page. The just-completed window
+    // keeps the row in the active list briefly so the completion animation
+    // plays before it settles into the done group.
+    const completedSubtasks = sortSubtasks(
+      childSubtasks.filter((s) => s.completed && !justCompletedIds.has(s.id))
+    );
 
     return (
       <>
@@ -701,6 +708,21 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
                   />
                 )}
               />
+            )}
+            {completedSubtasks.length > 0 && (
+              <div
+                className={`space-y-2${activeSubtasks.length > 0 ? " mt-2" : ""}`}
+              >
+                {completedSubtasks.map((s) => (
+                  <SubtaskRow
+                    key={s.id}
+                    subtask={s}
+                    onToggle={() => handleToggle(s)}
+                    onTogglePin={() => handleTogglePin(s)}
+                    onOpen={() => setEditing(s)}
+                  />
+                ))}
+              </div>
             )}
             <AddSubtaskForm onAdd={(title) => handleAddSubtask(todo.id, title)} />
           </div>
