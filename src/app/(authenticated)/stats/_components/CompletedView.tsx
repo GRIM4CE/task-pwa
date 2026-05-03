@@ -63,13 +63,37 @@ export default function CompletedView() {
       // Re-insert just this row at its sorted position. Restoring a pre-click
       // snapshot would resurrect rows that other concurrent uncomplete clicks
       // have already successfully removed.
-      setItems((prev) => {
-        const ts = item.todo.lastCompletedAt ?? 0;
-        const idx = prev.findIndex((i) => (i.todo.lastCompletedAt ?? 0) < ts);
-        if (idx === -1) return [...prev, item];
-        return [...prev.slice(0, idx), item, ...prev.slice(idx)];
-      });
+      restoreItem(item);
     }
+  }
+
+  async function handleDelete(item: ArchiveItem) {
+    if (pendingIds.has(item.todo.id)) return;
+    if (!window.confirm(`Permanently delete "${item.todo.title}"?`)) return;
+    setPendingIds((prev) => {
+      const next = new Set(prev);
+      next.add(item.todo.id);
+      return next;
+    });
+    setItems((prev) => prev.filter((i) => i.todo.id !== item.todo.id));
+    const { error } = await repo.delete(item.todo.id);
+    setPendingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(item.todo.id);
+      return next;
+    });
+    if (error) {
+      restoreItem(item);
+    }
+  }
+
+  function restoreItem(item: ArchiveItem) {
+    setItems((prev) => {
+      const ts = item.todo.lastCompletedAt ?? 0;
+      const idx = prev.findIndex((i) => (i.todo.lastCompletedAt ?? 0) < ts);
+      if (idx === -1) return [...prev, item];
+      return [...prev.slice(0, idx), item, ...prev.slice(idx)];
+    });
   }
 
   const filtered = useMemo(() => {
@@ -168,6 +192,26 @@ export default function CompletedView() {
                       : ""}
                   </p>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(item)}
+                  disabled={isPending}
+                  aria-label={`Delete "${item.todo.title}"`}
+                  className="mt-0.5 shrink-0 rounded p-1 text-on-surface/40 hover:text-danger focus:outline-none focus:ring-2 focus:ring-danger disabled:opacity-50"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-4 w-4"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </button>
               </li>
             );
           })}
