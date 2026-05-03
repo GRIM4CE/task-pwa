@@ -67,6 +67,11 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Todo | null>(null);
   const [justCompletedIds, setJustCompletedIds] = useState<Set<string>>(() => new Set());
+  // Tracks "now" for visibility filters that depend on local-midnight boundaries
+  // (currently: hiding completed weekly tasks past their next-midnight cutoff).
+  // Bumped by an interval and on visibilitychange so the UI re-evaluates without
+  // requiring a manual refresh, even with the app left open through midnight.
+  const [nowMs, setNowMs] = useState(() => Date.now());
   // After a slip is logged successfully, surface a transient undo toast so a
   // mis-tap can be reverted without diving into the edit modal. A single
   // pending undo at a time is enough — a follow-up slip on a different todo
@@ -208,12 +213,21 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
   useEffect(() => {
     function handleVisibilityChange() {
       if (document.visibilityState === "visible") {
+        setNowMs(Date.now());
         loadTodos();
       }
     }
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [loadTodos]);
+
+  // Tick "now" once a minute so visibility filters tied to local midnight
+  // (weekly completions hiding from the list) flip without a refresh, even
+  // when the app stays open across the boundary.
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -629,8 +643,18 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
       t.recurrence === null &&
       !t.pinnedToWeek
   );
+  // Weekly recurring tasks reset to incomplete at the Sunday→Monday boundary
+  // (see isRecurringResetDue), but the completed checkmark should disappear
+  // from the list at the next local midnight — same visibility window as
+  // non-recurring cleanup. The row stays completed in storage so the streak
+  // event isn't lost; we just hide it from the UI until the weekly reset
+  // surfaces it again in "This Week" as open.
   const completedTodos = topLevel.filter(
-    (t) => isDoTodo(t) && t.completed && !justCompletedIds.has(t.id)
+    (t) =>
+      isDoTodo(t) &&
+      t.completed &&
+      !justCompletedIds.has(t.id) &&
+      !(t.recurrence === "weekly" && isCompletedTodoExpired(t.lastCompletedAt, nowMs))
   );
 
   // Subtasks pinned to This Week. Subtasks inherit isPersonal from their parent
