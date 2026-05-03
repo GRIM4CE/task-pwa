@@ -1403,6 +1403,33 @@ function TodoRow({
             </span>
           )}
         </span>
+        {showBadge && (
+          <div
+            className="mt-1 h-1 w-full overflow-hidden rounded-full bg-surface-hover"
+            role="progressbar"
+            aria-valuenow={subtaskDone ?? 0}
+            aria-valuemin={0}
+            aria-valuemax={subtaskTotal ?? 0}
+            aria-label={`Subtask completion: ${subtaskDone} of ${subtaskTotal}`}
+          >
+            <div
+              className={`h-full transition-[width] duration-300 ease-out ${
+                done
+                  ? "bg-on-surface/25"
+                  : (subtaskDone ?? 0) >= (subtaskTotal ?? 0)
+                    ? "bg-success"
+                    : "bg-primary"
+              }`}
+              style={{
+                width: `${
+                  (subtaskTotal ?? 0) > 0
+                    ? Math.round(((subtaskDone ?? 0) / (subtaskTotal ?? 1)) * 100)
+                    : 0
+                }%`,
+              }}
+            />
+          </div>
+        )}
         {todo.description && (
           <span className={`mt-0.5 block break-words text-xs ${done ? "text-on-surface/40" : "text-on-surface/60"}`}>
             {todo.description}
