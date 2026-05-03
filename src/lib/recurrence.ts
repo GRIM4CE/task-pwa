@@ -1,12 +1,13 @@
 export type Recurrence = "daily" | "weekly" | null;
 
-// A completed recurring todo is "due" for reset once the user's local clock
-// has crossed 00:00 the next calendar day after lastCompletedAt — same
-// boundary as non-recurring cleanup, regardless of daily vs weekly. The
-// recurrence type still drives stats (weekly streaks count week-instances),
-// but the visible completion checkmark clears every night so the list
-// reflects "what's still open today" rather than carrying yesterday's ticks.
-// Using local Date components honors the browser's IANA timezone (including DST).
+// A completed recurring todo is "due" for reset at the start of the next
+// recurrence period in the user's local timezone:
+//   - daily   → 00:00 the calendar day after lastCompletedAt
+//   - weekly  → 00:00 the Monday after the ISO week containing lastCompletedAt
+// Weekly tasks therefore stay ticked off through the rest of the week and
+// only clear at the Sunday→Monday boundary, regardless of which day they
+// were completed. Using local Date components honors the browser's IANA
+// timezone (including DST).
 export function isRecurringResetDue(
   recurrence: Recurrence,
   lastCompletedAt: number | null,
@@ -14,6 +15,24 @@ export function isRecurringResetDue(
 ): boolean {
   if (recurrence === null || lastCompletedAt === null) return false;
   const last = new Date(lastCompletedAt);
+
+  if (recurrence === "weekly") {
+    // getDay(): 0=Sun..6=Sat. Treat Monday as the start of the week, so
+    // a Sunday completion clears at the upcoming midnight (1 day later)
+    // and a Monday completion clears 7 days later.
+    const daysSinceMonday = (last.getDay() + 6) % 7;
+    const resetAt = new Date(
+      last.getFullYear(),
+      last.getMonth(),
+      last.getDate() - daysSinceMonday + 7,
+      0,
+      0,
+      0,
+      0
+    );
+    return now >= resetAt.getTime();
+  }
+
   const resetAt = new Date(
     last.getFullYear(),
     last.getMonth(),
