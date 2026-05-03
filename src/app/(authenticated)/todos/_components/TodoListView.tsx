@@ -1890,7 +1890,7 @@ function EditTodoModal({
               >
                 <option value="">No repeat</option>
                 <option value="daily">Daily — resets at local midnight</option>
-                <option value="weekly">Weekly — resets 7 days later at local midnight</option>
+                <option value="weekly">Weekly — tracked weekly, resets at local midnight</option>
               </select>
               {recurrenceDisabled && (
                 <span className="mt-1 block text-xs text-text-muted">
