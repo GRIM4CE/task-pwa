@@ -134,7 +134,7 @@ export async function PATCH(
   }
 
   // Recurring todos can't be pinned: recurrence already places them in their
-  // own section (Daily / This Week), so a pin would be redundant. Only reject
+  // own section (Today / This Week), so a pin would be redundant. Only reject
   // when the patch is actively asserting the invalid combination — explicitly
   // setting a recurrence on a pinned row, or explicitly pinning a recurring
   // row. Unrelated patches (title, completion, sort order) on a legacy
@@ -144,7 +144,14 @@ export async function PATCH(
     body.pinnedTo !== undefined ? body.pinnedTo : existing[0].pinnedTo;
   const settingRecurring =
     body.recurrence !== undefined && body.recurrence !== null;
-  const settingPin = body.pinnedTo !== undefined && body.pinnedTo !== null;
+  // Only count the patch as "actively pinning" when it's changing the pin to
+  // a non-null value. A no-op (body.pinnedTo equals the persisted value) lets
+  // unrelated edits on a legacy recurring+pinned row save without tripping the
+  // guard — the modal always includes `pinnedTo` in its payload.
+  const settingPin =
+    body.pinnedTo !== undefined &&
+    body.pinnedTo !== null &&
+    body.pinnedTo !== existing[0].pinnedTo;
   if (
     (settingRecurring && effectivePinned !== null) ||
     (settingPin && effectiveRecurrence !== null)
@@ -175,6 +182,12 @@ export async function PATCH(
   if (effectiveKind === "avoid" && effectiveRecurrence !== null) {
     return NextResponse.json(
       { error: "Avoid todos cannot be recurring" },
+      { status: 400 }
+    );
+  }
+  if (effectiveKind === "avoid" && effectivePinned !== null) {
+    return NextResponse.json(
+      { error: "Avoid todos cannot be pinned" },
       { status: 400 }
     );
   }

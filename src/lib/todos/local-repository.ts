@@ -347,6 +347,13 @@ export const localTodoRepository: TodoRepository = {
     if (effectiveKind === "avoid" && effectiveRecurrenceForKind !== null) {
       return err("Avoid todos cannot be recurring");
     }
+    const effectivePinnedTo =
+      parsed.data.pinnedTo !== undefined
+        ? parsed.data.pinnedTo
+        : previous.pinnedTo;
+    if (effectiveKind === "avoid" && effectivePinnedTo !== null) {
+      return err("Avoid todos cannot be pinned");
+    }
     // Require the persisted row to already be avoid — see the matching guard
     // in /api/todos/[id]/route.ts for why a same-patch kind switch is rejected.
     if (

@@ -55,6 +55,10 @@ export const createTodoSchema = z
     message: "Avoid todos cannot be recurring",
     path: ["recurrence"],
   })
+  .refine((v) => !(v.kind === "avoid" && v.pinnedTo != null), {
+    message: "Avoid todos cannot be pinned",
+    path: ["pinnedTo"],
+  })
   .refine(
     (v) =>
       !(
@@ -112,6 +116,10 @@ export const updateTodoSchema = z
   .refine((v) => !(v.recurrence != null && v.parentId != null), {
     message: "Recurring todos cannot be subtasks",
     path: ["parentId"],
+  })
+  .refine((v) => !(v.kind === "avoid" && v.pinnedTo != null), {
+    message: "Avoid todos cannot be pinned",
+    path: ["pinnedTo"],
   })
   .refine((v) => !(v.recordSlip === true && v.completed !== undefined), {
     message: "Cannot record slip and toggle completion in the same request",

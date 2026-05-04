@@ -461,13 +461,18 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
   // Cycle the pin: unpinned → This Week → Today → unpinned. Tap-friendly because
   // it reuses the existing single-button surface; the modal exposes the same
   // three states explicitly for users who want to pick directly.
+  // Recurring todos can't be pinned, so the inline button is only shown for
+  // legacy recurring+pinned rows and only as a means to clear the pin —
+  // cycling into another pinned state would be rejected by the API.
   async function handleTogglePin(todo: Todo) {
     const next: PinnedTo =
-      todo.pinnedTo === null
-        ? "week"
-        : todo.pinnedTo === "week"
-          ? "day"
-          : null;
+      todo.recurrence !== null
+        ? null
+        : todo.pinnedTo === null
+          ? "week"
+          : todo.pinnedTo === "week"
+            ? "day"
+            : null;
     const previous = todo.pinnedTo;
     setTodos((prev) =>
       prev.map((t) => (t.id === todo.id ? { ...t, pinnedTo: next } : t))
@@ -1937,10 +1942,15 @@ function EditTodoModal({
   const isAvoid = kind === "avoid";
   // Recurring todos can't be pinned: recurrence already surfaces them in
   // Today / This Week. Avoid todos can't recur or be pinned at all — they
-  // live in their own section and the API would reject either combo.
+  // live in their own section and the API rejects either combo.
   const pinDisabled = recurrence !== null || isAvoid;
   const recurrenceDisabled = isAvoid;
-  const effectivePinned: PinnedTo = pinDisabled ? null : pinnedTo;
+  // For pinDisabled rows we still surface the persisted pin value so a legacy
+  // recurring+pinned (or avoid+pinned) row isn't stranded — the user can
+  // explicitly clear it via "No pin". The select itself is only fully disabled
+  // when there's nothing to clear.
+  const effectivePinned: PinnedTo = pinnedTo;
+  const pinSelectDisabled = pinDisabled && effectivePinned === null;
   const effectiveRecurrence: Recurrence = recurrenceDisabled ? null : recurrence;
 
   async function handleSubmit(e: React.FormEvent) {
@@ -2141,23 +2151,39 @@ function EditTodoModal({
               </label>
             )}
 
-            <label className={`mb-4 block ${pinDisabled ? "opacity-50" : ""}`}>
+            <label className={`mb-4 block ${pinSelectDisabled ? "opacity-50" : ""}`}>
               <span className="mb-1 block text-sm text-text-muted">Pin to</span>
               <select
                 value={effectivePinned ?? ""}
-                disabled={pinDisabled}
+                disabled={pinSelectDisabled}
                 onChange={(e) =>
                   setPinnedTo((e.target.value || null) as PinnedTo)
                 }
                 className="w-full rounded-lg border border-border bg-input px-3 py-2 text-input-text focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus disabled:cursor-not-allowed"
               >
                 <option value="">No pin</option>
-                <option value="day">Today</option>
-                <option value="week">This Week</option>
+                {/* When pinDisabled, only the currently-set pin and "No pin"
+                    are valid choices — the others would be rejected by the
+                    server, so don't offer them. */}
+                {(!pinDisabled || effectivePinned === "day") && (
+                  <option value="day">Today</option>
+                )}
+                {(!pinDisabled || effectivePinned === "week") && (
+                  <option value="week">This Week</option>
+                )}
               </select>
-              {pinDisabled && (
+              {pinDisabled && effectivePinned !== null && (
                 <span className="mt-1 block text-xs text-text-muted">
-                  Not available for recurring todos.
+                  {isAvoid
+                    ? "Avoid todos can't be pinned — clear it to keep this row as Avoid."
+                    : "Recurring todos can't be pinned — clear it to keep the recurrence."}
+                </span>
+              )}
+              {pinSelectDisabled && (
+                <span className="mt-1 block text-xs text-text-muted">
+                  {isAvoid
+                    ? "Not available for avoid todos."
+                    : "Not available for recurring todos."}
                 </span>
               )}
             </label>
