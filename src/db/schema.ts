@@ -79,6 +79,9 @@ export const totpUsedCodes = sqliteTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
+    // Nullable so legacy rows from the pre-per-user-replay schema survive the
+    // migration without rewrites. New rows always populate it.
+    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
     code: text("code").notNull(),
     timeStep: integer("time_step").notNull(),
     usedAt: integer("used_at", { mode: "timestamp" })
@@ -86,7 +89,11 @@ export const totpUsedCodes = sqliteTable(
       .default(sql`(unixepoch())`),
   },
   (table) => [
-    uniqueIndex("idx_totp_used_codes_unique").on(table.code, table.timeStep),
+    uniqueIndex("idx_totp_used_codes_user_unique").on(
+      table.userId,
+      table.code,
+      table.timeStep
+    ),
   ]
 );
 

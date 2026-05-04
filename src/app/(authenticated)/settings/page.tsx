@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, type VacationPeriod } from "@/lib/api-client";
 import { exitGuestMode, isGuestMode } from "@/lib/guest-mode";
@@ -123,6 +124,22 @@ export default function SettingsPage() {
           <p className="mt-2 text-sm text-danger">{vacationError}</p>
         )}
       </section>
+
+      {!isGuest && (
+        <section className="mb-6 rounded-lg border border-border-on-surface bg-surface p-4">
+          <h3 className="mb-1 text-sm font-medium text-on-surface/60">Security</h3>
+          <p className="mb-3 text-sm text-on-surface/70">
+            Reset your authenticator app and generate fresh recovery codes.
+            Only your account is affected.
+          </p>
+          <Link
+            href="/security"
+            className="inline-block rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover"
+          >
+            Reset authenticator
+          </Link>
+        </section>
+      )}
 
       <section className="rounded-lg border border-border-on-surface bg-surface p-4">
         <h3 className="mb-2 text-sm font-medium text-on-surface/60">Session</h3>

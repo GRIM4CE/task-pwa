@@ -18,22 +18,28 @@ export async function recordFailedAttempt(
   });
 }
 
-export async function checkAccountLocked(ipAddress: string): Promise<{
+// Lockout is scoped to (ip, username) so one account's typos can't lock out
+// another account on the same network. Attempts against unknown usernames
+// still get logged but only count toward that exact username's bucket.
+export async function checkAccountLocked(
+  ipAddress: string,
+  username: string
+): Promise<{
   locked: boolean;
   minutesRemaining: number;
 }> {
+  const scope = and(
+    eq(schema.failedLoginAttempts.ipAddress, ipAddress),
+    eq(schema.failedLoginAttempts.usernameAttempted, username)
+  );
+
   // Check attempts in the last 24 hours
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
   const result = await db
     .select({ count: sql<number>`count(*)` })
     .from(schema.failedLoginAttempts)
-    .where(
-      and(
-        eq(schema.failedLoginAttempts.ipAddress, ipAddress),
-        gt(schema.failedLoginAttempts.attemptedAt, oneDayAgo)
-      )
-    );
+    .where(and(scope, gt(schema.failedLoginAttempts.attemptedAt, oneDayAgo)));
 
   const attemptCount = result[0]?.count ?? 0;
 
@@ -56,12 +62,7 @@ export async function checkAccountLocked(ipAddress: string): Promise<{
   const recentAttempts = await db
     .select({ count: sql<number>`count(*)` })
     .from(schema.failedLoginAttempts)
-    .where(
-      and(
-        eq(schema.failedLoginAttempts.ipAddress, ipAddress),
-        gt(schema.failedLoginAttempts.attemptedAt, lockoutStart)
-      )
-    );
+    .where(and(scope, gt(schema.failedLoginAttempts.attemptedAt, lockoutStart)));
 
   if ((recentAttempts[0]?.count ?? 0) >= applicableLockout.attempts) {
     return {
@@ -73,8 +74,16 @@ export async function checkAccountLocked(ipAddress: string): Promise<{
   return { locked: false, minutesRemaining: 0 };
 }
 
-export async function clearFailedAttempts(ipAddress: string): Promise<void> {
+export async function clearFailedAttempts(
+  ipAddress: string,
+  username: string
+): Promise<void> {
   await db
     .delete(schema.failedLoginAttempts)
-    .where(eq(schema.failedLoginAttempts.ipAddress, ipAddress));
+    .where(
+      and(
+        eq(schema.failedLoginAttempts.ipAddress, ipAddress),
+        eq(schema.failedLoginAttempts.usernameAttempted, username)
+      )
+    );
 }
