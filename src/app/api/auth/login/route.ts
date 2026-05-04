@@ -23,20 +23,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Check account lockout
-  const lockout = await checkAccountLocked(ip);
-  if (lockout.locked) {
-    await logAudit("login_failed", {
-      ipAddress: ip,
-      userAgent,
-      metadata: { reason: "account_locked" },
-    });
-    return NextResponse.json(
-      { error: `Account temporarily locked. Try again in ${lockout.minutesRemaining} minutes.` },
-      { status: 423 }
-    );
-  }
-
   // Parse request
   let body: { username: string; totpCode: string };
   try {
@@ -44,6 +30,21 @@ export async function POST(request: NextRequest) {
     body = loginSchema.parse(raw);
   } catch {
     return NextResponse.json({ error: GENERIC_ERROR }, { status: 401 });
+  }
+
+  // Check account lockout (scoped to this username so one account's failures
+  // can't lock another account on the same network)
+  const lockout = await checkAccountLocked(ip, body.username);
+  if (lockout.locked) {
+    await logAudit("login_failed", {
+      ipAddress: ip,
+      userAgent,
+      metadata: { reason: "account_locked", username: body.username },
+    });
+    return NextResponse.json(
+      { error: `Account temporarily locked. Try again in ${lockout.minutesRemaining} minutes.` },
+      { status: 423 }
+    );
   }
 
   // Find user
@@ -63,7 +64,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: GENERIC_ERROR }, { status: 401 });
   }
 
-  // Get TOTP secret (shared across all users, look up this user's copy)
   const totpRecord = await db
     .select()
     .from(schema.totpSecrets)
@@ -71,16 +71,14 @@ export async function POST(request: NextRequest) {
     .limit(1);
 
   if (totpRecord.length === 0) {
-    // Fallback: try any user's TOTP secret (they're all identical)
-    const anyTotp = await db
-      .select()
-      .from(schema.totpSecrets)
-      .limit(1);
-    if (anyTotp.length === 0) {
-      await recordFailedAttempt(ip, body.username);
-      return NextResponse.json({ error: GENERIC_ERROR }, { status: 401 });
-    }
-    totpRecord.push(anyTotp[0]);
+    await recordFailedAttempt(ip, body.username);
+    await logAudit("login_failed", {
+      userId: user[0].id,
+      ipAddress: ip,
+      userAgent,
+      metadata: { reason: "no_totp_secret" },
+    });
+    return NextResponse.json({ error: GENERIC_ERROR }, { status: 401 });
   }
 
   // Verify TOTP code
@@ -101,9 +99,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: GENERIC_ERROR }, { status: 401 });
   }
 
-  // Check for replay attack (code already used in this time step)
+  // Replay protection is per-user: each account independently burns a code
+  // for its 30s window. Two accounts that happen to share a secret today can
+  // both still log in within the same window.
   try {
     await db.insert(schema.totpUsedCodes).values({
+      userId: user[0].id,
       code: body.totpCode,
       timeStep,
     });
@@ -120,7 +121,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Success - clear failed attempts and create session
-  await clearFailedAttempts(ip);
+  await clearFailedAttempts(ip, body.username);
   await createSession(user[0].id, ip, userAgent);
 
   await logAudit("login_success", {

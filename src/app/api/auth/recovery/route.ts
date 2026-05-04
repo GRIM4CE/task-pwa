@@ -23,15 +23,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Check lockout
-  const lockout = await checkAccountLocked(ip);
-  if (lockout.locked) {
-    return NextResponse.json(
-      { error: `Account temporarily locked. Try again in ${lockout.minutesRemaining} minutes.` },
-      { status: 423 }
-    );
-  }
-
   // Parse request
   let body: { username: string; recoveryCode: string };
   try {
@@ -39,6 +30,15 @@ export async function POST(request: NextRequest) {
     body = recoveryLoginSchema.parse(raw);
   } catch {
     return NextResponse.json({ error: GENERIC_ERROR }, { status: 401 });
+  }
+
+  // Check lockout (scoped to this username — see lockout.ts)
+  const lockout = await checkAccountLocked(ip, body.username);
+  if (lockout.locked) {
+    return NextResponse.json(
+      { error: `Account temporarily locked. Try again in ${lockout.minutesRemaining} minutes.` },
+      { status: 423 }
+    );
   }
 
   // Find user
@@ -53,7 +53,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: GENERIC_ERROR }, { status: 401 });
   }
 
-  // Check recovery code (codes are shared, stored on primary user)
+  // Recovery codes are per-user: a code only redeems for the account it was
+  // issued to. (Pre-migration installs got their codes duplicated across
+  // accounts in db:migrate so each user retains access.)
   const codeHash = hashRecoveryCode(body.recoveryCode);
   const recoveryRecord = await db
     .select()
@@ -61,6 +63,7 @@ export async function POST(request: NextRequest) {
     .where(
       and(
         eq(schema.recoveryCodes.codeHash, codeHash),
+        eq(schema.recoveryCodes.userId, user[0].id),
         isNull(schema.recoveryCodes.usedAt)
       )
     )
@@ -84,7 +87,7 @@ export async function POST(request: NextRequest) {
     .where(eq(schema.recoveryCodes.id, recoveryRecord[0].id));
 
   // Clear failed attempts and create session
-  await clearFailedAttempts(ip);
+  await clearFailedAttempts(ip, body.username);
   await createSession(user[0].id, ip, userAgent);
 
   await logAudit("recovery_code_used", {
@@ -93,11 +96,15 @@ export async function POST(request: NextRequest) {
     userAgent,
   });
 
-  // Count remaining recovery codes (shared across all users)
   const remaining = await db
     .select()
     .from(schema.recoveryCodes)
-    .where(isNull(schema.recoveryCodes.usedAt));
+    .where(
+      and(
+        eq(schema.recoveryCodes.userId, user[0].id),
+        isNull(schema.recoveryCodes.usedAt)
+      )
+    );
 
   return NextResponse.json({
     success: true,

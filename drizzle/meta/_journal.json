@@ -71,6 +71,13 @@
       "when": 1778544000000,
       "tag": "0009_pin_day_or_week",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1777916518766,
+      "tag": "0010_modern_husk",
+      "breakpoints": true
     }
   ]
 }
