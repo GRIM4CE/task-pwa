@@ -28,6 +28,7 @@ async function apiRequest<T>(
 export type Recurrence = "daily" | "weekly" | null;
 export type TodoKind = "do" | "avoid";
 export type LimitPeriod = "week" | "month" | null;
+export type PinnedTo = "day" | "week" | null;
 
 export interface TodoDTO {
   id: string;
@@ -38,7 +39,7 @@ export interface TodoDTO {
   isPersonal: boolean;
   sortOrder: number;
   recurrence: Recurrence;
-  pinnedToWeek: boolean;
+  pinnedTo: PinnedTo;
   kind: TodoKind;
   limitCount: number | null;
   limitPeriod: LimitPeriod;
@@ -114,9 +115,9 @@ export const api = {
     list: () => apiRequest<TodoDTO[]>("/api/todos"),
     archive: () => apiRequest<ArchiveDTO>("/api/todos/archive"),
     stats: () => apiRequest<StatsDTO>("/api/todos/stats"),
-    create: (body: { title: string; description?: string; isPersonal?: boolean; recurrence?: Recurrence; pinnedToWeek?: boolean; parentId?: string | null; kind?: TodoKind; limitCount?: number | null; limitPeriod?: LimitPeriod; oncePerDay?: boolean }) =>
+    create: (body: { title: string; description?: string; isPersonal?: boolean; recurrence?: Recurrence; pinnedTo?: PinnedTo; parentId?: string | null; kind?: TodoKind; limitCount?: number | null; limitPeriod?: LimitPeriod; oncePerDay?: boolean }) =>
       apiRequest<TodoDTO>("/api/todos", { method: "POST", body: JSON.stringify(body) }),
-    update: (id: string, body: { title?: string; description?: string | null; completed?: boolean; sortOrder?: number; recurrence?: Recurrence; pinnedToWeek?: boolean; parentId?: string | null; autoReset?: boolean; kind?: TodoKind; limitCount?: number | null; limitPeriod?: LimitPeriod; oncePerDay?: boolean; recordSlip?: boolean; undoLastSlip?: boolean }) =>
+    update: (id: string, body: { title?: string; description?: string | null; completed?: boolean; sortOrder?: number; recurrence?: Recurrence; pinnedTo?: PinnedTo; parentId?: string | null; autoReset?: boolean; kind?: TodoKind; limitCount?: number | null; limitPeriod?: LimitPeriod; oncePerDay?: boolean; recordSlip?: boolean; undoLastSlip?: boolean }) =>
       apiRequest<TodoDTO>(`/api/todos/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     reorder: (ids: string[], parentId?: string | null) =>
       apiRequest<{ success: boolean }>("/api/todos/reorder", { method: "POST", body: JSON.stringify({ ids, parentId: parentId ?? null }) }),

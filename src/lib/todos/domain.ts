@@ -79,7 +79,7 @@ export function applyUpdate(
   if (patch.description !== undefined) next.description = patch.description;
   if (patch.sortOrder !== undefined) next.sortOrder = patch.sortOrder;
   if (patch.recurrence !== undefined) next.recurrence = patch.recurrence;
-  if (patch.pinnedToWeek !== undefined) next.pinnedToWeek = patch.pinnedToWeek;
+  if (patch.pinnedTo !== undefined) next.pinnedTo = patch.pinnedTo;
   if (patch.kind !== undefined) next.kind = patch.kind;
   if (patch.limitCount !== undefined) next.limitCount = patch.limitCount;
   if (patch.limitPeriod !== undefined) next.limitPeriod = patch.limitPeriod;
@@ -98,7 +98,7 @@ export function applyUpdate(
   if (patch.completed !== undefined) {
     next.completed = patch.completed;
     next.lastCompletedAt = patch.completed ? now : null;
-    if (patch.completed) next.pinnedToWeek = false;
+    if (patch.completed) next.pinnedTo = null;
   }
   return next;
 }
@@ -136,7 +136,7 @@ export function cascadeCompleteChildren(
           ...t,
           completed: true,
           lastCompletedAt: now,
-          pinnedToWeek: false,
+          pinnedTo: null,
           updatedAt: now,
         }
       : t

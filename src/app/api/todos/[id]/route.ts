@@ -21,7 +21,7 @@ export async function PATCH(
     completed?: boolean;
     sortOrder?: number;
     recurrence?: "daily" | "weekly" | null;
-    pinnedToWeek?: boolean;
+    pinnedTo?: "day" | "week" | null;
     parentId?: string | null;
     autoReset?: boolean;
     kind?: "do" | "avoid";
@@ -133,22 +133,20 @@ export async function PATCH(
     );
   }
 
-  // Recurring todos can't be pinned: daily ones are excluded from This Week,
-  // and weekly ones already surface there by virtue of recurrence. Only reject
+  // Recurring todos can't be pinned: recurrence already places them in their
+  // own section (Daily / This Week), so a pin would be redundant. Only reject
   // when the patch is actively asserting the invalid combination — explicitly
   // setting a recurrence on a pinned row, or explicitly pinning a recurring
   // row. Unrelated patches (title, completion, sort order) on a legacy
   // recurring+pinned row pass through so the data isn't stranded; the user can
   // clear the pin from the edit modal or via the row's pin control.
   const effectivePinned =
-    body.pinnedToWeek !== undefined
-      ? body.pinnedToWeek
-      : existing[0].pinnedToWeek;
+    body.pinnedTo !== undefined ? body.pinnedTo : existing[0].pinnedTo;
   const settingRecurring =
     body.recurrence !== undefined && body.recurrence !== null;
-  const settingPin = body.pinnedToWeek === true;
+  const settingPin = body.pinnedTo !== undefined && body.pinnedTo !== null;
   if (
-    (settingRecurring && effectivePinned) ||
+    (settingRecurring && effectivePinned !== null) ||
     (settingPin && effectiveRecurrence !== null)
   ) {
     return NextResponse.json(
@@ -222,7 +220,7 @@ export async function PATCH(
   if (body.description !== undefined) updateData.description = body.description;
   if (body.sortOrder !== undefined) updateData.sortOrder = body.sortOrder;
   if (body.recurrence !== undefined) updateData.recurrence = body.recurrence;
-  if (body.pinnedToWeek !== undefined) updateData.pinnedToWeek = body.pinnedToWeek;
+  if (body.pinnedTo !== undefined) updateData.pinnedTo = body.pinnedTo;
   if (body.kind !== undefined) updateData.kind = body.kind;
   if (body.limitCount !== undefined) updateData.limitCount = body.limitCount;
   if (body.limitPeriod !== undefined) updateData.limitPeriod = body.limitPeriod;
@@ -237,9 +235,9 @@ export async function PATCH(
   if (body.completed !== undefined) {
     updateData.completed = body.completed;
     updateData.lastCompletedAt = body.completed ? now : null;
-    // Pinning is meant for "this week's open work"; clear it on completion so
+    // Pinning is meant for "open work this period"; clear it on completion so
     // unchecking later doesn't resurrect the pin.
-    if (body.completed) updateData.pinnedToWeek = false;
+    if (body.completed) updateData.pinnedTo = null;
   }
   // Server-side oncePerDay enforcement: when the row carries oncePerDay, a
   // recordSlip is suppressed if any slip exists in the prior 24h. The client's
@@ -328,7 +326,7 @@ export async function PATCH(
         .set({
           completed: true,
           lastCompletedAt: now,
-          pinnedToWeek: false,
+          pinnedTo: null,
           updatedAt: now,
         })
         .where(
@@ -514,7 +512,7 @@ export async function PATCH(
     isPersonal: updated.isPersonal,
     sortOrder: updated.sortOrder,
     recurrence: updated.recurrence,
-    pinnedToWeek: updated.pinnedToWeek,
+    pinnedTo: updated.pinnedTo,
     kind: updated.kind,
     limitCount: updated.limitCount,
     limitPeriod: updated.limitPeriod,

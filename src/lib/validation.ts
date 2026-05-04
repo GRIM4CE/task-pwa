@@ -23,6 +23,7 @@ export const recoveryLoginSchema = z.object({
 export const recurrenceSchema = z.enum(["daily", "weekly"]).nullable();
 export const todoKindSchema = z.enum(["do", "avoid"]);
 export const limitPeriodSchema = z.enum(["week", "month"]).nullable();
+export const pinnedToSchema = z.enum(["day", "week"]).nullable();
 const limitCountSchema = z.number().int().min(1).max(999).nullable();
 
 export const createTodoSchema = z
@@ -31,16 +32,16 @@ export const createTodoSchema = z
     description: z.string().max(5000, "Description too long").optional(),
     isPersonal: z.boolean().optional(),
     recurrence: recurrenceSchema.optional(),
-    pinnedToWeek: z.boolean().optional(),
+    pinnedTo: pinnedToSchema.optional(),
     parentId: z.string().min(1).nullable().optional(),
     kind: todoKindSchema.optional(),
     limitCount: limitCountSchema.optional(),
     limitPeriod: limitPeriodSchema.optional(),
     oncePerDay: z.boolean().optional(),
   })
-  .refine((v) => !(v.recurrence != null && v.pinnedToWeek === true), {
+  .refine((v) => !(v.recurrence != null && v.pinnedTo != null), {
     message: "Recurring todos cannot be pinned",
-    path: ["pinnedToWeek"],
+    path: ["pinnedTo"],
   })
   .refine((v) => !(v.recurrence != null && v.parentId != null), {
     message: "Recurring todos cannot be subtasks",
@@ -82,7 +83,7 @@ export const updateTodoSchema = z
     completed: z.boolean().optional(),
     sortOrder: z.number().int().optional(),
     recurrence: recurrenceSchema.optional(),
-    pinnedToWeek: z.boolean().optional(),
+    pinnedTo: pinnedToSchema.optional(),
     // null promotes a subtask to top-level; a string demotes a top-level todo to
     // a subtask of that parent.
     parentId: z.string().min(1).nullable().optional(),
@@ -104,9 +105,9 @@ export const updateTodoSchema = z
   })
   // These refinements catch cases where both fields are in the same patch.
   // Cases involving the existing row state are checked in the PATCH handler.
-  .refine((v) => !(v.recurrence != null && v.pinnedToWeek === true), {
+  .refine((v) => !(v.recurrence != null && v.pinnedTo != null), {
     message: "Recurring todos cannot be pinned",
-    path: ["pinnedToWeek"],
+    path: ["pinnedTo"],
   })
   .refine((v) => !(v.recurrence != null && v.parentId != null), {
     message: "Recurring todos cannot be subtasks",

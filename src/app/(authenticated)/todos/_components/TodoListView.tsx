@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   type LimitPeriod,
+  type PinnedTo,
   type Recurrence,
   type TodoDTO,
   type TodoKind,
@@ -457,15 +458,24 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
     }
   }
 
+  // Cycle the pin: unpinned → This Week → Today → unpinned. Tap-friendly because
+  // it reuses the existing single-button surface; the modal exposes the same
+  // three states explicitly for users who want to pick directly.
   async function handleTogglePin(todo: Todo) {
-    const next = !todo.pinnedToWeek;
+    const next: PinnedTo =
+      todo.pinnedTo === null
+        ? "week"
+        : todo.pinnedTo === "week"
+          ? "day"
+          : null;
+    const previous = todo.pinnedTo;
     setTodos((prev) =>
-      prev.map((t) => (t.id === todo.id ? { ...t, pinnedToWeek: next } : t))
+      prev.map((t) => (t.id === todo.id ? { ...t, pinnedTo: next } : t))
     );
-    const { data, error } = await repo.update(todo.id, { pinnedToWeek: next });
+    const { data, error } = await repo.update(todo.id, { pinnedTo: next });
     if (error) {
       setTodos((prev) =>
-        prev.map((t) => (t.id === todo.id ? { ...t, pinnedToWeek: !next } : t))
+        prev.map((t) => (t.id === todo.id ? { ...t, pinnedTo: previous } : t))
       );
       return;
     }
@@ -480,7 +490,7 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
       title: string;
       description: string | null;
       recurrence: Recurrence;
-      pinnedToWeek: boolean;
+      pinnedTo: PinnedTo;
       kind: TodoKind;
       limitCount: number | null;
       limitPeriod: LimitPeriod;
@@ -496,7 +506,7 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
 
   async function handleSubtaskEditSave(
     id: string,
-    patch: { title: string; description: string | null; pinnedToWeek: boolean }
+    patch: { title: string; description: string | null; pinnedTo: PinnedTo }
   ) {
     const { data } = await repo.update(id, patch);
     if (data) {
@@ -558,8 +568,8 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
 
     const previous = todos;
     // Optimistic: move locally, the API will renormalize sortOrder.
-    // pinnedToWeek is preserved on demote (subtasks still surface in This Week
-    // when pinned).
+    // pinnedTo is preserved on demote (subtasks still surface in Today /
+    // This Week when pinned).
     setTodos((prev) =>
       prev.map((t) =>
         t.id === draggedId ? { ...t, parentId: targetParentId } : t
@@ -612,25 +622,28 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
   // checkbox, and mixing them muddies the visual language.
   const isDoTodo = (t: Todo) => t.kind === "do";
   const avoidTodos = topLevel.filter((t) => t.kind === "avoid");
+  // "Today" gathers daily-recurring rows plus anything pinned to the day. Pinned-
+  // to-week takes precedence over a daily recurrence on legacy rows so the pin
+  // can still be cleared from This Week.
   const thisWeekTodos = topLevel.filter(
     (t) =>
       isDoTodo(t) &&
       isActiveSlot(t) &&
-      (t.recurrence === "weekly" || t.pinnedToWeek)
+      (t.recurrence === "weekly" || t.pinnedTo === "week")
   );
-  const dailyTodos = topLevel.filter(
+  const todayTodos = topLevel.filter(
     (t) =>
       isDoTodo(t) &&
       isActiveSlot(t) &&
-      t.recurrence === "daily" &&
-      !t.pinnedToWeek
+      t.pinnedTo !== "week" &&
+      (t.recurrence === "daily" || t.pinnedTo === "day")
   );
   const regularActive = topLevel.filter(
     (t) =>
       isDoTodo(t) &&
       isActiveSlot(t) &&
       t.recurrence === null &&
-      !t.pinnedToWeek
+      t.pinnedTo === null
   );
   // Weekly recurring tasks reset to incomplete at the Sunday→Monday boundary
   // (see isRecurringResetDue), but the completed checkmark should disappear
@@ -667,13 +680,22 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
     )
   );
 
-  // Subtasks pinned to This Week. Subtasks inherit isPersonal from their parent
-  // at create-time, so this filter mirrors the per-tab visibleTodos rule.
+  // Subtasks pinned to This Week / Today. Subtasks inherit isPersonal from
+  // their parent at create-time, so these filters mirror the per-tab
+  // visibleTodos rule.
   const thisWeekSubtasks = sortSubtasks(
     visibleTodos.filter(
       (t) =>
         t.parentId !== null &&
-        t.pinnedToWeek &&
+        t.pinnedTo === "week" &&
+        (!t.completed || justCompletedIds.has(t.id))
+    )
+  );
+  const todaySubtasks = sortSubtasks(
+    visibleTodos.filter(
+      (t) =>
+        t.parentId !== null &&
+        t.pinnedTo === "day" &&
         (!t.completed || justCompletedIds.has(t.id))
     )
   );
@@ -708,10 +730,10 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
           subtaskDone={subtaskDone}
           onToggle={() => handleToggle(todo)}
           onTogglePin={
-            // Hide the pin control on recurring todos (daily are excluded from
-            // This Week, weekly already live there), but keep it for a legacy
-            // recurring+pinned row so the user can unpin it.
-            todo.recurrence !== null && !todo.pinnedToWeek
+            // Hide the pin control on recurring todos (they already surface in
+            // Today/This Week by virtue of recurrence), but keep it for a
+            // legacy recurring+pinned row so the user can unpin it.
+            todo.recurrence !== null && todo.pinnedTo === null
               ? undefined
               : () => handleTogglePin(todo)
           }
@@ -785,7 +807,7 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
         </h2>
         <p className="text-sm text-text-muted">
           {(() => {
-            const todoToday = dailyTodos.length;
+            const todoToday = todayTodos.length + todaySubtasks.length;
             const todoThisWeek = thisWeekTodos.length + thisWeekSubtasks.length;
             const completeToday =
               completedTodos.length + completedSubtasksToday.length;
@@ -842,20 +864,40 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
         </Section>
       )}
 
-      {/* Daily section */}
-      {dailyTodos.length > 0 && (
-        <Section title="Daily" hint="Resets at local midnight">
-          <DraggableLongPressList
-            items={sortTodos(dailyTodos)}
-            onReorder={(ids) => handleReorder(null, ids)}
-            onNestUnder={handleNestUnder}
-            canNestUnder={(draggedId, targetId) =>
-              draggedId !== targetId && !hasChildren(draggedId)
-            }
-            renderItem={(todo, isDragging, _willPromote, isNestTarget) =>
-              renderTopLevelTodo(todo, isDragging, isNestTarget)
-            }
-          />
+      {/* Today: daily-recurring rows + anything pinned to the day, plus pinned subtasks */}
+      {(todayTodos.length > 0 || todaySubtasks.length > 0) && (
+        <Section title="Today" hint="Resets at local midnight">
+          {todayTodos.length > 0 && (
+            <DraggableLongPressList
+              items={sortTodos(todayTodos)}
+              onReorder={(ids) => handleReorder(null, ids)}
+              onNestUnder={handleNestUnder}
+              canNestUnder={(draggedId, targetId) =>
+                draggedId !== targetId && !hasChildren(draggedId)
+              }
+              renderItem={(todo, isDragging, _willPromote, isNestTarget) =>
+                renderTopLevelTodo(todo, isDragging, isNestTarget)
+              }
+            />
+          )}
+          {todaySubtasks.length > 0 && (
+            <div className={`space-y-2${todayTodos.length > 0 ? " mt-2" : ""}`}>
+              {todaySubtasks.map((s) => {
+                const parent = todos.find((t) => t.id === s.parentId);
+                return (
+                  <SubtaskRow
+                    key={s.id}
+                    subtask={s}
+                    parentTitle={parent?.title ?? "—"}
+                    justCompleted={justCompletedIds.has(s.id)}
+                    onToggle={() => handleToggle(s)}
+                    onTogglePin={() => handleTogglePin(s)}
+                    onOpen={() => setEditing(s)}
+                  />
+                );
+              })}
+            </div>
+          )}
         </Section>
       )}
 
@@ -1331,6 +1373,14 @@ function PinIcon({ filled }: { filled: boolean }) {
   );
 }
 
+// Aria copy for the pin button. Cycle is null → week → day → null, so the
+// "next" action depends on current state.
+function pinAriaLabel(pinnedTo: PinnedTo): string {
+  if (pinnedTo === null) return "Pin to This Week";
+  if (pinnedTo === "week") return "Pinned to This Week — tap to pin to Today";
+  return "Pinned to Today — tap to unpin";
+}
+
 function TodoRow({
   todo,
   done,
@@ -1358,7 +1408,8 @@ function TodoRow({
   onToggleExpand?: () => void;
   onOpen: () => void;
 }) {
-  const pinned = todo.pinnedToWeek;
+  const pinnedTo = todo.pinnedTo;
+  const pinned = pinnedTo !== null;
   const showBadge = (subtaskTotal ?? 0) > 0;
   const checkboxBase = done
     ? "flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 border-success bg-success/20 hover:bg-success/10 focus:outline-none focus:ring-2 focus:ring-success"
@@ -1486,9 +1537,13 @@ function TodoRow({
         <button
           onClick={onTogglePin}
           className={`shrink-0 rounded p-1 focus:outline-none focus:ring-2 focus:ring-primary ${
-            pinned ? "text-primary" : "text-on-surface/60 hover:text-on-surface"
+            pinnedTo === "day"
+              ? "text-warning"
+              : pinnedTo === "week"
+                ? "text-primary"
+                : "text-on-surface/60 hover:text-on-surface"
           }`}
-          aria-label={pinned ? "Unpin from This Week" : "Pin to This Week"}
+          aria-label={pinAriaLabel(pinnedTo)}
           aria-pressed={pinned}
         >
           <PinIcon filled={pinned} />
@@ -1528,7 +1583,8 @@ function SubtaskRow({
   onOpen: () => void;
 }) {
   const done = subtask.completed;
-  const pinned = subtask.pinnedToWeek;
+  const pinnedTo = subtask.pinnedTo;
+  const pinned = pinnedTo !== null;
   const checkboxBase = done
     ? "flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 border-success bg-success/20 hover:bg-success/10 focus:outline-none focus:ring-2 focus:ring-success"
     : "h-4 w-4 shrink-0 rounded border-2 border-border hover:border-focus focus:outline-none focus:ring-2 focus:ring-focus";
@@ -1580,9 +1636,13 @@ function SubtaskRow({
         <button
           onClick={onTogglePin}
           className={`shrink-0 rounded p-1 focus:outline-none focus:ring-2 focus:ring-primary ${
-            pinned ? "text-primary" : "text-on-surface/60 hover:text-on-surface"
+            pinnedTo === "day"
+              ? "text-warning"
+              : pinnedTo === "week"
+                ? "text-primary"
+                : "text-on-surface/60 hover:text-on-surface"
           }`}
-          aria-label={pinned ? "Unpin from This Week" : "Pin to This Week"}
+          aria-label={pinAriaLabel(pinnedTo)}
           aria-pressed={pinned}
         >
           <PinIcon filled={pinned} />
@@ -1852,7 +1912,7 @@ function EditTodoModal({
     title: string;
     description: string | null;
     recurrence: Recurrence;
-    pinnedToWeek: boolean;
+    pinnedTo: PinnedTo;
     kind: TodoKind;
     limitCount: number | null;
     limitPeriod: LimitPeriod;
@@ -1863,7 +1923,7 @@ function EditTodoModal({
   const [title, setTitle] = useState(todo.title);
   const [description, setDescription] = useState(todo.description ?? "");
   const [recurrence, setRecurrence] = useState<Recurrence>(todo.recurrence);
-  const [pinnedToWeek, setPinnedToWeek] = useState(todo.pinnedToWeek);
+  const [pinnedTo, setPinnedTo] = useState<PinnedTo>(todo.pinnedTo);
   const [kind, setKind] = useState<TodoKind>(todo.kind);
   const [limitCountInput, setLimitCountInput] = useState<string>(
     todo.limitCount !== null ? String(todo.limitCount) : ""
@@ -1875,12 +1935,12 @@ function EditTodoModal({
   const [saving, setSaving] = useState(false);
 
   const isAvoid = kind === "avoid";
-  // Recurring todos can't be pinned: daily are excluded from This Week, and
-  // weekly already surface there. Avoid todos can't recur or be pinned at
-  // all — they live in their own section and the API would reject either combo.
+  // Recurring todos can't be pinned: recurrence already surfaces them in
+  // Today / This Week. Avoid todos can't recur or be pinned at all — they
+  // live in their own section and the API would reject either combo.
   const pinDisabled = recurrence !== null || isAvoid;
   const recurrenceDisabled = isAvoid;
-  const effectivePinned = pinDisabled ? false : pinnedToWeek;
+  const effectivePinned: PinnedTo = pinDisabled ? null : pinnedTo;
   const effectiveRecurrence: Recurrence = recurrenceDisabled ? null : recurrence;
 
   async function handleSubmit(e: React.FormEvent) {
@@ -1902,7 +1962,7 @@ function EditTodoModal({
       title: title.trim(),
       description: description.trim() ? description.trim() : null,
       recurrence: effectiveRecurrence,
-      pinnedToWeek: effectivePinned,
+      pinnedTo: effectivePinned,
       kind,
       limitCount: isAvoid ? parsedLimit : null,
       limitPeriod: isAvoid && parsedLimit !== null ? limitPeriod : null,
@@ -2081,18 +2141,23 @@ function EditTodoModal({
               </label>
             )}
 
-            <label className={`mb-4 flex items-center gap-2 ${pinDisabled ? "opacity-50" : ""}`}>
-              <input
-                type="checkbox"
-                checked={effectivePinned}
+            <label className={`mb-4 block ${pinDisabled ? "opacity-50" : ""}`}>
+              <span className="mb-1 block text-sm text-text-muted">Pin to</span>
+              <select
+                value={effectivePinned ?? ""}
                 disabled={pinDisabled}
-                onChange={(e) => setPinnedToWeek(e.target.checked)}
-                className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-focus disabled:cursor-not-allowed"
-              />
-              <span className="text-sm text-text">Pin to This Week</span>
+                onChange={(e) =>
+                  setPinnedTo((e.target.value || null) as PinnedTo)
+                }
+                className="w-full rounded-lg border border-border bg-input px-3 py-2 text-input-text focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus disabled:cursor-not-allowed"
+              >
+                <option value="">No pin</option>
+                <option value="day">Today</option>
+                <option value="week">This Week</option>
+              </select>
               {pinDisabled && (
-                <span className="text-xs text-text-muted">
-                  (not available for recurring todos)
+                <span className="mt-1 block text-xs text-text-muted">
+                  Not available for recurring todos.
                 </span>
               )}
             </label>
@@ -2123,12 +2188,12 @@ function EditSubtaskModal({
 }: {
   subtask: Todo;
   onCancel: () => void;
-  onSave: (patch: { title: string; description: string | null; pinnedToWeek: boolean }) => void | Promise<void>;
+  onSave: (patch: { title: string; description: string | null; pinnedTo: PinnedTo }) => void | Promise<void>;
   onDelete: () => void;
 }) {
   const [title, setTitle] = useState(subtask.title);
   const [description, setDescription] = useState(subtask.description ?? "");
-  const [pinnedToWeek, setPinnedToWeek] = useState(subtask.pinnedToWeek);
+  const [pinnedTo, setPinnedTo] = useState<PinnedTo>(subtask.pinnedTo);
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -2138,7 +2203,7 @@ function EditSubtaskModal({
     await onSave({
       title: title.trim(),
       description: description.trim() ? description.trim() : null,
-      pinnedToWeek,
+      pinnedTo,
     });
     setSaving(false);
   }
@@ -2196,14 +2261,19 @@ function EditSubtaskModal({
               />
             </label>
 
-            <label className="mb-4 flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={pinnedToWeek}
-                onChange={(e) => setPinnedToWeek(e.target.checked)}
-                className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-focus"
-              />
-              <span className="text-sm text-text">Pin to This Week</span>
+            <label className="mb-4 block">
+              <span className="mb-1 block text-sm text-text-muted">Pin to</span>
+              <select
+                value={pinnedTo ?? ""}
+                onChange={(e) =>
+                  setPinnedTo((e.target.value || null) as PinnedTo)
+                }
+                className="w-full rounded-lg border border-border bg-input px-3 py-2 text-input-text focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+              >
+                <option value="">No pin</option>
+                <option value="day">Today</option>
+                <option value="week">This Week</option>
+              </select>
             </label>
           </div>
         </div>

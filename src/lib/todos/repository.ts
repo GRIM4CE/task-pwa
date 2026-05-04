@@ -1,6 +1,7 @@
 import type {
   ArchiveDTO,
   LimitPeriod,
+  PinnedTo,
   Recurrence,
   StatsDTO,
   TodoDTO,
@@ -15,7 +16,7 @@ export interface CreateTodoInput {
   description?: string;
   isPersonal?: boolean;
   recurrence?: Recurrence;
-  pinnedToWeek?: boolean;
+  pinnedTo?: PinnedTo;
   parentId?: string | null;
   kind?: TodoKind;
   limitCount?: number | null;
@@ -29,7 +30,7 @@ export interface UpdateTodoPatch {
   completed?: boolean;
   sortOrder?: number;
   recurrence?: Recurrence;
-  pinnedToWeek?: boolean;
+  pinnedTo?: PinnedTo;
   parentId?: string | null;
   autoReset?: boolean;
   kind?: TodoKind;
