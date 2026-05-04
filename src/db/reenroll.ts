@@ -23,6 +23,7 @@ import * as schema from "./schema";
 import { generateTotpSecret } from "../lib/totp";
 import { decrypt, generateRecoveryCode, hashRecoveryCode } from "../lib/crypto";
 import { env } from "../lib/env";
+import { assertTursoConfiguredInHostedBuild } from "./build-env";
 
 const rawUsername = process.env.REENROLL_USERNAME;
 if (!rawUsername) {
@@ -30,6 +31,12 @@ if (!rawUsername) {
   process.exit(0);
 }
 const username = rawUsername.trim().toLowerCase();
+
+// Run after the no-op exit above so a normal hosted deploy (REENROLL_USERNAME
+// unset) doesn't fail this script just because Turso config is missing —
+// migrate.ts already enforces that on the next build step. We only need to
+// surface the guard here when the script is about to do Turso work.
+assertTursoConfiguredInHostedBuild();
 
 const url = process.env.TURSO_DATABASE_URL ?? "file:./data/local.db";
 if (url.startsWith("file:")) {

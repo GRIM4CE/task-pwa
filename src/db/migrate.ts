@@ -4,6 +4,9 @@ import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
 import { sql } from "drizzle-orm";
+import { assertTursoConfiguredInHostedBuild } from "./build-env";
+
+assertTursoConfiguredInHostedBuild();
 
 const url = process.env.TURSO_DATABASE_URL ?? "file:./data/local.db";
 
