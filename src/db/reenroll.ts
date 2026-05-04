@@ -1,11 +1,18 @@
-// Emergency re-enrollment for a locked-out user. Writes only that user's
-// totp_secrets, recovery_codes, totp_used_codes, and failed_login_attempts —
-// leaves the user row, todos, and other users untouched. Prints a fresh
-// otpauth URI plus 8 new recovery codes.
+// Emergency re-enrollment for a locked-out user, triggered as part of an
+// Amplify build by setting REENROLL_USERNAME on the deployment's env vars.
+// Writes only that user's totp_secrets, recovery_codes, totp_used_codes,
+// and failed_login_attempts — leaves the user row, todos, and other users
+// untouched. Prints a fresh otpauth URI plus 8 new recovery codes to the
+// build log, then deliberately fails the build so leaving REENROLL_USERNAME
+// set doesn't silently re-rotate the secret on every subsequent deploy.
 //
-// Usage:
-//   TURSO_DATABASE_URL=... TURSO_AUTH_TOKEN=... APP_SECRET=... \
-//     npm run auth:reenroll -- <username>
+// Recovery flow:
+//   1. Set REENROLL_USERNAME=<username> in Amplify env vars and redeploy.
+//   2. Read otpauth URI + recovery codes from the build log; build fails.
+//   3. Unset REENROLL_USERNAME and redeploy. Normal build resumes.
+//
+// The DB writes are committed before the deliberate failure, so the previous
+// deployment stays live and starts accepting the new authenticator immediately.
 
 import { mkdirSync } from "fs";
 import { dirname } from "path";
@@ -17,10 +24,10 @@ import { generateTotpSecret } from "../lib/totp";
 import { decrypt, generateRecoveryCode, hashRecoveryCode } from "../lib/crypto";
 import { env } from "../lib/env";
 
-const rawUsername = process.argv[2];
+const rawUsername = process.env.REENROLL_USERNAME;
 if (!rawUsername) {
-  console.error("Usage: npm run auth:reenroll -- <username>");
-  process.exit(1);
+  // No env var set: normal deploy. Exit cleanly so the build chain continues.
+  process.exit(0);
 }
 const username = rawUsername.trim().toLowerCase();
 
@@ -44,6 +51,7 @@ async function main() {
 
   if (!user) {
     console.error(`User '${username}' not found.`);
+    client.close();
     process.exit(1);
   }
 
@@ -112,8 +120,8 @@ async function main() {
     await tx.insert(schema.auditLog).values({
       userId: user.id,
       action: "totp_reset",
-      ipAddress: "cli",
-      metadata: JSON.stringify({ source: "reenroll-script" }),
+      ipAddress: "build-hook",
+      metadata: JSON.stringify({ source: "reenroll-build-hook" }),
     });
   });
 
@@ -126,6 +134,15 @@ async function main() {
   console.log();
 
   client.close();
+
+  // Deliberate failure. The DB writes above are already committed; failing
+  // here just stops `next build` from running so a stale REENROLL_USERNAME
+  // can't silently re-trigger this on the next deploy.
+  console.error(
+    "\n*** Build intentionally aborted after re-enrollment. ***\n" +
+    "*** Remove REENROLL_USERNAME from Amplify env vars and redeploy. ***\n"
+  );
+  process.exit(1);
 }
 
 main().catch((err) => {
