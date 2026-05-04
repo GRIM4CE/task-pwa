@@ -19,15 +19,18 @@ export function assertTursoConfiguredInHostedBuild(): void {
   );
   if (!inHostedBuild) return;
 
-  if (!process.env.TURSO_DATABASE_URL) {
-    console.error(
-      "TURSO_DATABASE_URL is not set in this hosted build environment.\n" +
-      "Without it, db scripts silently fall back to a local SQLite file in the build " +
-      "container, so migrations and writes never reach production. Aborting before " +
-      "any work happens.\n" +
-      "Fix: set TURSO_DATABASE_URL (and TURSO_AUTH_TOKEN) as plaintext environment " +
-      "variables in the Amplify app settings, then redeploy."
-    );
-    process.exit(1);
-  }
+  const missing: string[] = [];
+  if (!process.env.TURSO_DATABASE_URL) missing.push("TURSO_DATABASE_URL");
+  if (!process.env.TURSO_AUTH_TOKEN) missing.push("TURSO_AUTH_TOKEN");
+  if (missing.length === 0) return;
+
+  console.error(
+    `${missing.join(" and ")} ${missing.length === 1 ? "is" : "are"} not set in this hosted build environment.\n` +
+    "Without TURSO_DATABASE_URL, db scripts silently fall back to a local SQLite file " +
+    "in the build container, so migrations and writes never reach production. " +
+    "TURSO_AUTH_TOKEN is required alongside it to authenticate against the remote DB. " +
+    "Aborting before any work happens.\n" +
+    "Fix: set both as plaintext environment variables in the Amplify app settings, then redeploy."
+  );
+  process.exit(1);
 }

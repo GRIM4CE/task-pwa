@@ -32,9 +32,10 @@ if (!rawUsername) {
 }
 const username = rawUsername.trim().toLowerCase();
 
-// Only enforce the Turso-required guard when the script is actually being
-// asked to do work; otherwise local dev builds without REENROLL_USERNAME
-// (which exit 0 above) wouldn't be affected.
+// Run after the no-op exit above so a normal hosted deploy (REENROLL_USERNAME
+// unset) doesn't fail this script just because Turso config is missing —
+// migrate.ts already enforces that on the next build step. We only need to
+// surface the guard here when the script is about to do Turso work.
 assertTursoConfiguredInHostedBuild();
 
 const url = process.env.TURSO_DATABASE_URL ?? "file:./data/local.db";
