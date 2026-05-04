@@ -23,6 +23,7 @@ import * as schema from "./schema";
 import { generateTotpSecret } from "../lib/totp";
 import { decrypt, generateRecoveryCode, hashRecoveryCode } from "../lib/crypto";
 import { env } from "../lib/env";
+import { assertTursoConfiguredInHostedBuild } from "./build-env";
 
 const rawUsername = process.env.REENROLL_USERNAME;
 if (!rawUsername) {
@@ -30,6 +31,11 @@ if (!rawUsername) {
   process.exit(0);
 }
 const username = rawUsername.trim().toLowerCase();
+
+// Only enforce the Turso-required guard when the script is actually being
+// asked to do work; otherwise local dev builds without REENROLL_USERNAME
+// (which exit 0 above) wouldn't be affected.
+assertTursoConfiguredInHostedBuild();
 
 const url = process.env.TURSO_DATABASE_URL ?? "file:./data/local.db";
 if (url.startsWith("file:")) {
