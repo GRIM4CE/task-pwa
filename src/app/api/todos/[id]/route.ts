@@ -384,7 +384,7 @@ export async function PATCH(
     // Undo the most recent slip: drop the latest event for this todo+user
     // and rebase lastCompletedAt onto whatever the new latest event is (or
     // null if none remain). The lastCompletedAt rebase is what makes the
-    // days-clean badge return to the prior streak after an undo.
+    // days-since badge return to the prior streak after an undo.
     if (body.undoLastSlip === true && current.kind === "avoid") {
       const latest = await tx
         .select({

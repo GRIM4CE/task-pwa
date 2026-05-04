@@ -1622,8 +1622,8 @@ function AvoidRow({
   const buttonDisabled = slippedToday;
   // Days since the last slip — null when there's never been one. Anchored to
   // `lastCompletedAt` (which has no retention cap) rather than `recentSlips`
-  // (35-day window) so a 36+ day clean streak still renders the badge.
-  const daysClean = (() => {
+  // (35-day window) so a 36+ day streak still renders the badge.
+  const daysSinceLastSlip = (() => {
     if (todo.lastCompletedAt === null) return null;
     const lastDay = new Date(todo.lastCompletedAt);
     const today = new Date();
@@ -1648,6 +1648,25 @@ function AvoidRow({
       : todo.limitPeriod === "month"
         ? "this month"
         : `last ${windowDays}d`;
+  // Severe tier: doubled the allowance or more. Used to upgrade the "Over
+  // limit" copy so the messaging escalates instead of staying flat.
+  const wayOverLimit =
+    todo.limitCount !== null && count >= todo.limitCount * 2;
+
+  // Days-since-last-slip badge. Stays silent when the user is still under
+  // their limit so a slip in moderation doesn't read as guilt; surfaces
+  // "Slipped today" only once they've crossed the cap.
+  let sinceLabel: string | null = null;
+  if (daysSinceLastSlip !== null) {
+    if (daysSinceLastSlip === 0 && status === "over") {
+      sinceLabel = "Slipped today";
+    } else if (daysSinceLastSlip > 0 && status !== "over") {
+      sinceLabel =
+        daysSinceLastSlip === 1
+          ? "1 day since"
+          : `${daysSinceLastSlip} days since`;
+    }
+  }
 
   const tone = avoidToneClasses(status);
 
@@ -1680,14 +1699,8 @@ function AvoidRow({
               {count} slip{count === 1 ? "" : "s"} {periodLabel}
             </span>
           )}
-          {daysClean !== null && status !== "over" && (
-            <span className="text-on-surface/60">
-              {daysClean === 0
-                ? "Slipped today"
-                : daysClean === 1
-                  ? "1 day clean"
-                  : `${daysClean} days clean`}
-            </span>
+          {sinceLabel && (
+            <span className="text-on-surface/60">{sinceLabel}</span>
           )}
           {todo.oncePerDay && (
             <span className="text-on-surface/50">Once per day</span>
@@ -1696,7 +1709,9 @@ function AvoidRow({
             <span className="font-medium text-warning">Close to limit</span>
           )}
           {status === "over" && (
-            <span className="font-medium text-danger">Over limit</span>
+            <span className="font-medium text-danger">
+              {wayOverLimit ? "Careful here" : "Over limit"}
+            </span>
           )}
         </div>
       </div>
@@ -1991,7 +2006,7 @@ function EditTodoModal({
               </div>
               <p className="mt-1 text-xs text-text-muted">
                 {isAvoid
-                  ? "Tap +1 to log a slip; analytics tracks slip count and clean streak."
+                  ? "Tap +1 to log a slip; analytics tracks slip count and time since last slip."
                   : "Standard checkbox todo."}
               </p>
             </fieldset>
