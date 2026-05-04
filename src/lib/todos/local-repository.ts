@@ -71,9 +71,11 @@ function readAll(): TodoDTO[] {
     try {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        todos = (parsed as TodoDTO[]).map((t) => ({
+        todos = (parsed as Array<TodoDTO & { pinnedToWeek?: boolean }>).map((t) => ({
           ...t,
-          pinnedToWeek: t.pinnedToWeek ?? false,
+          // Migrate legacy guest data: the old boolean `pinnedToWeek` becomes
+          // `pinnedTo: 'week'` when true, null otherwise.
+          pinnedTo: t.pinnedTo ?? (t.pinnedToWeek ? "week" : null),
           parentId: t.parentId ?? null,
           // Backfill kind/limit fields for guest data written before the
           // avoid-habit feature shipped.
@@ -96,13 +98,13 @@ function readAll(): TodoDTO[] {
     try {
       const parsed = JSON.parse(legacy);
       if (Array.isArray(parsed)) {
-        const migrated = (parsed as Array<TodoDTO & { parentId: string }>)
+        const migrated = (parsed as Array<TodoDTO & { parentId: string; pinnedToWeek?: boolean }>)
           .filter((s) => todos.some((t) => t.id === s.parentId))
           .map<TodoDTO>((s) => ({
             ...s,
             recurrence: null,
             parentId: s.parentId,
-            pinnedToWeek: s.pinnedToWeek ?? false,
+            pinnedTo: s.pinnedTo ?? (s.pinnedToWeek ? "week" : null),
           }));
         if (migrated.length > 0) {
           todos = [...todos, ...migrated];
@@ -263,7 +265,7 @@ export const localTodoRepository: TodoRepository = {
       isPersonal,
       sortOrder: nextSortOrder(all, parentId),
       recurrence,
-      pinnedToWeek: parsed.data.pinnedToWeek ?? false,
+      pinnedTo: parsed.data.pinnedTo ?? null,
       kind,
       limitCount: kind === "avoid" ? parsed.data.limitCount ?? null : null,
       limitPeriod: kind === "avoid" ? parsed.data.limitPeriod ?? null : null,
@@ -344,6 +346,13 @@ export const localTodoRepository: TodoRepository = {
     }
     if (effectiveKind === "avoid" && effectiveRecurrenceForKind !== null) {
       return err("Avoid todos cannot be recurring");
+    }
+    const effectivePinnedTo =
+      parsed.data.pinnedTo !== undefined
+        ? parsed.data.pinnedTo
+        : previous.pinnedTo;
+    if (effectiveKind === "avoid" && effectivePinnedTo !== null) {
+      return err("Avoid todos cannot be pinned");
     }
     // Require the persisted row to already be avoid — see the matching guard
     // in /api/todos/[id]/route.ts for why a same-patch kind switch is rejected.

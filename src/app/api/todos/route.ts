@@ -34,7 +34,7 @@ export async function GET() {
       isPersonal: schema.todos.isPersonal,
       sortOrder: schema.todos.sortOrder,
       recurrence: schema.todos.recurrence,
-      pinnedToWeek: schema.todos.pinnedToWeek,
+      pinnedTo: schema.todos.pinnedTo,
       kind: schema.todos.kind,
       limitCount: schema.todos.limitCount,
       limitPeriod: schema.todos.limitPeriod,
@@ -108,7 +108,7 @@ export async function GET() {
       isPersonal: t.isPersonal,
       sortOrder: t.sortOrder,
       recurrence: t.recurrence,
-      pinnedToWeek: t.pinnedToWeek,
+      pinnedTo: t.pinnedTo,
       kind: t.kind,
       limitCount: t.limitCount,
       limitPeriod: t.limitPeriod,
@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
     description?: string;
     isPersonal?: boolean;
     recurrence?: "daily" | "weekly" | null;
-    pinnedToWeek?: boolean;
+    pinnedTo?: "day" | "week" | null;
     parentId?: string | null;
     kind?: "do" | "avoid";
     limitCount?: number | null;
@@ -197,7 +197,7 @@ export async function POST(request: NextRequest) {
       description: body.description ?? null,
       isPersonal: parentRow ? parentRow.isPersonal : (body.isPersonal ?? false),
       recurrence: parentRow ? null : (body.recurrence ?? null),
-      pinnedToWeek: body.pinnedToWeek ?? false,
+      pinnedTo: body.pinnedTo ?? null,
       kind,
       limitCount,
       limitPeriod,
@@ -216,7 +216,7 @@ export async function POST(request: NextRequest) {
       isPersonal: todo.isPersonal,
       sortOrder: todo.sortOrder,
       recurrence: todo.recurrence,
-      pinnedToWeek: todo.pinnedToWeek,
+      pinnedTo: todo.pinnedTo,
       kind: todo.kind,
       limitCount: todo.limitCount,
       limitPeriod: todo.limitPeriod,

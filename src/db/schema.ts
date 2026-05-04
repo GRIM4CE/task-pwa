@@ -149,7 +149,7 @@ export const todos = sqliteTable(
     isPersonal: integer("is_personal", { mode: "boolean" }).notNull().default(false),
     sortOrder: integer("sort_order").notNull().default(0),
     recurrence: text("recurrence", { enum: ["daily", "weekly"] }),
-    pinnedToWeek: integer("pinned_to_week", { mode: "boolean" }).notNull().default(false),
+    pinnedTo: text("pinned_to", { enum: ["day", "week"] }),
     // "do" = normal todo (default). "avoid" = bad-habit tracker: each tap
     // logs a slip into todoCompletions instead of flipping completed, and the
     // row never archives — it stays visible so future slips can be logged.
