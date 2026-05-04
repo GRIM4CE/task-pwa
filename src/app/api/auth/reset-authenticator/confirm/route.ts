@@ -55,45 +55,48 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Replace this user's TOTP secret in place. Existing row's id is preserved
-  // so any audit references remain valid; only the encrypted material rotates.
-  // Other users' secrets are untouched.
-  const existing = await db
-    .select()
-    .from(schema.totpSecrets)
-    .where(eq(schema.totpSecrets.userId, session.user.id))
-    .limit(1);
+  // The whole rotation runs in a single transaction so we never end up with
+  // a new TOTP secret persisted but no fresh recovery codes (or vice versa).
+  // Other users' rows are untouched. Audit log stays outside the transaction
+  // since a missing audit entry is not as bad as half-applied auth state.
+  const recoveryCodes = await db.transaction(async (tx) => {
+    const existing = await tx
+      .select({ userId: schema.totpSecrets.userId })
+      .from(schema.totpSecrets)
+      .where(eq(schema.totpSecrets.userId, session.user.id))
+      .limit(1);
 
-  if (existing.length > 0) {
-    await db
-      .update(schema.totpSecrets)
-      .set({
+    if (existing.length > 0) {
+      await tx
+        .update(schema.totpSecrets)
+        .set({
+          encryptedSecret: body.encryptedSecret,
+          encryptionIv: body.encryptionIv,
+        })
+        .where(eq(schema.totpSecrets.userId, session.user.id));
+    } else {
+      await tx.insert(schema.totpSecrets).values({
+        userId: session.user.id,
         encryptedSecret: body.encryptedSecret,
         encryptionIv: body.encryptionIv,
-      })
-      .where(eq(schema.totpSecrets.userId, session.user.id));
-  } else {
-    await db.insert(schema.totpSecrets).values({
-      userId: session.user.id,
-      encryptedSecret: body.encryptedSecret,
-      encryptionIv: body.encryptionIv,
-    });
-  }
+      });
+    }
 
-  // Rotate this user's recovery codes only. Other users' codes are untouched.
-  await db
-    .delete(schema.recoveryCodes)
-    .where(eq(schema.recoveryCodes.userId, session.user.id));
+    await tx
+      .delete(schema.recoveryCodes)
+      .where(eq(schema.recoveryCodes.userId, session.user.id));
 
-  const recoveryCodes: string[] = [];
-  for (let i = 0; i < 8; i++) {
-    const code = generateRecoveryCode();
-    recoveryCodes.push(code);
-    await db.insert(schema.recoveryCodes).values({
-      userId: session.user.id,
-      codeHash: hashRecoveryCode(code),
-    });
-  }
+    const codes: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      const code = generateRecoveryCode();
+      codes.push(code);
+      await tx.insert(schema.recoveryCodes).values({
+        userId: session.user.id,
+        codeHash: hashRecoveryCode(code),
+      });
+    }
+    return codes;
+  });
 
   await logAudit("totp_reset", {
     userId: session.user.id,

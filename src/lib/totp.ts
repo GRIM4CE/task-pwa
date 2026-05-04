@@ -49,9 +49,13 @@ export function verifyTotp(
   const delta = totp.validate({ token: code, window: 1 });
   const currentTimeStep = Math.floor(Date.now() / 1000 / 30);
 
+  // Return the timestep the token actually validated against, not the current
+  // wall-clock one. Without the offset, a token accepted from delta=+1 would
+  // be inserted under the current step but could be replayed when the next
+  // step rolls around (different (userId, code, time_step) row, no collision).
   return {
     valid: delta !== null,
-    timeStep: currentTimeStep,
+    timeStep: delta === null ? currentTimeStep : currentTimeStep + delta,
   };
 }
 
