@@ -70,12 +70,26 @@ async function main() {
     try {
       decrypt(existingTotp.encryptedSecret, existingTotp.encryptionIv, env.appSecret);
     } catch {
-      console.error(
-        "APP_SECRET does not match the key the existing TOTP secret was encrypted with. " +
-        "Aborting before any writes. Verify APP_SECRET matches the running app's value and retry."
+      // decrypt() throws for two distinguishable-only-to-the-operator reasons:
+      // (a) APP_SECRET drifted from what wrote the row, or (b) the ciphertext
+      // itself is malformed. Default behavior is abort — overwriting on (a)
+      // would brick the account further. Operators who have separately
+      // confirmed APP_SECRET is correct can set REENROLL_FORCE=1 to overwrite
+      // anyway, e.g. when recovering from row corruption.
+      if (process.env.REENROLL_FORCE !== "1") {
+        console.error(
+          "Could not decrypt the existing TOTP row with the current APP_SECRET. " +
+          "Possible causes: APP_SECRET drifted from the value the row was encrypted with, " +
+          "or the ciphertext is corrupted. Aborting before any writes.\n" +
+          "If you have confirmed APP_SECRET is correct (e.g. other accounts still log in), " +
+          "set REENROLL_FORCE=1 to overwrite the row anyway and retry."
+        );
+        client.close();
+        process.exit(1);
+      }
+      console.warn(
+        "WARNING: existing TOTP row failed APP_SECRET probe; REENROLL_FORCE=1 set, proceeding."
       );
-      client.close();
-      process.exit(1);
     }
   }
 
@@ -140,7 +154,11 @@ async function main() {
   // can't silently re-trigger this on the next deploy.
   console.error(
     "\n*** Build intentionally aborted after re-enrollment. ***\n" +
-    "*** Remove REENROLL_USERNAME from Amplify env vars and redeploy. ***\n"
+    "*** Remove REENROLL_USERNAME from Amplify env vars and redeploy. ***\n" +
+    "*** SECURITY: this build log now contains the new TOTP secret + recovery codes ***\n" +
+    "*** in plaintext. Once you've copied them, delete this build run from the ***\n" +
+    "*** Amplify console (Hosting → Deployments → ⋮ → Delete) so the second factor ***\n" +
+    "*** isn't retained in long-lived log storage. ***\n"
   );
   process.exit(1);
 }

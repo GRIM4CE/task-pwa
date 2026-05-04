@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm run db:generate && npm run db:migrate && npm run auth:reenroll-if-env && next build",
+    "build": "npm run auth:reenroll-if-env && npm run db:generate && npm run db:migrate && next build",
     "start": "next start",
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
