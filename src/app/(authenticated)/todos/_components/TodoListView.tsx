@@ -17,7 +17,6 @@ import { isCompletedTodoExpired, isRecurringResetDue } from "@/lib/recurrence";
 import { notifyStatsMayHaveChanged } from "@/lib/stats-events";
 import {
   cascadeCompleteChildren,
-  cascadeUncompleteChildren,
   sortSubtasks,
   sortTodos,
 } from "@/lib/todos/domain";
@@ -157,15 +156,11 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
     );
 
     setTodos((prev) => {
-      let next = [...prev];
+      const next = [...prev];
       for (const { data } of results) {
         if (!data) continue;
         const i = next.findIndex((t) => t.id === data.id);
         if (i !== -1) next[i] = data;
-        // Mirror the server-side cascade-uncomplete so subtasks of the
-        // recurring parent reset with it. Without this, subtasks would stay
-        // completed in client state until the next refetch.
-        next = cascadeUncompleteChildren(next, data.id);
       }
       return next;
     });
@@ -300,12 +295,6 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
       // Mirror the server-side cascade: completing a parent completes its open children.
       if (next && todo.parentId === null) {
         updated = cascadeCompleteChildren(updated, todo.id);
-      }
-      // And the symmetric reset for recurring parents: uncompleting a
-      // recurring parent uncompletes its completed subtasks, mirroring the
-      // server transaction so the next cycle starts clean.
-      if (!next && todo.parentId === null && todo.recurrence !== null) {
-        updated = cascadeUncompleteChildren(updated, todo.id);
       }
       return updated;
     });

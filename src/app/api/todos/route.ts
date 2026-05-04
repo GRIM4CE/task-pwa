@@ -11,17 +11,14 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Non-recurring completed todos are kept in the DB so the archive can show
-  // them, but are hidden from the main list 24h after completion. Subtasks of
-  // recurring parents are exempt from that cutoff because they ride the
-  // parent's reset cycle and need to remain visible across it. Avoid todos
-  // never have completed=true (slips are logged separately) so they pass
-  // through this filter naturally.
+  // Non-recurring completed top-level todos are kept in the DB so the archive
+  // can show them, but are hidden from the main list 24h after completion.
+  // Subtasks (any parent) are always returned regardless of completion age so
+  // they remain visible under the parent — only their position in the
+  // "Complete" section is governed by a 24h cutoff, applied client-side.
+  // Avoid todos never have completed=true (slips are logged separately) so
+  // they pass through this filter naturally.
   const recentCompletedCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const recurringParentIds = db
-    .select({ id: schema.todos.id })
-    .from(schema.todos)
-    .where(and(isNull(schema.todos.parentId), isNotNull(schema.todos.recurrence)));
 
   // Joined todos are visible to everyone; personal todos are visible only to their owner.
   const todoList = await db
@@ -59,7 +56,7 @@ export async function GET() {
             isNull(schema.todos.recurrence),
             gte(schema.todos.lastCompletedAt, recentCompletedCutoff)
           ),
-          inArray(schema.todos.parentId, recurringParentIds)
+          isNotNull(schema.todos.parentId)
         )
       )
     )
