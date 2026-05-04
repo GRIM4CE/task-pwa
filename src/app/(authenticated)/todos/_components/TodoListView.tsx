@@ -833,31 +833,6 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
         </button>
       </form>
 
-      {/* This Week (weekly recurrence + pinned todos + pinned subtasks, no DnD) */}
-      {(thisWeekTodos.length > 0 || thisWeekSubtasks.length > 0) && (
-        <Section title="This Week">
-          <div className="space-y-2">
-            {thisWeekTodos.map((todo) => (
-              <div key={todo.id}>{renderTopLevelTodo(todo)}</div>
-            ))}
-            {thisWeekSubtasks.map((s) => {
-              const parent = todos.find((t) => t.id === s.parentId);
-              return (
-                <SubtaskRow
-                  key={s.id}
-                  subtask={s}
-                  parentTitle={parent?.title ?? "—"}
-                  justCompleted={justCompletedIds.has(s.id)}
-                  onToggle={() => handleToggle(s)}
-                  onTogglePin={() => handleTogglePin(s)}
-                  onOpen={() => setEditing(s)}
-                />
-              );
-            })}
-          </div>
-        </Section>
-      )}
-
       {/* Today: daily-recurring rows + anything pinned to the day, plus pinned subtasks */}
       {(todayTodos.length > 0 || todaySubtasks.length > 0) && (
         <Section title="Today" hint="Resets at local midnight">
@@ -892,6 +867,31 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
               })}
             </div>
           )}
+        </Section>
+      )}
+
+      {/* This Week (weekly recurrence + pinned todos + pinned subtasks, no DnD) */}
+      {(thisWeekTodos.length > 0 || thisWeekSubtasks.length > 0) && (
+        <Section title="This Week">
+          <div className="space-y-2">
+            {thisWeekTodos.map((todo) => (
+              <div key={todo.id}>{renderTopLevelTodo(todo)}</div>
+            ))}
+            {thisWeekSubtasks.map((s) => {
+              const parent = todos.find((t) => t.id === s.parentId);
+              return (
+                <SubtaskRow
+                  key={s.id}
+                  subtask={s}
+                  parentTitle={parent?.title ?? "—"}
+                  justCompleted={justCompletedIds.has(s.id)}
+                  onToggle={() => handleToggle(s)}
+                  onTogglePin={() => handleTogglePin(s)}
+                  onOpen={() => setEditing(s)}
+                />
+              );
+            })}
+          </div>
         </Section>
       )}
 
