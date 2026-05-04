@@ -155,9 +155,9 @@ function timestampOnVacation(
   return false;
 }
 
-// Walks the same gap-anchored "best clean streak" math but treats vacation
+// Walks the same gap-anchored longest-streak math but treats vacation
 // slips as if they didn't happen — they neither reset the streak nor count
-// against the day-clean tally.
+// against the streak tally.
 function filterNonVacationSlips(
   completions: number[],
   vacations: VacationPeriod[],
@@ -180,12 +180,12 @@ export interface AvoidStat {
   totalSlips: number;
   status: AvoidStatus;
   // Days since the most recent slip — null when there's never been one.
-  daysClean: number | null;
+  daysSinceLastSlip: number | null;
   bestStreakDays: number;
   // Last 30 days of slips for a sparkline-style heatmap.
   heatmap: AvoidHeatCell[];
-  // Milestone hit by `daysClean` (e.g. 7, 14, 30, 60, 90), or null when
-  // none has been reached yet.
+  // Milestone hit by `daysSinceLastSlip` (e.g. 7, 14, 30, 60, 90), or null
+  // when none has been reached yet.
   milestone: number | null;
 }
 
@@ -825,7 +825,7 @@ function daysSinceLastSlip(
 // looking back through the available completion history (capped by the API's
 // 120-day window). The most recent gap is included so an in-progress streak
 // can become the new best.
-function bestCleanStreak(
+function longestStreak(
   completions: number[],
   todoCreatedAt: number,
   now: number
@@ -870,10 +870,10 @@ function avoidHeatmap(
   return cells;
 }
 
-function milestoneFor(daysClean: number | null): number | null {
-  if (daysClean === null) return null;
+function milestoneFor(days: number | null): number | null {
+  if (days === null) return null;
   for (const m of AVOID_MILESTONES) {
-    if (daysClean >= m) return m;
+    if (days >= m) return m;
   }
   return null;
 }
@@ -897,8 +897,8 @@ function avoidForTodo(
   const windowSlipCount = countSlipsInWindow(effective, windowStart);
   const totalSlips = todo.completions.length;
   const status = avoidStatus(windowSlipCount, todo.limitCount);
-  const daysClean = daysSinceLastSlip(effective, todayStart);
-  const bestStreakDays = bestCleanStreak(
+  const sinceLastSlip = daysSinceLastSlip(effective, todayStart);
+  const bestStreakDays = longestStreak(
     effective,
     todo.createdAt,
     now.getTime()
@@ -912,10 +912,10 @@ function avoidForTodo(
     windowDays,
     totalSlips,
     status,
-    daysClean,
+    daysSinceLastSlip: sinceLastSlip,
     bestStreakDays,
     heatmap: avoidHeatmap(todo.completions, todayStart, vacations, now.getTime()),
-    milestone: milestoneFor(daysClean),
+    milestone: milestoneFor(sinceLastSlip),
   };
 }
 

@@ -160,7 +160,7 @@ export default function StatsView() {
             </Section>
           )}
           {stats && stats.avoid.length > 0 && (
-            <Section title="Avoid" hint="Slips &amp; clean streaks">
+            <Section title="Avoid" hint="Slips &amp; streaks">
               <div className="space-y-2">
                 {stats.avoid.map((a) => (
                   <AvoidStatRow key={a.id} stat={a} />
@@ -594,14 +594,14 @@ function AvoidStatRow({ stat }: { stat: AvoidStat }) {
       : stat.status === "warn"
         ? "border-warning/50"
         : "border-border-on-surface";
-  const cleanLabel =
-    stat.daysClean === null
+  const sinceLabel =
+    stat.daysSinceLastSlip === null
       ? "No slips logged yet"
-      : stat.daysClean === 0
+      : stat.daysSinceLastSlip === 0
         ? "Slipped today"
-        : stat.daysClean === 1
-          ? "1 day clean"
-          : `${stat.daysClean} days clean`;
+        : stat.daysSinceLastSlip === 1
+          ? "1 day since"
+          : `${stat.daysSinceLastSlip} days since`;
 
   return (
     <div className={`rounded-lg border bg-surface px-4 py-3 ${tone}`}>
@@ -624,7 +624,7 @@ function AvoidStatRow({ stat }: { stat: AvoidStat }) {
         </span>
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-on-surface/60">
-        <span>{cleanLabel}</span>
+        <span>{sinceLabel}</span>
         {stat.bestStreakDays > 0 && (
           <span>Best: {stat.bestStreakDays}d</span>
         )}

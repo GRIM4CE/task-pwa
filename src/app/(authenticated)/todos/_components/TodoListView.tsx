@@ -1622,8 +1622,8 @@ function AvoidRow({
   const buttonDisabled = slippedToday;
   // Days since the last slip — null when there's never been one. Anchored to
   // `lastCompletedAt` (which has no retention cap) rather than `recentSlips`
-  // (35-day window) so a 36+ day clean streak still renders the badge.
-  const daysClean = (() => {
+  // (35-day window) so a 36+ day streak still renders the badge.
+  const daysSinceLastSlip = (() => {
     if (todo.lastCompletedAt === null) return null;
     const lastDay = new Date(todo.lastCompletedAt);
     const today = new Date();
@@ -1656,13 +1656,15 @@ function AvoidRow({
   // Days-since-last-slip badge. Stays silent when the user is still under
   // their limit so a slip in moderation doesn't read as guilt; surfaces
   // "Slipped today" only once they've crossed the cap.
-  let daysCleanLabel: string | null = null;
-  if (daysClean !== null) {
-    if (daysClean === 0 && status === "over") {
-      daysCleanLabel = "Slipped today";
-    } else if (daysClean > 0 && status !== "over") {
-      daysCleanLabel =
-        daysClean === 1 ? "1 day clean" : `${daysClean} days clean`;
+  let sinceLabel: string | null = null;
+  if (daysSinceLastSlip !== null) {
+    if (daysSinceLastSlip === 0 && status === "over") {
+      sinceLabel = "Slipped today";
+    } else if (daysSinceLastSlip > 0 && status !== "over") {
+      sinceLabel =
+        daysSinceLastSlip === 1
+          ? "1 day since"
+          : `${daysSinceLastSlip} days since`;
     }
   }
 
@@ -1697,8 +1699,8 @@ function AvoidRow({
               {count} slip{count === 1 ? "" : "s"} {periodLabel}
             </span>
           )}
-          {daysCleanLabel && (
-            <span className="text-on-surface/60">{daysCleanLabel}</span>
+          {sinceLabel && (
+            <span className="text-on-surface/60">{sinceLabel}</span>
           )}
           {todo.oncePerDay && (
             <span className="text-on-surface/50">Once per day</span>
@@ -2004,7 +2006,7 @@ function EditTodoModal({
               </div>
               <p className="mt-1 text-xs text-text-muted">
                 {isAvoid
-                  ? "Tap +1 to log a slip; analytics tracks slip count and clean streak."
+                  ? "Tap +1 to log a slip; analytics tracks slip count and time since last slip."
                   : "Standard checkbox todo."}
               </p>
             </fieldset>
