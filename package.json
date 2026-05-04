@@ -9,7 +9,8 @@
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "npx tsx src/db/migrate.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "auth:reenroll": "npx tsx src/db/reenroll.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.17.2",
