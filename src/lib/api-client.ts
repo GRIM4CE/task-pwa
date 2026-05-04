@@ -110,6 +110,10 @@ export const api = {
     logout: () => apiRequest<{ success: boolean }>("/api/auth/logout", { method: "POST" }),
     recovery: (body: { username: string; recoveryCode: string }) =>
       apiRequest<{ success: boolean; remainingRecoveryCodes: number; user: unknown }>("/api/auth/recovery", { method: "POST", body: JSON.stringify(body) }),
+    resetAuthenticatorBegin: () =>
+      apiRequest<{ qrCodeUrl: string; manualEntryKey: string; encryptedSecret: string; encryptionIv: string }>("/api/auth/reset-authenticator/begin", { method: "POST" }),
+    resetAuthenticatorConfirm: (body: { totpCode: string; encryptedSecret: string; encryptionIv: string }) =>
+      apiRequest<{ success: boolean; recoveryCodes: string[] }>("/api/auth/reset-authenticator/confirm", { method: "POST", body: JSON.stringify(body) }),
   },
   todos: {
     list: () => apiRequest<TodoDTO[]>("/api/todos"),
