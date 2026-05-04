@@ -1651,9 +1651,20 @@ function AvoidRow({
   // Severe tier: doubled the allowance or more. Used to upgrade the "Over
   // limit" copy so the messaging escalates instead of staying flat.
   const wayOverLimit =
-    todo.limitCount !== null &&
-    todo.limitCount > 0 &&
-    count >= todo.limitCount * 2;
+    todo.limitCount !== null && count >= todo.limitCount * 2;
+
+  // Days-since-last-slip badge. Stays silent when the user is still under
+  // their limit so a slip in moderation doesn't read as guilt; surfaces
+  // "Slipped today" only once they've crossed the cap.
+  let daysCleanLabel: string | null = null;
+  if (daysClean !== null) {
+    if (daysClean === 0 && status === "over") {
+      daysCleanLabel = "Slipped today";
+    } else if (daysClean > 0 && status !== "over") {
+      daysCleanLabel =
+        daysClean === 1 ? "1 day clean" : `${daysClean} days clean`;
+    }
+  }
 
   const tone = avoidToneClasses(status);
 
@@ -1686,14 +1697,9 @@ function AvoidRow({
               {count} slip{count === 1 ? "" : "s"} {periodLabel}
             </span>
           )}
-          {daysClean !== null &&
-            (daysClean === 0 && status === "over" ? (
-              <span className="text-on-surface/60">Slipped today</span>
-            ) : daysClean > 0 && status !== "over" ? (
-              <span className="text-on-surface/60">
-                {daysClean === 1 ? "1 day clean" : `${daysClean} days clean`}
-              </span>
-            ) : null)}
+          {daysCleanLabel && (
+            <span className="text-on-surface/60">{daysCleanLabel}</span>
+          )}
           {todo.oncePerDay && (
             <span className="text-on-surface/50">Once per day</span>
           )}
@@ -1702,7 +1708,7 @@ function AvoidRow({
           )}
           {status === "over" && (
             <span className="font-medium text-danger">
-              {wayOverLimit ? "Time to slow down" : "Over limit"}
+              {wayOverLimit ? "Careful here" : "Over limit"}
             </span>
           )}
         </div>
