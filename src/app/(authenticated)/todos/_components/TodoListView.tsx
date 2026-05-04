@@ -1648,6 +1648,12 @@ function AvoidRow({
       : todo.limitPeriod === "month"
         ? "this month"
         : `last ${windowDays}d`;
+  // Severe tier: doubled the allowance or more. Used to upgrade the "Over
+  // limit" copy so the messaging escalates instead of staying flat.
+  const wayOverLimit =
+    todo.limitCount !== null &&
+    todo.limitCount > 0 &&
+    count >= todo.limitCount * 2;
 
   const tone = avoidToneClasses(status);
 
@@ -1680,15 +1686,14 @@ function AvoidRow({
               {count} slip{count === 1 ? "" : "s"} {periodLabel}
             </span>
           )}
-          {daysClean !== null && status !== "over" && (
-            <span className="text-on-surface/60">
-              {daysClean === 0
-                ? "Slipped today"
-                : daysClean === 1
-                  ? "1 day clean"
-                  : `${daysClean} days clean`}
-            </span>
-          )}
+          {daysClean !== null &&
+            (daysClean === 0 && status === "over" ? (
+              <span className="text-on-surface/60">Slipped today</span>
+            ) : daysClean > 0 && status !== "over" ? (
+              <span className="text-on-surface/60">
+                {daysClean === 1 ? "1 day clean" : `${daysClean} days clean`}
+              </span>
+            ) : null)}
           {todo.oncePerDay && (
             <span className="text-on-surface/50">Once per day</span>
           )}
@@ -1696,7 +1701,9 @@ function AvoidRow({
             <span className="font-medium text-warning">Close to limit</span>
           )}
           {status === "over" && (
-            <span className="font-medium text-danger">Over limit</span>
+            <span className="font-medium text-danger">
+              {wayOverLimit ? "Way over limit" : "Over limit"}
+            </span>
           )}
         </div>
       </div>
