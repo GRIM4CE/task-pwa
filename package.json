@@ -4,12 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm run db:generate && npm run db:migrate && next build",
+    "build": "npm run auth:reenroll-if-env && npm run db:generate && npm run db:migrate && next build",
     "start": "next start",
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "npx tsx src/db/migrate.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "auth:reenroll-if-env": "npx tsx src/db/reenroll.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.17.2",
