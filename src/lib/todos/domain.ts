@@ -143,22 +143,3 @@ export function cascadeCompleteChildren(
   );
 }
 
-// Cascade-uncomplete every closed child of a parent. Mirrors the server-side
-// transaction performed when a recurring parent is uncompleted (manual undo
-// or the client-driven midnight reset).
-export function cascadeUncompleteChildren(
-  list: TodoDTO[],
-  parentId: string,
-  now: number = Date.now()
-): TodoDTO[] {
-  return list.map((t) =>
-    t.parentId === parentId && t.completed
-      ? {
-          ...t,
-          completed: false,
-          lastCompletedAt: null,
-          updatedAt: now,
-        }
-      : t
-  );
-}

@@ -11,9 +11,9 @@ export async function GET() {
 
   // Top-level recurring todos reset rather than archive, so they're excluded.
   // Subtasks always archive (regardless of parent recurrence) so the user can
-  // uncomplete them from the Completed view — they ride the parent's reset
-  // cycle but the cleanup cron won't delete them, so showing them here is the
-  // only way to undo an accidental check.
+  // uncomplete them from the Completed view — they keep their completed state
+  // across the parent's reset cycle, and the cleanup cron won't delete them,
+  // so showing them here is the only way to undo an accidental check.
   const rows = await db
     .select({
       id: schema.todos.id,

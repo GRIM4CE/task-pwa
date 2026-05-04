@@ -350,31 +350,6 @@ export async function PATCH(
         );
     }
 
-    // Recurring parents: when the parent resets (manual uncomplete or the
-    // client-driven midnight reset sending completed:false), the subtasks ride
-    // along. Without this, completed subtasks would either linger past the
-    // parent's reset or get nuked by the cleanup cron, leaving the recurring
-    // task without its subtasks on the next cycle.
-    if (
-      body.completed === false &&
-      uncompletedTransition &&
-      current.recurrence !== null
-    ) {
-      await tx
-        .update(schema.todos)
-        .set({
-          completed: false,
-          lastCompletedAt: null,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(schema.todos.parentId, id),
-            eq(schema.todos.completed, true)
-          )
-        );
-    }
-
     // Avoid todos: each slip is recorded as a completion event so analytics
     // can compute calendar-window slip counts and streak gaps. The row's
     // `completed` flag stays false — it's not a "done" event, just a tally.

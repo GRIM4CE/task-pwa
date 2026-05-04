@@ -15,7 +15,6 @@ import {
   applyReorder,
   applyUpdate,
   cascadeCompleteChildren,
-  cascadeUncompleteChildren,
   filterArchive,
   filterMainList,
   nextSortOrder,
@@ -384,16 +383,6 @@ export const localTodoRepository: TodoRepository = {
       previous.completed === false
     ) {
       next = cascadeCompleteChildren(next, id);
-    }
-    // Mirror the server-side cascade for recurring parents: uncompleting a
-    // recurring parent uncompletes its completed subtasks so the next cycle
-    // starts clean.
-    if (
-      parsed.data.completed === false &&
-      previous.completed === true &&
-      previous.recurrence !== null
-    ) {
-      next = cascadeUncompleteChildren(next, id);
     }
     writeAll(next);
 
