@@ -119,12 +119,11 @@ export const updateTodoSchema = z
     // post-slip Undo toast. Mutually exclusive with recordSlip and completed.
     undoLastSlip: z.boolean().optional(),
   })
-  // These refinements catch cases where both fields are in the same patch.
-  // Cases involving the existing row state are checked in the PATCH handler.
-  .refine((v) => isAllowedRecurrencePinCombo(v.recurrence, v.pinnedTo), {
-    message: "Only weekly recurring todos can be pinned to Today",
-    path: ["pinnedTo"],
-  })
+  // The recurrence/pin combo check lives in the PATCH route, not here:
+  // the modal always sends both fields, so a no-op patch on a legacy
+  // row (e.g. an existing weekly+week from before this rule existed)
+  // would otherwise be rejected at the schema layer before the route's
+  // persisted-state-aware logic could let the unchanged values through.
   .refine((v) => !(v.recurrence != null && v.parentId != null), {
     message: "Recurring todos cannot be subtasks",
     path: ["parentId"],

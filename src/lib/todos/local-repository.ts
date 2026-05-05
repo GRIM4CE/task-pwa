@@ -353,6 +353,32 @@ export const localTodoRepository: TodoRepository = {
     if (effectiveKind === "avoid" && effectivePinnedTo !== null) {
       return err("Avoid todos cannot be pinned");
     }
+    // Recurring + pin: only weekly + Today is legal. Mirrors the server PATCH
+    // guard — only reject when the patch is *actively* asserting an invalid
+    // combo (changing recurrence to a non-null value on a pinned row, or
+    // changing the pin to a non-null value on a recurring row). Legacy rows
+    // pass through unchanged so the modal can resave them and clear the pin.
+    const settingRecurringNew =
+      parsed.data.recurrence !== undefined &&
+      parsed.data.recurrence !== null &&
+      parsed.data.recurrence !== previous.recurrence;
+    const settingPinNew =
+      parsed.data.pinnedTo !== undefined &&
+      parsed.data.pinnedTo !== null &&
+      parsed.data.pinnedTo !== previous.pinnedTo;
+    const isAllowedRecurrencePinCombo =
+      effectiveRecurrenceForKind === null ||
+      effectivePinnedTo === null ||
+      (effectiveRecurrenceForKind === "weekly" && effectivePinnedTo === "day");
+    if (
+      !isAllowedRecurrencePinCombo &&
+      ((settingRecurringNew && effectivePinnedTo !== null) ||
+        (settingPinNew && effectiveRecurrenceForKind !== null))
+    ) {
+      return err(
+        "Recurring todos can only be pinned to Today, and only when the recurrence is weekly"
+      );
+    }
     // Require the persisted row to already be avoid — see the matching guard
     // in /api/todos/[id]/route.ts for why a same-patch kind switch is rejected.
     if (
