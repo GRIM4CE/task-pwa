@@ -4,7 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { type TodoDTO } from "@/lib/api-client";
 import { isCompletedTodoExpired, isRecurringResetDue } from "@/lib/recurrence";
-import { sortSubtasks, sortTodos } from "@/lib/todos/domain";
+import { notifyStatsMayHaveChanged } from "@/lib/stats-events";
+import {
+  cascadeCompleteChildren,
+  sortSubtasks,
+  sortTodos,
+} from "@/lib/todos/domain";
 import { useTodoRepository } from "@/lib/todos/use-todo-repository";
 
 type Todo = TodoDTO;
@@ -117,13 +122,19 @@ export default function FocusView() {
 
     const next = !todo.completed;
     const previous = todos;
-    setTodos((prev) =>
-      prev.map((t) =>
+    setTodos((prev) => {
+      let updated = prev.map((t) =>
         t.id === todo.id
           ? { ...t, completed: next, lastCompletedAt: next ? Date.now() : null }
           : t
-      )
-    );
+      );
+      // Mirror the server-side cascade so day-pinned subtasks of a completed
+      // parent disappear from Focus immediately, not on next refetch.
+      if (next && todo.parentId === null) {
+        updated = cascadeCompleteChildren(updated, todo.id);
+      }
+      return updated;
+    });
     const { data, error } = await repo.update(todo.id, { completed: next });
     pendingToggleRef.current.delete(todo.id);
     if (error) {
@@ -132,6 +143,12 @@ export default function FocusView() {
     }
     if (data) {
       setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
+      // Recurring toggles change the completion log that feeds /stats. Notify
+      // so a mounted stats page refetches post-commit instead of trusting its
+      // mount-race snapshot.
+      if (data.recurrence !== null && data.parentId === null) {
+        notifyStatsMayHaveChanged();
+      }
     }
   }
 
@@ -166,6 +183,7 @@ export default function FocusView() {
   }
 
   const total = topLevelToday.length + subtasksToday.length;
+  const parentTitleById = new Map(todos.map((t) => [t.id, t.title]));
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
@@ -191,17 +209,18 @@ export default function FocusView() {
           {topLevelToday.map((todo) => (
             <FocusRow key={todo.id} todo={todo} onToggle={() => handleToggle(todo)} />
           ))}
-          {subtasksToday.map((s) => {
-            const parent = todos.find((t) => t.id === s.parentId);
-            return (
-              <FocusRow
-                key={s.id}
-                todo={s}
-                parentTitle={parent?.title ?? null}
-                onToggle={() => handleToggle(s)}
-              />
-            );
-          })}
+          {subtasksToday.map((s) => (
+            <FocusRow
+              key={s.id}
+              todo={s}
+              parentTitle={
+                s.parentId !== null
+                  ? parentTitleById.get(s.parentId) ?? null
+                  : null
+              }
+              onToggle={() => handleToggle(s)}
+            />
+          ))}
         </div>
       ) : (
         <div className="rounded-lg border border-dashed border-border-on-surface px-4 py-12 text-center text-sm text-text-muted">
