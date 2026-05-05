@@ -133,13 +133,14 @@ export async function PATCH(
     );
   }
 
-  // Recurring todos can't be pinned: recurrence already places them in their
-  // own section (Today / This Week), so a pin would be redundant. Only reject
-  // when the patch is actively asserting the invalid combination — explicitly
-  // setting a recurrence on a pinned row, or explicitly pinning a recurring
-  // row. Unrelated patches (title, completion, sort order) on a legacy
-  // recurring+pinned row pass through so the data isn't stranded; the user can
-  // clear the pin from the edit modal or via the row's pin control.
+  // Pin + recurrence rules: the only legal combo is weekly + Today (surfaces
+  // a once-a-week task in the daily Today section). Daily + any pin is
+  // redundant; weekly + week is redundant. Only reject when the patch is
+  // actively asserting an invalid combination — explicitly setting a
+  // recurrence on a pinned row, or explicitly pinning a recurring row.
+  // Unrelated patches (title, completion, sort order) on a legacy
+  // recurring+pinned row pass through so the data isn't stranded; the user
+  // can clear the pin from the edit modal or via the row's pin control.
   const effectivePinned =
     body.pinnedTo !== undefined ? body.pinnedTo : existing[0].pinnedTo;
   const settingRecurring =
@@ -152,12 +153,17 @@ export async function PATCH(
     body.pinnedTo !== undefined &&
     body.pinnedTo !== null &&
     body.pinnedTo !== existing[0].pinnedTo;
+  const isAllowedRecurrencePinCombo =
+    effectiveRecurrence === null ||
+    effectivePinned === null ||
+    (effectiveRecurrence === "weekly" && effectivePinned === "day");
   if (
-    (settingRecurring && effectivePinned !== null) ||
-    (settingPin && effectiveRecurrence !== null)
+    !isAllowedRecurrencePinCombo &&
+    ((settingRecurring && effectivePinned !== null) ||
+      (settingPin && effectiveRecurrence !== null))
   ) {
     return NextResponse.json(
-      { error: "Recurring todos cannot be pinned" },
+      { error: "Only weekly recurring todos can be pinned to Today" },
       { status: 400 }
     );
   }
@@ -249,8 +255,12 @@ export async function PATCH(
     updateData.completed = body.completed;
     updateData.lastCompletedAt = body.completed ? now : null;
     // Pinning is meant for "open work this period"; clear it on completion so
-    // unchecking later doesn't resurrect the pin.
-    if (body.completed) updateData.pinnedTo = null;
+    // unchecking later doesn't resurrect the pin. Recurring rows are an
+    // exception — their completion is a per-period tick, not a final close,
+    // and clearing the pin would force the user to re-pin after every reset.
+    if (body.completed && existing[0].recurrence === null) {
+      updateData.pinnedTo = null;
+    }
   }
   // Server-side oncePerDay enforcement: when the row carries oncePerDay, a
   // recordSlip is suppressed if any slip exists in the prior 24h. The client's

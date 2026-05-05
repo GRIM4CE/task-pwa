@@ -447,21 +447,26 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
     }
   }
 
-  // Cycle the pin: unpinned → This Week → Today → unpinned. Tap-friendly because
-  // it reuses the existing single-button surface; the modal exposes the same
-  // three states explicitly for users who want to pick directly.
-  // Recurring todos can't be pinned, so the inline button is only shown for
-  // legacy recurring+pinned rows and only as a means to clear the pin —
-  // cycling into another pinned state would be rejected by the API.
+  // Cycle the pin via the inline button. The modal exposes all states
+  // explicitly for users who want to pick directly.
+  // - Non-recurring "do": unpinned → This Week → Today → unpinned.
+  // - Weekly recurring: unpinned ↔ Today. (Pin to This Week would be
+  //   redundant — recurrence already places it there.)
+  // - Daily recurring: only path is "clear" so a legacy pinned row can be
+  //   unpinned. The button is hidden when there's nothing to clear.
   async function handleTogglePin(todo: Todo) {
-    const next: PinnedTo =
-      todo.recurrence !== null
-        ? null
-        : todo.pinnedTo === null
-          ? "week"
-          : todo.pinnedTo === "week"
-            ? "day"
-            : null;
+    let next: PinnedTo;
+    if (todo.recurrence === "weekly") {
+      next = todo.pinnedTo === "day" ? null : "day";
+    } else if (todo.recurrence === "daily") {
+      next = null;
+    } else if (todo.pinnedTo === null) {
+      next = "week";
+    } else if (todo.pinnedTo === "week") {
+      next = "day";
+    } else {
+      next = null;
+    }
     const previous = todo.pinnedTo;
     setTodos((prev) =>
       prev.map((t) => (t.id === todo.id ? { ...t, pinnedTo: next } : t))
@@ -616,13 +621,17 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
   // checkbox, and mixing them muddies the visual language.
   const isDoTodo = (t: Todo) => t.kind === "do";
   const avoidTodos = topLevel.filter((t) => t.kind === "avoid");
-  // "Today" gathers daily-recurring rows plus anything pinned to the day. Pinned-
-  // to-week takes precedence over a daily recurrence on legacy rows so the pin
-  // can still be cleared from This Week.
+  // "Today" gathers daily-recurring rows plus anything pinned to the day,
+  // including weekly-recurring rows pinned to Today (the only legal way to
+  // surface a once-a-week task in the daily view). Pinned-to-week takes
+  // precedence over a daily recurrence on legacy rows so the pin can still
+  // be cleared from This Week. Weekly+day rows are excluded from This Week
+  // so they don't appear in both sections at once.
   const thisWeekTodos = topLevel.filter(
     (t) =>
       isDoTodo(t) &&
       isActiveSlot(t) &&
+      t.pinnedTo !== "day" &&
       (t.recurrence === "weekly" || t.pinnedTo === "week")
   );
   const todayTodos = topLevel.filter(
@@ -724,10 +733,11 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
           subtaskDone={subtaskDone}
           onToggle={() => handleToggle(todo)}
           onTogglePin={
-            // Hide the pin control on recurring todos (they already surface in
-            // Today/This Week by virtue of recurrence), but keep it for a
-            // legacy recurring+pinned row so the user can unpin it.
-            todo.recurrence !== null && todo.pinnedTo === null
+            // Hide the pin control on daily-recurring todos when there's
+            // nothing to clear — recurrence already places them in Today, so
+            // a pin would be redundant. Weekly-recurring rows always show
+            // the control so the user can pin them to Today.
+            todo.recurrence === "daily" && todo.pinnedTo === null
               ? undefined
               : () => handleTogglePin(todo)
           }
@@ -1367,9 +1377,21 @@ function PinIcon({ filled }: { filled: boolean }) {
   );
 }
 
-// Aria copy for the pin button. Cycle is null → week → day → null, so the
-// "next" action depends on current state.
-function pinAriaLabel(pinnedTo: PinnedTo): string {
+// Aria copy for the pin button. The "next" action depends on current state
+// and on whether the row is recurring (which collapses the cycle).
+function pinAriaLabel(pinnedTo: PinnedTo, recurrence: Recurrence): string {
+  if (recurrence === "weekly") {
+    return pinnedTo === "day"
+      ? "Pinned to Today — tap to unpin"
+      : "Pin to Today";
+  }
+  if (recurrence === "daily") {
+    // Daily recurrence already lives in Today; the only inline action is to
+    // clear a legacy pin.
+    return pinnedTo === null
+      ? "Pin to This Week"
+      : "Pinned — tap to unpin";
+  }
   if (pinnedTo === null) return "Pin to This Week";
   if (pinnedTo === "week") return "Pinned to This Week — tap to pin to Today";
   return "Pinned to Today — tap to unpin";
@@ -1537,7 +1559,7 @@ function TodoRow({
                 ? "text-primary"
                 : "text-on-surface/60 hover:text-on-surface"
           }`}
-          aria-label={pinAriaLabel(pinnedTo)}
+          aria-label={pinAriaLabel(pinnedTo, todo.recurrence)}
           aria-pressed={pinned}
         >
           <PinIcon filled={pinned} />
@@ -1636,7 +1658,7 @@ function SubtaskRow({
                 ? "text-primary"
                 : "text-on-surface/60 hover:text-on-surface"
           }`}
-          aria-label={pinAriaLabel(pinnedTo)}
+          aria-label={pinAriaLabel(pinnedTo, subtask.recurrence)}
           aria-pressed={pinned}
         >
           <PinIcon filled={pinned} />
@@ -1929,10 +1951,15 @@ function EditTodoModal({
   const [saving, setSaving] = useState(false);
 
   const isAvoid = kind === "avoid";
-  // Recurring todos can't be pinned: recurrence already surfaces them in
-  // Today / This Week. Avoid todos can't recur or be pinned at all — they
-  // live in their own section and the API rejects either combo.
-  const pinDisabled = recurrence !== null || isAvoid;
+  // Pinning rules:
+  // - Avoid todos: never pinnable.
+  // - Daily recurring: pin is redundant (already in Today).
+  // - Weekly recurring: only pin to Today is meaningful (surfaces it in
+  //   the daily section). Pin to This Week would be redundant.
+  // - Non-recurring "do": both pin options allowed.
+  const pinDisabled = recurrence === "daily" || isAvoid;
+  const allowPinDay = !isAvoid && recurrence !== "daily";
+  const allowPinWeek = !isAvoid && recurrence === null;
   const recurrenceDisabled = isAvoid;
   // For pinDisabled rows we still surface the persisted pin value so a legacy
   // recurring+pinned (or avoid+pinned) row isn't stranded — the user can
@@ -2151,13 +2178,14 @@ function EditTodoModal({
                 className="w-full rounded-lg border border-border bg-input px-3 py-2 text-input-text focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus disabled:cursor-not-allowed"
               >
                 <option value="">No pin</option>
-                {/* When pinDisabled, only the currently-set pin and "No pin"
-                    are valid choices — the others would be rejected by the
-                    server, so don't offer them. */}
-                {(!pinDisabled || effectivePinned === "day") && (
+                {/* Only offer pin states the server will accept for the
+                    current recurrence/kind. Legacy rows keep their
+                    currently-set option so the user can re-select it
+                    or clear it via "No pin". */}
+                {(allowPinDay || effectivePinned === "day") && (
                   <option value="day">Today</option>
                 )}
-                {(!pinDisabled || effectivePinned === "week") && (
+                {(allowPinWeek || effectivePinned === "week") && (
                   <option value="week">This Week</option>
                 )}
               </select>
@@ -2165,14 +2193,20 @@ function EditTodoModal({
                 <span className="mt-1 block text-xs text-text-muted">
                   {isAvoid
                     ? "Avoid todos can't be pinned — clear it to keep this row as Avoid."
-                    : "Recurring todos can't be pinned — clear it to keep the recurrence."}
+                    : "Daily recurring todos already live in Today — clear the pin or change recurrence."}
                 </span>
               )}
               {pinSelectDisabled && (
                 <span className="mt-1 block text-xs text-text-muted">
                   {isAvoid
                     ? "Not available for avoid todos."
-                    : "Not available for recurring todos."}
+                    : "Daily recurring todos already live in Today."}
+                </span>
+              )}
+              {recurrence === "weekly" && effectivePinned === "week" && (
+                <span className="mt-1 block text-xs text-text-muted">
+                  Weekly recurring todos already live in This Week — clear the
+                  pin or pin to Today instead.
                 </span>
               )}
             </label>

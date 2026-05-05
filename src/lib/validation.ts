@@ -26,6 +26,18 @@ export const limitPeriodSchema = z.enum(["week", "month"]).nullable();
 export const pinnedToSchema = z.enum(["day", "week"]).nullable();
 const limitCountSchema = z.number().int().min(1).max(999).nullable();
 
+// The only legal recurrence + pin combo is weekly + Today: it surfaces a
+// once-a-week task in the daily Today section without losing its weekly
+// reset. Daily + any pin is redundant (already in Today). Weekly + week is
+// redundant (already in This Week).
+const isAllowedRecurrencePinCombo = (
+  recurrence: "daily" | "weekly" | null | undefined,
+  pinnedTo: "day" | "week" | null | undefined
+) =>
+  recurrence == null ||
+  pinnedTo == null ||
+  (recurrence === "weekly" && pinnedTo === "day");
+
 export const createTodoSchema = z
   .object({
     title: z.string().min(1, "Title is required").max(500, "Title too long"),
@@ -39,8 +51,8 @@ export const createTodoSchema = z
     limitPeriod: limitPeriodSchema.optional(),
     oncePerDay: z.boolean().optional(),
   })
-  .refine((v) => !(v.recurrence != null && v.pinnedTo != null), {
-    message: "Recurring todos cannot be pinned",
+  .refine((v) => isAllowedRecurrencePinCombo(v.recurrence, v.pinnedTo), {
+    message: "Only weekly recurring todos can be pinned to Today",
     path: ["pinnedTo"],
   })
   .refine((v) => !(v.recurrence != null && v.parentId != null), {
@@ -109,8 +121,8 @@ export const updateTodoSchema = z
   })
   // These refinements catch cases where both fields are in the same patch.
   // Cases involving the existing row state are checked in the PATCH handler.
-  .refine((v) => !(v.recurrence != null && v.pinnedTo != null), {
-    message: "Recurring todos cannot be pinned",
+  .refine((v) => isAllowedRecurrencePinCombo(v.recurrence, v.pinnedTo), {
+    message: "Only weekly recurring todos can be pinned to Today",
     path: ["pinnedTo"],
   })
   .refine((v) => !(v.recurrence != null && v.parentId != null), {
