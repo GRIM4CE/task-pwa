@@ -53,7 +53,10 @@ export default function AuthenticatedLayout({
     );
   }
 
-  const joinedActive = pathname === "/todos" || pathname?.startsWith("/todos/joined");
+  const focusActive = pathname?.startsWith("/todos/focus");
+  const joinedActive =
+    !focusActive &&
+    (pathname === "/todos" || pathname?.startsWith("/todos/joined"));
   const personalActive = pathname?.startsWith("/todos/personal");
   const statsActive = pathname?.startsWith("/stats");
   const settingsActive = pathname?.startsWith("/settings");
@@ -75,6 +78,17 @@ export default function AuthenticatedLayout({
             Todo
           </Link>
           <nav className="flex min-w-0 flex-1 items-center justify-end gap-2" aria-label="Primary">
+            <Link
+              href="/todos/focus"
+              aria-current={focusActive ? "page" : undefined}
+              className={`px-2 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
+                focusActive
+                  ? "font-medium text-on-surface underline decoration-primary decoration-2 underline-offset-4"
+                  : "text-on-surface/60 hover:text-on-surface hover:underline hover:underline-offset-4"
+              }`}
+            >
+              Focus
+            </Link>
             <Link
               href="/todos/joined"
               aria-current={joinedActive ? "page" : undefined}
