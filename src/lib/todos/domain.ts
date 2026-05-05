@@ -98,7 +98,10 @@ export function applyUpdate(
   if (patch.completed !== undefined) {
     next.completed = patch.completed;
     next.lastCompletedAt = patch.completed ? now : null;
-    if (patch.completed) next.pinnedTo = null;
+    // Mirror the server: only clear `pinnedTo` on completion when the
+    // post-patch row is non-recurring. Recurring completions are per-period
+    // ticks, and clearing the pin would force a re-pin after every reset.
+    if (patch.completed && next.recurrence === null) next.pinnedTo = null;
   }
   return next;
 }
