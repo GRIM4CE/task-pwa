@@ -9,13 +9,22 @@
 // cycle.
 //
 // Calling this at the top of a build-time script makes that misconfiguration
-// loud: if we're running in an Amplify build (AWS_BRANCH or AMPLIFY_APP_ID
-// set) and TURSO_DATABASE_URL is missing, abort with a clear error before
-// any work happens.
+// loud: if we're running in any CI/hosted build and TURSO_DATABASE_URL is
+// missing, abort with a clear error before any work happens.
 
 export function assertTursoConfiguredInHostedBuild(): void {
+  // Amplify Gen 2 + CodeBuild doesn't reliably expose `AWS_BRANCH` /
+  // `AMPLIFY_APP_ID` to npm-script subprocesses, but `CI=true` and
+  // `CODEBUILD_BUILD_ID` are. Detect a hosted build via any of these so
+  // the safety check can't be skipped just because Amplify renamed an
+  // env var.
   const inHostedBuild = Boolean(
-    process.env.AWS_BRANCH || process.env.AMPLIFY_APP_ID
+    process.env.AWS_BRANCH ||
+      process.env.AMPLIFY_APP_ID ||
+      process.env.AWS_APP_ID ||
+      process.env.CODEBUILD_BUILD_ID ||
+      process.env.CI === "true" ||
+      process.env.CI === "1"
   );
   if (!inHostedBuild) return;
 

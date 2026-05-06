@@ -64,9 +64,30 @@ async function backfillRecoveryCodes() {
 }
 
 async function main() {
-  console.log("Running migrations...");
+  // Tag the log with the target DB so a silent fall-back to
+  // file:./data/local.db (i.e. TURSO_DATABASE_URL not exposed to this
+  // subprocess) is obvious in the build output instead of looking like a
+  // successful Turso migration.
+  const target = url.startsWith("file:") ? `local file (${url})` : "Turso";
+  console.log(`Running migrations against ${target}...`);
   await migrate(db, { migrationsFolder: "./drizzle" });
   console.log("Migrations complete.");
+  // Sanity check: print the final applied-migration tag from
+  // __drizzle_migrations so we can verify which migration the target DB is
+  // actually on, independent of the migrations folder.
+  try {
+    const last = await db.all<{ hash: string; created_at: number }>(
+      sql`SELECT hash, created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 1`
+    );
+    if (last[0]) {
+      console.log(
+        `Latest applied migration hash on target: ${last[0].hash} ` +
+        `(at ${new Date(Number(last[0].created_at)).toISOString()})`
+      );
+    }
+  } catch (err) {
+    console.warn("Could not read __drizzle_migrations:", err);
+  }
   await backfillRecoveryCodes();
   client.close();
 }
