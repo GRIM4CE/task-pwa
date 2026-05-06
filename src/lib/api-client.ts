@@ -25,20 +25,7 @@ async function apiRequest<T>(
   }
 }
 
-export type Recurrence =
-  | "daily"
-  | "weekly"
-  | "weekday"
-  | "monthly_day"
-  | "monthly_weekday"
-  | null;
-export type RecurrenceOrdinal =
-  | "first"
-  | "second"
-  | "third"
-  | "fourth"
-  | "last"
-  | null;
+export type Recurrence = "daily" | "weekly" | null;
 export type TodoKind = "do" | "avoid";
 export type LimitPeriod = "week" | "month" | null;
 export type PinnedTo = "day" | "week" | null;
@@ -52,12 +39,6 @@ export interface TodoDTO {
   isPersonal: boolean;
   sortOrder: number;
   recurrence: Recurrence;
-  // Anchor fields for the "scheduled" recurrences (weekday / monthly_day /
-  // monthly_weekday). Only the columns relevant to the chosen recurrence are
-  // populated; the rest stay null.
-  recurrenceWeekday: number | null;
-  recurrenceDayOfMonth: number | null;
-  recurrenceOrdinal: RecurrenceOrdinal;
   pinnedTo: PinnedTo;
   kind: TodoKind;
   limitCount: number | null;
@@ -81,10 +62,7 @@ export interface ArchiveDTO {
 export interface RecurringTodoStats {
   id: string;
   title: string;
-  recurrence: Exclude<Recurrence, null>;
-  recurrenceWeekday: number | null;
-  recurrenceDayOfMonth: number | null;
-  recurrenceOrdinal: RecurrenceOrdinal;
+  recurrence: "daily" | "weekly";
   isPersonal: boolean;
   createdAt: number;
   completions: number[];
@@ -141,9 +119,9 @@ export const api = {
     list: () => apiRequest<TodoDTO[]>("/api/todos"),
     archive: () => apiRequest<ArchiveDTO>("/api/todos/archive"),
     stats: () => apiRequest<StatsDTO>("/api/todos/stats"),
-    create: (body: { title: string; description?: string; isPersonal?: boolean; recurrence?: Recurrence; recurrenceWeekday?: number | null; recurrenceDayOfMonth?: number | null; recurrenceOrdinal?: RecurrenceOrdinal; pinnedTo?: PinnedTo; parentId?: string | null; kind?: TodoKind; limitCount?: number | null; limitPeriod?: LimitPeriod; oncePerDay?: boolean }) =>
+    create: (body: { title: string; description?: string; isPersonal?: boolean; recurrence?: Recurrence; pinnedTo?: PinnedTo; parentId?: string | null; kind?: TodoKind; limitCount?: number | null; limitPeriod?: LimitPeriod; oncePerDay?: boolean }) =>
       apiRequest<TodoDTO>("/api/todos", { method: "POST", body: JSON.stringify(body) }),
-    update: (id: string, body: { title?: string; description?: string | null; completed?: boolean; sortOrder?: number; recurrence?: Recurrence; recurrenceWeekday?: number | null; recurrenceDayOfMonth?: number | null; recurrenceOrdinal?: RecurrenceOrdinal; pinnedTo?: PinnedTo; parentId?: string | null; autoReset?: boolean; kind?: TodoKind; limitCount?: number | null; limitPeriod?: LimitPeriod; oncePerDay?: boolean; recordSlip?: boolean; undoLastSlip?: boolean }) =>
+    update: (id: string, body: { title?: string; description?: string | null; completed?: boolean; sortOrder?: number; recurrence?: Recurrence; pinnedTo?: PinnedTo; parentId?: string | null; autoReset?: boolean; kind?: TodoKind; limitCount?: number | null; limitPeriod?: LimitPeriod; oncePerDay?: boolean; recordSlip?: boolean; undoLastSlip?: boolean }) =>
       apiRequest<TodoDTO>(`/api/todos/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     reorder: (ids: string[], parentId?: string | null) =>
       apiRequest<{ success: boolean }>("/api/todos/reorder", { method: "POST", body: JSON.stringify({ ids, parentId: parentId ?? null }) }),

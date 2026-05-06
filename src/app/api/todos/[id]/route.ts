@@ -20,16 +20,7 @@ export async function PATCH(
     description?: string | null;
     completed?: boolean;
     sortOrder?: number;
-    recurrence?:
-      | "daily"
-      | "weekly"
-      | "weekday"
-      | "monthly_day"
-      | "monthly_weekday"
-      | null;
-    recurrenceWeekday?: number | null;
-    recurrenceDayOfMonth?: number | null;
-    recurrenceOrdinal?: "first" | "second" | "third" | "fourth" | "last" | null;
+    recurrence?: "daily" | "weekly" | null;
     pinnedTo?: "day" | "week" | null;
     parentId?: string | null;
     autoReset?: boolean;
@@ -252,26 +243,7 @@ export async function PATCH(
   if (body.title !== undefined) updateData.title = body.title;
   if (body.description !== undefined) updateData.description = body.description;
   if (body.sortOrder !== undefined) updateData.sortOrder = body.sortOrder;
-  if (body.recurrence !== undefined) {
-    updateData.recurrence = body.recurrence;
-    // Anchor fields are tightly coupled to recurrence type. Always reset them
-    // first when recurrence changes; the per-anchor branches below set them
-    // back to the new values if they're in the patch. Keeps stale anchors
-    // from surviving a switch (e.g., weekly→null shouldn't leave a weekday
-    // value behind on the row).
-    updateData.recurrenceWeekday = null;
-    updateData.recurrenceDayOfMonth = null;
-    updateData.recurrenceOrdinal = null;
-  }
-  if (body.recurrenceWeekday !== undefined) {
-    updateData.recurrenceWeekday = body.recurrenceWeekday;
-  }
-  if (body.recurrenceDayOfMonth !== undefined) {
-    updateData.recurrenceDayOfMonth = body.recurrenceDayOfMonth;
-  }
-  if (body.recurrenceOrdinal !== undefined) {
-    updateData.recurrenceOrdinal = body.recurrenceOrdinal;
-  }
+  if (body.recurrence !== undefined) updateData.recurrence = body.recurrence;
   if (body.pinnedTo !== undefined) updateData.pinnedTo = body.pinnedTo;
   if (body.kind !== undefined) updateData.kind = body.kind;
   if (body.limitCount !== undefined) updateData.limitCount = body.limitCount;
@@ -337,17 +309,6 @@ export async function PATCH(
 
   if (reparentTo !== undefined) {
     updateData.parentId = reparentTo === null ? null : reparentTo.id;
-    // Demoting to a subtask drops recurrence + anchors so the row's shape
-    // matches the "subtasks have no recurrence" invariant. We already block
-    // demoting a row whose effective recurrence is non-null above, so this
-    // only fires on the "currently null, becoming subtask" path; the writes
-    // are no-ops in that case but keep the invariant explicit.
-    if (reparentTo !== null) {
-      updateData.recurrence = null;
-      updateData.recurrenceWeekday = null;
-      updateData.recurrenceDayOfMonth = null;
-      updateData.recurrenceOrdinal = null;
-    }
     // Place the moved row at the end of its new sibling group.
     const maxOrderRow = await db
       .select({ max: sql<number>`coalesce(max(sort_order), -1)` })
@@ -556,9 +517,6 @@ export async function PATCH(
     isPersonal: updated.isPersonal,
     sortOrder: updated.sortOrder,
     recurrence: updated.recurrence,
-    recurrenceWeekday: updated.recurrenceWeekday,
-    recurrenceDayOfMonth: updated.recurrenceDayOfMonth,
-    recurrenceOrdinal: updated.recurrenceOrdinal,
     pinnedTo: updated.pinnedTo,
     kind: updated.kind,
     limitCount: updated.limitCount,

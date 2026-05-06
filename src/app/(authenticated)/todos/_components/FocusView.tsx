@@ -3,12 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { type TodoDTO } from "@/lib/api-client";
-import {
-  isCompletedTodoExpired,
-  isRecurringResetDue,
-  isScheduledOccurrenceOpen,
-  isScheduledRecurrence,
-} from "@/lib/recurrence";
+import { isCompletedTodoExpired, isRecurringResetDue } from "@/lib/recurrence";
 import { notifyStatsMayHaveChanged } from "@/lib/stats-events";
 import {
   cascadeCompleteChildren,
@@ -23,10 +18,6 @@ export default function FocusView() {
   const repo = useTodoRepository();
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
-  // Tracks "now" for visibility filters tied to local-day boundaries — same
-  // pattern as TodoListView. Bumped on visibilitychange and once a minute so a
-  // scheduled row's occurrence window flips without a manual refresh.
-  const [nowMs, setNowMs] = useState(() => Date.now());
   const resettingRef = useRef<Set<string>>(new Set());
   const expiringRef = useRef<Set<string>>(new Set());
   const pendingToggleRef = useRef<Set<string>>(new Set());
@@ -75,7 +66,7 @@ export default function FocusView() {
           t.completed &&
           t.recurrence !== null &&
           !resettingRef.current.has(t.id) &&
-          isRecurringResetDue(t, now)
+          isRecurringResetDue(t.recurrence, t.lastCompletedAt, now)
       );
       if (due.length === 0) return;
       due.forEach((t) => resettingRef.current.add(t.id));
@@ -113,20 +104,12 @@ export default function FocusView() {
 
   useEffect(() => {
     function handleVisibilityChange() {
-      if (document.visibilityState === "visible") {
-        setNowMs(Date.now());
-        loadTodos();
-      }
+      if (document.visibilityState === "visible") loadTodos();
     }
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () =>
       document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [loadTodos]);
-
-  useEffect(() => {
-    const id = window.setInterval(() => setNowMs(Date.now()), 60_000);
-    return () => window.clearInterval(id);
-  }, []);
 
   async function handleToggle(todo: Todo) {
     if (recentlyToggledRef.current) return;
@@ -169,11 +152,9 @@ export default function FocusView() {
     }
   }
 
-  // Today: daily-recurring "do" rows + anything pinned to the day + scheduled
-  // rows whose current occurrence is open (e.g. an "every Wednesday" todo on
-  // a Wednesday it hasn't been completed yet). Across both scopes. Pinned-
-  // to-week takes precedence on legacy rows so a recurring row pinned to the
-  // week stays out of focus.
+  // Today: daily-recurring "do" rows + anything pinned to the day, across both
+  // scopes. Pinned-to-week takes precedence on legacy rows so a recurring row
+  // pinned to the week stays out of focus.
   const topLevelToday = sortTodos(
     todos.filter(
       (t) =>
@@ -181,10 +162,7 @@ export default function FocusView() {
         t.kind === "do" &&
         !t.completed &&
         t.pinnedTo !== "week" &&
-        (t.recurrence === "daily" ||
-          t.pinnedTo === "day" ||
-          (isScheduledRecurrence(t.recurrence) &&
-            isScheduledOccurrenceOpen(t, nowMs)))
+        (t.recurrence === "daily" || t.pinnedTo === "day")
     )
   );
   const subtasksToday = sortSubtasks(
