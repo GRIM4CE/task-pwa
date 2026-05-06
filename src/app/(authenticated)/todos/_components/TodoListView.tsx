@@ -99,6 +99,9 @@ function makeDraftTodo(title: string): Todo {
 export default function TodoListView() {
   const repo = useTodoRepository();
   const [todos, setTodos] = useState<Todo[]>([]);
+  const [visibilityFilter, setVisibilityFilter] = useState<
+    "all" | "joined" | "personal"
+  >("all");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [newTitle, setNewTitle] = useState("");
   const [loading, setLoading] = useState(true);
@@ -712,9 +715,16 @@ export default function TodoListView() {
   }
 
   // The API already scopes the response to what this user is allowed to see
-  // (joined todos + their own personal todos), so the client just renders
-  // whatever it receives.
-  const visibleTodos = todos;
+  // (joined todos + their own personal todos). The client-side visibility
+  // filter narrows that further when the user picks Personal/Joined at the
+  // top — subtasks inherit isPersonal from their parent, so filtering at the
+  // raw list level keeps parents and children in sync across every section.
+  const visibleTodos =
+    visibilityFilter === "all"
+      ? todos
+      : todos.filter((t) =>
+          visibilityFilter === "personal" ? t.isPersonal : !t.isPersonal,
+        );
   const topLevel = visibleTodos.filter((t) => t.parentId === null);
   // A todo that was just completed stays in its active section until the
   // animation finishes, so the user sees the confirmation where they tapped
@@ -945,6 +955,34 @@ export default function TodoListView() {
         </p>
       </div>
 
+      {/* Visibility filter */}
+      <div
+        role="group"
+        aria-label="Visibility filter"
+        className="mb-4 flex gap-1 rounded-lg border border-border-on-surface bg-surface p-1"
+      >
+        {(["all", "joined", "personal"] as const).map((value) => {
+          const isActive = visibilityFilter === value;
+          const label =
+            value === "all" ? "All" : value === "joined" ? "Joined" : "Personal";
+          return (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={isActive}
+              onClick={() => setVisibilityFilter(value)}
+              className={`flex-1 rounded-md px-3 py-1.5 text-center text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-surface ${
+                isActive
+                  ? "bg-primary font-semibold text-white shadow-md"
+                  : "font-medium text-on-surface/60 hover:bg-surface-hover hover:text-on-surface"
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Add todo form */}
       <form onSubmit={handleAdd} className="mb-6 flex gap-2">
         <input
@@ -1095,7 +1133,11 @@ export default function TodoListView() {
       {visibleTodos.length === 0 && (
         <div className="py-12 text-center">
           <p className="text-text-muted">
-            No todos yet. Add one above to get started.
+            {visibilityFilter === "all"
+              ? "No todos yet. Add one above to get started."
+              : visibilityFilter === "personal"
+                ? "No personal todos."
+                : "No joined todos."}
           </p>
         </div>
       )}
@@ -1539,14 +1581,14 @@ function VisibilityBadge({
   // so it sits comfortably alongside the createdBy/timestamp meta line.
   const tone = isPersonal
     ? dim
-      ? "border-warning/30 bg-warning/5 text-warning/60"
-      : "border-warning/40 bg-warning/10 text-warning"
+      ? "border-tag-personal/30 bg-tag-personal/5 text-tag-personal/60"
+      : "border-tag-personal/40 bg-tag-personal/10 text-tag-personal"
     : dim
-      ? "border-primary/30 bg-primary/5 text-primary/60"
-      : "border-primary/40 bg-primary/10 text-primary";
+      ? "border-tag-joined/30 bg-tag-joined/5 text-tag-joined/60"
+      : "border-tag-joined/40 bg-tag-joined/10 text-tag-joined";
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-1.5 py-px text-[10px] font-medium uppercase tracking-wide ${tone}`}
+      className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase leading-none tracking-wide ${tone}`}
       aria-label={isPersonal ? "Personal todo" : "Joined todo"}
     >
       {isPersonal ? "Personal" : "Joined"}
@@ -1612,7 +1654,7 @@ function TodoRow({
       </button>
 
       <div className="flex-1 min-w-0">
-        <span className={`block break-words ${done ? "text-on-surface/50 line-through" : "text-on-surface"}`}>
+        <span className={`block break-words leading-snug ${done ? "text-on-surface/50 line-through" : "text-on-surface"}`}>
           {todo.title}
           {showBadge && (
             <span
