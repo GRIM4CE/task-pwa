@@ -83,6 +83,11 @@ function readAll(): TodoDTO[] {
           limitPeriod: t.limitPeriod ?? null,
           oncePerDay: t.oncePerDay ?? false,
           recentSlips: t.recentSlips ?? [],
+          // Backfill anchor fields for guest data written before scheduled
+          // recurrences shipped.
+          recurrenceWeekday: t.recurrenceWeekday ?? null,
+          recurrenceDayOfMonth: t.recurrenceDayOfMonth ?? null,
+          recurrenceOrdinal: t.recurrenceOrdinal ?? null,
         }));
       }
     } catch {
@@ -102,6 +107,9 @@ function readAll(): TodoDTO[] {
           .map<TodoDTO>((s) => ({
             ...s,
             recurrence: null,
+            recurrenceWeekday: null,
+            recurrenceDayOfMonth: null,
+            recurrenceOrdinal: null,
             parentId: s.parentId,
             pinnedTo: s.pinnedTo ?? (s.pinnedToWeek ? "week" : null),
           }));
@@ -210,7 +218,10 @@ export const localTodoRepository: TodoRepository = {
       .map((t) => ({
         id: t.id,
         title: t.title,
-        recurrence: t.recurrence as "daily" | "weekly",
+        recurrence: t.recurrence as Exclude<typeof t.recurrence, null>,
+        recurrenceWeekday: t.recurrenceWeekday,
+        recurrenceDayOfMonth: t.recurrenceDayOfMonth,
+        recurrenceOrdinal: t.recurrenceOrdinal,
         isPersonal: t.isPersonal,
         createdAt: t.createdAt,
         completions: (byTodo.get(t.id) ?? []).sort((a, b) => a - b),
@@ -253,6 +264,16 @@ export const localTodoRepository: TodoRepository = {
       recurrence = null;
       kind = "do";
     }
+    // Anchor fields are only kept when the chosen recurrence type uses them;
+    // mirrors the server's POST handler.
+    const recurrenceWeekday =
+      recurrence === "weekday" || recurrence === "monthly_weekday"
+        ? parsed.data.recurrenceWeekday ?? null
+        : null;
+    const recurrenceDayOfMonth =
+      recurrence === "monthly_day" ? parsed.data.recurrenceDayOfMonth ?? null : null;
+    const recurrenceOrdinal =
+      recurrence === "monthly_weekday" ? parsed.data.recurrenceOrdinal ?? null : null;
 
     const now = Date.now();
     const todo: TodoDTO = {
@@ -264,6 +285,9 @@ export const localTodoRepository: TodoRepository = {
       isPersonal,
       sortOrder: nextSortOrder(all, parentId),
       recurrence,
+      recurrenceWeekday,
+      recurrenceDayOfMonth,
+      recurrenceOrdinal,
       pinnedTo: parsed.data.pinnedTo ?? null,
       kind,
       limitCount: kind === "avoid" ? parsed.data.limitCount ?? null : null,
