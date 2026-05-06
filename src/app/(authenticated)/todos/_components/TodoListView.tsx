@@ -1669,7 +1669,7 @@ function TodoRow({
             </span>
           )}
         </span>
-        {showBadge ? (
+        {showBadge && (
           <div
             className="mt-1 h-1 w-full overflow-hidden rounded-full bg-surface-hover"
             role="progressbar"
@@ -1695,11 +1695,6 @@ function TodoRow({
               }}
             />
           </div>
-        ) : (
-          // Reserve the progress-bar slot on rows without subtasks so the
-          // meta line below sits at a consistent vertical position across
-          // every row, regardless of whether a bar is rendered.
-          <div className="mt-1 h-1 w-full" aria-hidden="true" />
         )}
         {todo.description && (
           <span className={`mt-0.5 block break-words text-xs ${done ? "text-on-surface/40" : "text-on-surface/60"}`}>
