@@ -155,19 +155,7 @@ export const todos = sqliteTable(
     completed: integer("completed", { mode: "boolean" }).notNull().default(false),
     isPersonal: integer("is_personal", { mode: "boolean" }).notNull().default(false),
     sortOrder: integer("sort_order").notNull().default(0),
-    recurrence: text("recurrence", {
-      enum: ["daily", "weekly", "weekday", "monthly_day", "monthly_weekday"],
-    }),
-    // Anchor fields for the "scheduled" recurrences. Only the columns
-    // relevant to the chosen recurrence are populated; the rest stay null.
-    //   weekday          → recurrenceWeekday (0=Sun..6=Sat, JS getDay())
-    //   monthly_day      → recurrenceDayOfMonth (1..31, clamped to month length)
-    //   monthly_weekday  → recurrenceWeekday + recurrenceOrdinal
-    recurrenceWeekday: integer("recurrence_weekday"),
-    recurrenceDayOfMonth: integer("recurrence_day_of_month"),
-    recurrenceOrdinal: text("recurrence_ordinal", {
-      enum: ["first", "second", "third", "fourth", "last"],
-    }),
+    recurrence: text("recurrence", { enum: ["daily", "weekly"] }),
     pinnedTo: text("pinned_to", { enum: ["day", "week"] }),
     // "do" = normal todo (default). "avoid" = bad-habit tracker: each tap
     // logs a slip into todoCompletions instead of flipping completed, and the

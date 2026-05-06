@@ -22,9 +22,6 @@ export async function GET() {
       id: schema.todos.id,
       title: schema.todos.title,
       recurrence: schema.todos.recurrence,
-      recurrenceWeekday: schema.todos.recurrenceWeekday,
-      recurrenceDayOfMonth: schema.todos.recurrenceDayOfMonth,
-      recurrenceOrdinal: schema.todos.recurrenceOrdinal,
       kind: schema.todos.kind,
       limitCount: schema.todos.limitCount,
       limitPeriod: schema.todos.limitPeriod,
@@ -103,15 +100,7 @@ export async function GET() {
     todos: recurring.map((t) => ({
       id: t.id,
       title: t.title,
-      recurrence: t.recurrence as
-        | "daily"
-        | "weekly"
-        | "weekday"
-        | "monthly_day"
-        | "monthly_weekday",
-      recurrenceWeekday: t.recurrenceWeekday,
-      recurrenceDayOfMonth: t.recurrenceDayOfMonth,
-      recurrenceOrdinal: t.recurrenceOrdinal,
+      recurrence: t.recurrence as "daily" | "weekly",
       isPersonal: t.isPersonal,
       createdAt: t.createdAt.getTime(),
       completions: byTodo.get(t.id) ?? [],

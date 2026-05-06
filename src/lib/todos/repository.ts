@@ -3,7 +3,6 @@ import type {
   LimitPeriod,
   PinnedTo,
   Recurrence,
-  RecurrenceOrdinal,
   StatsDTO,
   TodoDTO,
   TodoKind,
@@ -17,9 +16,6 @@ export interface CreateTodoInput {
   description?: string;
   isPersonal?: boolean;
   recurrence?: Recurrence;
-  recurrenceWeekday?: number | null;
-  recurrenceDayOfMonth?: number | null;
-  recurrenceOrdinal?: RecurrenceOrdinal;
   pinnedTo?: PinnedTo;
   parentId?: string | null;
   kind?: TodoKind;
@@ -34,9 +30,6 @@ export interface UpdateTodoPatch {
   completed?: boolean;
   sortOrder?: number;
   recurrence?: Recurrence;
-  recurrenceWeekday?: number | null;
-  recurrenceDayOfMonth?: number | null;
-  recurrenceOrdinal?: RecurrenceOrdinal;
   pinnedTo?: PinnedTo;
   parentId?: string | null;
   autoReset?: boolean;

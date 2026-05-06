@@ -1,5 +1,4 @@
 import type { TodoDTO } from "@/lib/api-client";
-import { isScheduledOccurrenceOpen, isScheduledRecurrence } from "@/lib/recurrence";
 import type { UpdateTodoPatch } from "./repository";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -45,19 +44,12 @@ export function getRecurringParentIds(list: TodoDTO[]): Set<string> {
 // Mirrors the SQL filter in /api/todos GET: hide non-recurring completed todos
 // once 24h have passed since completion. Recurring todos always remain visible,
 // and so do subtasks of recurring parents — those ride the parent's reset
-// cycle and need to stay visible across it. "Scheduled" recurrences (weekday
-// / monthly_day / monthly_weekday) only surface on their target day, so an
-// uncompleted row stays hidden until the occurrence's date arrives.
+// cycle and need to stay visible across it.
 export function filterMainList(list: TodoDTO[], now: number = Date.now()): TodoDTO[] {
   const cutoff = now - DAY_MS;
   const recurringParentIds = getRecurringParentIds(list);
   return list.filter((t) => {
-    if (!t.completed) {
-      if (isScheduledRecurrence(t.recurrence)) {
-        return isScheduledOccurrenceOpen(t, now);
-      }
-      return true;
-    }
+    if (!t.completed) return true;
     if (t.recurrence !== null) return true;
     if (t.parentId !== null && recurringParentIds.has(t.parentId)) return true;
     return t.lastCompletedAt !== null && t.lastCompletedAt >= cutoff;
@@ -86,24 +78,7 @@ export function applyUpdate(
   if (patch.title !== undefined) next.title = patch.title;
   if (patch.description !== undefined) next.description = patch.description;
   if (patch.sortOrder !== undefined) next.sortOrder = patch.sortOrder;
-  if (patch.recurrence !== undefined) {
-    next.recurrence = patch.recurrence;
-    // When recurrence changes, anchor fields are tightly coupled — clear the
-    // ones that don't apply to the new type so an old "every Wednesday" row
-    // doesn't stay marked with weekday=3 after switching to "daily".
-    next.recurrenceWeekday = null;
-    next.recurrenceDayOfMonth = null;
-    next.recurrenceOrdinal = null;
-  }
-  if (patch.recurrenceWeekday !== undefined) {
-    next.recurrenceWeekday = patch.recurrenceWeekday;
-  }
-  if (patch.recurrenceDayOfMonth !== undefined) {
-    next.recurrenceDayOfMonth = patch.recurrenceDayOfMonth;
-  }
-  if (patch.recurrenceOrdinal !== undefined) {
-    next.recurrenceOrdinal = patch.recurrenceOrdinal;
-  }
+  if (patch.recurrence !== undefined) next.recurrence = patch.recurrence;
   if (patch.pinnedTo !== undefined) next.pinnedTo = patch.pinnedTo;
   if (patch.kind !== undefined) next.kind = patch.kind;
   if (patch.limitCount !== undefined) next.limitCount = patch.limitCount;
@@ -118,12 +93,7 @@ export function applyUpdate(
   }
   if (patch.parentId !== undefined) {
     next.parentId = patch.parentId;
-    if (patch.parentId !== null) {
-      next.recurrence = null;
-      next.recurrenceWeekday = null;
-      next.recurrenceDayOfMonth = null;
-      next.recurrenceOrdinal = null;
-    }
+    if (patch.parentId !== null) next.recurrence = null;
   }
   if (patch.completed !== undefined) {
     next.completed = patch.completed;

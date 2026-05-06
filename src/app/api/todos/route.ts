@@ -31,9 +31,6 @@ export async function GET() {
       isPersonal: schema.todos.isPersonal,
       sortOrder: schema.todos.sortOrder,
       recurrence: schema.todos.recurrence,
-      recurrenceWeekday: schema.todos.recurrenceWeekday,
-      recurrenceDayOfMonth: schema.todos.recurrenceDayOfMonth,
-      recurrenceOrdinal: schema.todos.recurrenceOrdinal,
       pinnedTo: schema.todos.pinnedTo,
       kind: schema.todos.kind,
       limitCount: schema.todos.limitCount,
@@ -108,9 +105,6 @@ export async function GET() {
       isPersonal: t.isPersonal,
       sortOrder: t.sortOrder,
       recurrence: t.recurrence,
-      recurrenceWeekday: t.recurrenceWeekday,
-      recurrenceDayOfMonth: t.recurrenceDayOfMonth,
-      recurrenceOrdinal: t.recurrenceOrdinal,
       pinnedTo: t.pinnedTo,
       kind: t.kind,
       limitCount: t.limitCount,
@@ -136,16 +130,7 @@ export async function POST(request: NextRequest) {
     title: string;
     description?: string;
     isPersonal?: boolean;
-    recurrence?:
-      | "daily"
-      | "weekly"
-      | "weekday"
-      | "monthly_day"
-      | "monthly_weekday"
-      | null;
-    recurrenceWeekday?: number | null;
-    recurrenceDayOfMonth?: number | null;
-    recurrenceOrdinal?: "first" | "second" | "third" | "fourth" | "last" | null;
+    recurrence?: "daily" | "weekly" | null;
     pinnedTo?: "day" | "week" | null;
     parentId?: string | null;
     kind?: "do" | "avoid";
@@ -200,20 +185,6 @@ export async function POST(request: NextRequest) {
   const limitPeriod = kind === "avoid" ? body.limitPeriod ?? null : null;
   const oncePerDay = kind === "avoid" ? body.oncePerDay ?? false : false;
 
-  // Anchor fields are dropped on subtasks (recurrence collapses to null) and
-  // when the request's recurrence isn't a "scheduled" type. The Zod schema
-  // already enforced shape coherence at the request boundary; this is the
-  // belt-and-suspenders layer for subtask demotion.
-  const recurrenceForInsert = parentRow ? null : body.recurrence ?? null;
-  const recurrenceWeekday =
-    recurrenceForInsert === "weekday" || recurrenceForInsert === "monthly_weekday"
-      ? body.recurrenceWeekday ?? null
-      : null;
-  const recurrenceDayOfMonth =
-    recurrenceForInsert === "monthly_day" ? body.recurrenceDayOfMonth ?? null : null;
-  const recurrenceOrdinal =
-    recurrenceForInsert === "monthly_weekday" ? body.recurrenceOrdinal ?? null : null;
-
   const [todo] = await db
     .insert(schema.todos)
     .values({
@@ -222,10 +193,7 @@ export async function POST(request: NextRequest) {
       title: body.title,
       description: body.description ?? null,
       isPersonal: parentRow ? parentRow.isPersonal : (body.isPersonal ?? false),
-      recurrence: recurrenceForInsert,
-      recurrenceWeekday,
-      recurrenceDayOfMonth,
-      recurrenceOrdinal,
+      recurrence: parentRow ? null : (body.recurrence ?? null),
       pinnedTo: body.pinnedTo ?? null,
       kind,
       limitCount,
@@ -245,9 +213,6 @@ export async function POST(request: NextRequest) {
       isPersonal: todo.isPersonal,
       sortOrder: todo.sortOrder,
       recurrence: todo.recurrence,
-      recurrenceWeekday: todo.recurrenceWeekday,
-      recurrenceDayOfMonth: todo.recurrenceDayOfMonth,
-      recurrenceOrdinal: todo.recurrenceOrdinal,
       pinnedTo: todo.pinnedTo,
       kind: todo.kind,
       limitCount: todo.limitCount,
