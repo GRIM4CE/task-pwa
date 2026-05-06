@@ -415,7 +415,7 @@ export default function FocusView() {
           </p>
         </div>
         <Link
-          href="/todos/joined"
+          href="/todos"
           className="shrink-0 rounded-lg border border-border-on-surface px-3 py-1.5 text-sm text-on-surface/70 hover:bg-surface-hover hover:text-on-surface"
         >
           Manage
@@ -463,7 +463,7 @@ export default function FocusView() {
       ) : (
         <div className="rounded-lg border border-dashed border-border-on-surface px-4 py-12 text-center text-sm text-text-muted">
           Nothing pinned to today. Add a daily todo or pin one to the day from{" "}
-          <Link href="/todos/joined" className="underline hover:text-on-surface">
+          <Link href="/todos" className="underline hover:text-on-surface">
             Manage
           </Link>
           .

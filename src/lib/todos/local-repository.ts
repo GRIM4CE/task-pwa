@@ -314,6 +314,12 @@ export const localTodoRepository: TodoRepository = {
     const previous = all[index];
     let effectivePatch: UpdateTodoPatch = parsed.data;
 
+    // Subtasks inherit isPersonal from their parent; the parent's cascade
+    // below carries the change to children.
+    if (parsed.data.isPersonal !== undefined && previous.parentId !== null) {
+      return err("Subtask visibility follows the parent");
+    }
+
     // Mirror the server invariant: a subtask can never carry a recurrence.
     // Setting one is only valid when the same patch promotes the row to
     // top-level (parentId: null).
@@ -433,6 +439,16 @@ export const localTodoRepository: TodoRepository = {
       previous.completed === false
     ) {
       next = cascadeCompleteChildren(next, id);
+    }
+
+    // Mirror the server-side cascade for visibility flips so subtasks keep
+    // matching their parent's isPersonal value. Cascade whenever the patch
+    // carries the field — see the matching comment in the API PATCH route.
+    if (parsed.data.isPersonal !== undefined) {
+      const flippedTo = parsed.data.isPersonal;
+      next = next.map((t) =>
+        t.parentId === id ? { ...t, isPersonal: flippedTo, updatedAt: Date.now() } : t
+      );
     }
     writeAll(next);
 

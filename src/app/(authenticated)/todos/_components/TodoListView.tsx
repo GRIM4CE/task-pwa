@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
+  api,
   type LimitPeriod,
   type PinnedTo,
   type Recurrence,
@@ -27,6 +28,8 @@ import {
   sortTodos,
 } from "@/lib/todos/domain";
 import { useTodoRepository } from "@/lib/todos/use-todo-repository";
+import { GUEST_USERNAME } from "@/lib/todos/local-repository";
+import { isGuestMode } from "@/lib/guest-mode";
 
 type Todo = TodoDTO;
 
@@ -61,16 +64,49 @@ function formatRelativeDate(timestamp: number): string {
   return `${dd}/${mm}/${yy}`;
 }
 
-export type TodoScope = "joined" | "personal";
+// Drafts share the Todo shape so the edit modal can render them without
+// branching on a separate type. The empty id is the sentinel that flips the
+// save handler into "create" mode (POST instead of PATCH); the draft is never
+// persisted to the todos list before the user saves.
+const DRAFT_ID = "";
+function makeDraftTodo(title: string): Todo {
+  const now = Date.now();
+  return {
+    id: DRAFT_ID,
+    parentId: null,
+    title,
+    description: null,
+    completed: false,
+    isPersonal: false,
+    sortOrder: 0,
+    recurrence: null,
+    recurrenceWeekday: null,
+    recurrenceDayOfMonth: null,
+    recurrenceOrdinal: null,
+    pinnedTo: null,
+    kind: "do",
+    limitCount: null,
+    limitPeriod: null,
+    oncePerDay: false,
+    recentSlips: [],
+    lastCompletedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    createdBy: "",
+  };
+}
 
-export default function TodoListView({ scope }: { scope: TodoScope }) {
+export default function TodoListView() {
   const repo = useTodoRepository();
   const [todos, setTodos] = useState<Todo[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [newTitle, setNewTitle] = useState("");
   const [loading, setLoading] = useState(true);
-  const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Todo | null>(null);
+  // The visibility selector in the edit modal needs to know if the current
+  // user created the todo — only the creator can flip joined ↔ personal,
+  // matching the API guard.
+  const [currentUsername, setCurrentUsername] = useState<string | null>(null);
   const [justCompletedIds, setJustCompletedIds] = useState<Set<string>>(() => new Set());
   // Tracks "now" for visibility filters that depend on local-midnight boundaries
   // (currently: hiding completed weekly tasks past their next-midnight cutoff).
@@ -200,6 +236,30 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
     loadTodos();
   }, [loadTodos]);
 
+  useEffect(() => {
+    // Fetched once at mount: username doesn't change for the lifetime of a
+    // session and the auth status endpoint is already cached by the layout.
+    // Guest mode never authenticates, so short-circuit to GUEST_USERNAME so
+    // the visibility selector stays editable on locally-stored guest todos.
+    if (isGuestMode()) {
+      // Guest mode is read from localStorage so it's only known after mount;
+      // settling currentUsername here is the one and only commit, so the
+      // cascading-render concern this rule guards against doesn't apply.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCurrentUsername(GUEST_USERNAME);
+      return;
+    }
+    let cancelled = false;
+    api.auth.status().then(({ data }) => {
+      if (cancelled) return;
+      const u = (data?.user as { username?: string } | null)?.username;
+      if (u) setCurrentUsername(u);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Refresh when the app comes back into focus (e.g. switching apps on iPhone)
   useEffect(() => {
     function handleVisibilityChange() {
@@ -220,21 +280,16 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
     return () => window.clearInterval(id);
   }, []);
 
-  async function handleAdd(e: React.FormEvent) {
+  function handleAdd(e: React.FormEvent) {
     e.preventDefault();
-    if (!newTitle.trim()) return;
-    setAdding(true);
-
-    const { data } = await repo.create({
-      title: newTitle.trim(),
-      isPersonal: scope === "personal",
-      recurrence: null,
-    });
-    if (data) {
-      setTodos((prev) => [...prev, data]);
-      setNewTitle("");
-    }
-    setAdding(false);
+    const trimmed = newTitle.trim();
+    if (!trimmed) return;
+    // Stash a draft and open the modal — the actual create only happens when
+    // the user picks visibility and saves. Posting first would briefly expose
+    // a fresh todo (defaulted to joined) to the other user before the user
+    // had a chance to mark it personal.
+    setNewTitle("");
+    setEditing(makeDraftTodo(trimmed));
   }
 
   // Drives the row-completion animation: keep the just-tapped row in its
@@ -497,6 +552,7 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
     patch: {
       title: string;
       description: string | null;
+      isPersonal: boolean;
       recurrence: Recurrence;
       recurrenceWeekday: number | null;
       recurrenceDayOfMonth: number | null;
@@ -508,9 +564,44 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
       oncePerDay: boolean;
     }
   ) {
+    if (id === DRAFT_ID) {
+      // First save of a draft → create. The server picks the canonical
+      // sortOrder, createdAt, createdBy, etc. so we just hand it the user's
+      // choices and append the returned row.
+      const { data } = await repo.create({
+        title: patch.title,
+        description: patch.description ?? undefined,
+        isPersonal: patch.isPersonal,
+        recurrence: patch.recurrence,
+        recurrenceWeekday: patch.recurrenceWeekday,
+        recurrenceDayOfMonth: patch.recurrenceDayOfMonth,
+        recurrenceOrdinal: patch.recurrenceOrdinal,
+        pinnedTo: patch.pinnedTo,
+        kind: patch.kind,
+        limitCount: patch.limitCount,
+        limitPeriod: patch.limitPeriod,
+        oncePerDay: patch.oncePerDay,
+      });
+      if (data) {
+        setTodos((prev) => [...prev, data]);
+        setEditing(null);
+      }
+      return;
+    }
     const { data } = await repo.update(id, patch);
     if (data) {
-      setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
+      setTodos((prev) =>
+        prev.map((t) => {
+          if (t.id === data.id) return data;
+          // Mirror the server's cascade: subtasks of a flipped parent inherit
+          // the new isPersonal value so the local list matches the persisted
+          // shape without a refetch.
+          if (t.parentId === data.id && t.isPersonal !== data.isPersonal) {
+            return { ...t, isPersonal: data.isPersonal };
+          }
+          return t;
+        })
+      );
       setEditing(null);
     }
   }
@@ -620,9 +711,10 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
     }
   }
 
-  const visibleTodos = todos.filter((t) =>
-    scope === "personal" ? t.isPersonal : !t.isPersonal
-  );
+  // The API already scopes the response to what this user is allowed to see
+  // (joined todos + their own personal todos), so the client just renders
+  // whatever it receives.
+  const visibleTodos = todos;
   const topLevel = visibleTodos.filter((t) => t.parentId === null);
   // A todo that was just completed stays in its active section until the
   // animation finishes, so the user sees the confirmation where they tapped
@@ -837,9 +929,7 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
       <div className="mb-6">
-        <h2 className="text-xl font-semibold text-text">
-          {scope === "joined" ? "Joined Todos" : "Personal Todos"}
-        </h2>
+        <h2 className="text-xl font-semibold text-text">Todos</h2>
         <p className="text-sm text-text-muted">
           {(() => {
             const todoToday = todayTodos.length + todaySubtasks.length;
@@ -867,10 +957,10 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
         />
         <button
           type="submit"
-          disabled={adding || !newTitle.trim()}
+          disabled={!newTitle.trim()}
           className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {adding ? "..." : "Add"}
+          Add
         </button>
       </form>
 
@@ -1005,9 +1095,7 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
       {visibleTodos.length === 0 && (
         <div className="py-12 text-center">
           <p className="text-text-muted">
-            {scope === "personal"
-              ? "No personal todos yet. Add one above to get started."
-              : "No todos yet. Add one above to get started."}
+            No todos yet. Add one above to get started.
           </p>
         </div>
       )}
@@ -1015,6 +1103,17 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
       {editing && editing.parentId === null && (
         <EditTodoModal
           todo={editing}
+          isNew={editing.id === DRAFT_ID}
+          canEditVisibility={
+            // The user is the creator of any draft they're saving for the
+            // first time, so the visibility selector stays editable in the
+            // create flow even before currentUsername resolves.
+            editing.id === DRAFT_ID
+              ? true
+              : currentUsername === null
+                ? false
+                : editing.createdBy === currentUsername
+          }
           onCancel={() => setEditing(null)}
           onDelete={() => handleDelete(editing.id)}
           onSave={(patch) => handleEditSave(editing.id, patch)}
@@ -1428,6 +1527,33 @@ function pinAriaLabel(pinnedTo: PinnedTo, recurrence: Recurrence): string {
   return "Pinned to Today — tap to unpin";
 }
 
+function VisibilityBadge({
+  isPersonal,
+  dim,
+}: {
+  isPersonal: boolean;
+  dim?: boolean;
+}) {
+  // A small inline pill that surfaces whether a top-level todo is shared with
+  // the other user (Joined) or locked to the creator (Personal). Kept compact
+  // so it sits comfortably alongside the createdBy/timestamp meta line.
+  const tone = isPersonal
+    ? dim
+      ? "border-warning/30 bg-warning/5 text-warning/60"
+      : "border-warning/40 bg-warning/10 text-warning"
+    : dim
+      ? "border-primary/30 bg-primary/5 text-primary/60"
+      : "border-primary/40 bg-primary/10 text-primary";
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-1.5 py-px text-[10px] font-medium uppercase tracking-wide ${tone}`}
+      aria-label={isPersonal ? "Personal todo" : "Joined todo"}
+    >
+      {isPersonal ? "Personal" : "Joined"}
+    </span>
+  );
+}
+
 function TodoRow({
   todo,
   done,
@@ -1533,8 +1659,11 @@ function TodoRow({
             {todo.description}
           </span>
         )}
-        <span className={`text-xs ${done ? "text-on-surface/40" : "text-on-surface/60"}`}>
-          {todo.createdBy} &middot; {formatRelativeDate(todo.createdAt)}
+        <span className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs ${done ? "text-on-surface/40" : "text-on-surface/60"}`}>
+          <VisibilityBadge isPersonal={todo.isPersonal} dim={done} />
+          <span>
+            {todo.createdBy} &middot; {formatRelativeDate(todo.createdAt)}
+          </span>
         </span>
         {nestTarget && (
           <span className="mt-0.5 block text-xs font-medium text-primary">
@@ -1797,6 +1926,7 @@ function AvoidRow({
           </span>
         )}
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
+          <VisibilityBadge isPersonal={todo.isPersonal} />
           {todo.limitCount !== null ? (
             <span className={tone.count}>
               {count} / {todo.limitCount} {periodLabel}
@@ -1967,15 +2097,20 @@ const ORDINAL_LABELS: ReadonlyArray<{ value: Exclude<RecurrenceOrdinal, null>; l
 
 function EditTodoModal({
   todo,
+  isNew,
+  canEditVisibility,
   onCancel,
   onSave,
   onDelete,
 }: {
   todo: Todo;
+  isNew: boolean;
+  canEditVisibility: boolean;
   onCancel: () => void;
   onSave: (patch: {
     title: string;
     description: string | null;
+    isPersonal: boolean;
     recurrence: Recurrence;
     recurrenceWeekday: number | null;
     recurrenceDayOfMonth: number | null;
@@ -1990,6 +2125,7 @@ function EditTodoModal({
 }) {
   const [title, setTitle] = useState(todo.title);
   const [description, setDescription] = useState(todo.description ?? "");
+  const [isPersonal, setIsPersonal] = useState(todo.isPersonal);
   const [recurrence, setRecurrence] = useState<Recurrence>(todo.recurrence);
   // Anchor inputs default to sensible values when the user picks a scheduled
   // recurrence on a row that doesn't have anchors yet (creation-style flow).
@@ -2064,6 +2200,7 @@ function EditTodoModal({
     await onSave({
       title: title.trim(),
       description: description.trim() ? description.trim() : null,
+      isPersonal,
       recurrence: effectiveRecurrence,
       recurrenceWeekday:
         isWeekday || isMonthlyWeekday ? weekdayInput : null,
@@ -2097,13 +2234,15 @@ function EditTodoModal({
           >
             Cancel
           </button>
-          <h3 className="text-base font-semibold text-text">Edit todo</h3>
+          <h3 className="text-base font-semibold text-text">
+            {isNew ? "New todo" : "Edit todo"}
+          </h3>
           <button
             type="submit"
             disabled={saving || !title.trim()}
             className="rounded px-2 py-1 text-sm font-medium text-primary hover:bg-primary/10 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary"
           >
-            {saving ? "Saving..." : "Save"}
+            {saving ? (isNew ? "Creating..." : "Saving...") : isNew ? "Create" : "Save"}
           </button>
         </div>
 
@@ -2130,6 +2269,57 @@ function EditTodoModal({
                 className="w-full rounded-lg border border-border bg-input px-3 py-2 text-input-text placeholder-input-placeholder focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
               />
             </label>
+
+            <fieldset className={`mb-4 ${canEditVisibility ? "" : "opacity-60"}`}>
+              <legend className="mb-1 block text-sm text-text-muted">
+                Visibility
+              </legend>
+              <div className="grid grid-cols-2 gap-2">
+                <label
+                  className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                    !isPersonal
+                      ? "border-focus bg-surface-hover text-text"
+                      : "border-border bg-input text-text-muted"
+                  } ${canEditVisibility ? "" : "cursor-not-allowed"}`}
+                >
+                  <input
+                    type="radio"
+                    name="visibility"
+                    value="joined"
+                    checked={!isPersonal}
+                    disabled={!canEditVisibility}
+                    onChange={() => setIsPersonal(false)}
+                    className="sr-only"
+                  />
+                  <span>Joined</span>
+                </label>
+                <label
+                  className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                    isPersonal
+                      ? "border-focus bg-surface-hover text-text"
+                      : "border-border bg-input text-text-muted"
+                  } ${canEditVisibility ? "" : "cursor-not-allowed"}`}
+                >
+                  <input
+                    type="radio"
+                    name="visibility"
+                    value="personal"
+                    checked={isPersonal}
+                    disabled={!canEditVisibility}
+                    onChange={() => setIsPersonal(true)}
+                    className="sr-only"
+                  />
+                  <span>Personal</span>
+                </label>
+              </div>
+              <p className="mt-1 text-xs text-text-muted">
+                {canEditVisibility
+                  ? isPersonal
+                    ? "Only you can see and edit this todo. Subtasks inherit this setting."
+                    : "Both users can see and edit this todo. Subtasks inherit this setting."
+                  : "Only the original creator can change visibility."}
+              </p>
+            </fieldset>
 
             <fieldset className="mb-4">
               <legend className="mb-1 block text-sm text-text-muted">
@@ -2400,17 +2590,19 @@ function EditTodoModal({
           </div>
         </div>
 
-        <div className="border-t border-border px-4 py-3">
-          <div className="mx-auto flex max-w-2xl justify-start">
-            <button
-              type="button"
-              onClick={onDelete}
-              className="rounded-lg border border-danger/40 bg-danger/10 px-4 py-2 text-sm font-medium text-danger hover:bg-danger hover:text-white focus:outline-none focus:ring-2 focus:ring-danger"
-            >
-              Delete
-            </button>
+        {!isNew && (
+          <div className="border-t border-border px-4 py-3">
+            <div className="mx-auto flex max-w-2xl justify-start">
+              <button
+                type="button"
+                onClick={onDelete}
+                className="rounded-lg border border-danger/40 bg-danger/10 px-4 py-2 text-sm font-medium text-danger hover:bg-danger hover:text-white focus:outline-none focus:ring-2 focus:ring-danger"
+              >
+                Delete
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </form>
     </div>
   );

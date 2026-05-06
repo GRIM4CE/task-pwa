@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import TodoListView from "./_components/TodoListView";
 
-export default function TodosIndexPage() {
-  redirect("/todos/joined");
+export default function TodosPage() {
+  return <TodoListView />;
 }
