@@ -1582,11 +1582,11 @@ function VisibilityBadge({
   // so it sits comfortably alongside the createdBy/timestamp meta line.
   const tone = isPersonal
     ? dim
-      ? "border-primary/30 bg-primary/5 text-primary/60"
-      : "border-primary/40 bg-primary/10 text-primary"
+      ? "border-tag-personal/30 bg-tag-personal/5 text-tag-personal/60"
+      : "border-tag-personal/40 bg-tag-personal/10 text-tag-personal"
     : dim
-      ? "border-success/30 bg-success/5 text-success/60"
-      : "border-success/40 bg-success/10 text-success";
+      ? "border-tag-joined/30 bg-tag-joined/5 text-tag-joined/60"
+      : "border-tag-joined/40 bg-tag-joined/10 text-tag-joined";
   return (
     <span
       className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase leading-none tracking-wide ${tone}`}

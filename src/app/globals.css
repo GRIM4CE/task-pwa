@@ -9,14 +9,16 @@
  *
  *   Pale Slate        #B8B8D1  → text-muted
  *   Dusty Grape       #5B5F97  → select; basis for page-bg / input shades
- *   Sunflower Gold    #FFC145  → focus
+ *   Sunflower Gold    #FFC145  → focus + tag-personal (Personal-visibility
+ *                                badge — focus is a 2px ring, the badge is
+ *                                a filled pill, so the contexts don't clash)
  *   Porcelain         #FFFFFB  → on-surface, input-text, text
- *   Grapefruit Pink   #FF6B6C  → unused (reserved)
+ *   Grapefruit Pink   #FF6B6C  → tag-joined (Joined-visibility badge)
  *   Flag Red          #C1292E  → danger
  *   Black             #020100  → unused (reserved)
  *   Midnight Violet   #32161F  → surface (and hover-shade basis)
- *   Magenta Bloom     #E83F6F  → primary (Personal-visibility badge)
- *   Sea Green         #32936F  → success (Joined-visibility badge)
+ *   Magenta Bloom     #E83F6F  → primary
+ *   Sea Green         #32936F  → success
  *   Amber             #E89C2A  → warning (intentionally distinct from
  *                                Sunflower Gold so warning vs focus stay
  *                                separable side-by-side)
@@ -65,6 +67,15 @@
   --color-warning: var(--c-amber);
   --color-focus: var(--c-sunflower);
   --color-select: var(--c-grape-700);
+  /*
+   * Visibility-tag tones. Reserved exclusively for the Personal/Joined
+   * badges so a tag never visually echoes another control. Personal reuses
+   * Sunflower Gold (the focus ring) intentionally — focus appears as a
+   * thin outline on interaction, while the badge is a filled pill, so the
+   * two contexts read as distinct.
+   */
+  --color-tag-personal: var(--c-sunflower);
+  --color-tag-joined: var(--c-grapefruit-pink);
   --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
