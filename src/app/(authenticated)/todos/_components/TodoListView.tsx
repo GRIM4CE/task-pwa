@@ -1656,44 +1656,42 @@ function TodoRow({
       <div className="flex-1 min-w-0">
         <span className={`block break-words leading-tight ${done ? "text-on-surface/50 line-through" : "text-on-surface"}`}>
           {todo.title}
-          {showBadge && (
+        </span>
+        {showBadge && (
+          <div className="mt-1 flex items-center gap-1">
+            <div
+              className="h-1 flex-1 overflow-hidden rounded-full bg-surface-hover"
+              role="progressbar"
+              aria-valuenow={subtaskDone ?? 0}
+              aria-valuemin={0}
+              aria-valuemax={subtaskTotal ?? 0}
+              aria-label={`Subtask completion: ${subtaskDone} of ${subtaskTotal}`}
+            >
+              <div
+                className={`h-full transition-[width] duration-300 ease-out ${
+                  done
+                    ? "bg-on-surface/25"
+                    : (subtaskDone ?? 0) >= (subtaskTotal ?? 0)
+                      ? "bg-success"
+                      : "bg-primary"
+                }`}
+                style={{
+                  width: `${
+                    (subtaskTotal ?? 0) > 0
+                      ? Math.round(((subtaskDone ?? 0) / (subtaskTotal ?? 1)) * 100)
+                      : 0
+                  }%`,
+                }}
+              />
+            </div>
             <span
-              className={`ml-2 inline-block rounded px-1.5 py-0.5 align-middle text-[10px] font-medium ${
-                done
-                  ? "bg-surface text-on-surface/40"
-                  : "bg-surface text-on-surface/60"
+              aria-hidden="true"
+              className={`shrink-0 text-[10px] font-medium leading-none tabular-nums ${
+                done ? "text-on-surface/40" : "text-on-surface/60"
               }`}
-              aria-label={`${subtaskDone} of ${subtaskTotal} subtasks done`}
             >
               {subtaskDone}/{subtaskTotal}
             </span>
-          )}
-        </span>
-        {showBadge && (
-          <div
-            className="mt-1 h-1 w-full overflow-hidden rounded-full bg-surface-hover"
-            role="progressbar"
-            aria-valuenow={subtaskDone ?? 0}
-            aria-valuemin={0}
-            aria-valuemax={subtaskTotal ?? 0}
-            aria-label={`Subtask completion: ${subtaskDone} of ${subtaskTotal}`}
-          >
-            <div
-              className={`h-full transition-[width] duration-300 ease-out ${
-                done
-                  ? "bg-on-surface/25"
-                  : (subtaskDone ?? 0) >= (subtaskTotal ?? 0)
-                    ? "bg-success"
-                    : "bg-primary"
-              }`}
-              style={{
-                width: `${
-                  (subtaskTotal ?? 0) > 0
-                    ? Math.round(((subtaskDone ?? 0) / (subtaskTotal ?? 1)) * 100)
-                    : 0
-                }%`,
-              }}
-            />
           </div>
         )}
         {todo.description && (
