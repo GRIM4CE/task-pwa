@@ -5,6 +5,7 @@ import {
   type LimitPeriod,
   type PinnedTo,
   type Recurrence,
+  type RecurrenceOrdinal,
   type TodoDTO,
   type TodoKind,
 } from "@/lib/api-client";
@@ -13,7 +14,12 @@ import {
   hasSlipToday,
   type AvoidStatus,
 } from "@/lib/analytics";
-import { isCompletedTodoExpired, isRecurringResetDue } from "@/lib/recurrence";
+import {
+  isCompletedTodoExpired,
+  isRecurringResetDue,
+  isScheduledOccurrenceOpen,
+  isScheduledRecurrence,
+} from "@/lib/recurrence";
 import { notifyStatsMayHaveChanged } from "@/lib/stats-events";
 import {
   cascadeCompleteChildren,
@@ -140,7 +146,7 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
         t.completed &&
         t.recurrence !== null &&
         !resettingRef.current.has(t.id) &&
-        isRecurringResetDue(t.recurrence, t.lastCompletedAt, now)
+        isRecurringResetDue(t, now)
     );
     if (due.length === 0) return;
 
@@ -458,7 +464,10 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
     let next: PinnedTo;
     if (todo.recurrence === "weekly") {
       next = todo.pinnedTo === "day" ? null : "day";
-    } else if (todo.recurrence === "daily") {
+    } else if (todo.recurrence === "daily" || isScheduledRecurrence(todo.recurrence)) {
+      // Daily and scheduled rows already self-place in Today on their
+      // active dates — pin is redundant. Only path is "clear" so a legacy
+      // pinned row can be unpinned.
       next = null;
     } else if (todo.pinnedTo === null) {
       next = "week";
@@ -489,6 +498,9 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
       title: string;
       description: string | null;
       recurrence: Recurrence;
+      recurrenceWeekday: number | null;
+      recurrenceDayOfMonth: number | null;
+      recurrenceOrdinal: RecurrenceOrdinal;
       pinnedTo: PinnedTo;
       kind: TodoKind;
       limitCount: number | null;
@@ -616,32 +628,47 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
   // animation finishes, so the user sees the confirmation where they tapped
   // before the row settles into Complete.
   const isActiveSlot = (t: Todo) => !t.completed || justCompletedIds.has(t.id);
+  // Scheduled recurrences (every Wednesday / monthly on the 15th / last
+  // Friday of the month) only surface on their occurrence date — hidden the
+  // rest of the time, and hidden again once completed until the next
+  // occurrence rolls around. Apply this filter at the top-level slice so
+  // every section (Today / This Week / General / Complete) sees the same
+  // pruned list.
+  const topLevelVisible = topLevel.filter((t) => {
+    if (!isScheduledRecurrence(t.recurrence)) return true;
+    if (justCompletedIds.has(t.id)) return true;
+    if (t.completed) return false;
+    return isScheduledOccurrenceOpen(t, nowMs);
+  });
   // Avoid todos live in their own section and never appear in This Week /
   // Daily / General — the slip button is conceptually different from a
   // checkbox, and mixing them muddies the visual language.
   const isDoTodo = (t: Todo) => t.kind === "do";
-  const avoidTodos = topLevel.filter((t) => t.kind === "avoid");
+  const avoidTodos = topLevelVisible.filter((t) => t.kind === "avoid");
   // "Today" gathers daily-recurring rows plus anything pinned to the day,
   // including weekly-recurring rows pinned to Today (the only legal way to
-  // surface a once-a-week task in the daily view). Pinned-to-week takes
-  // precedence over a daily recurrence on legacy rows so the pin can still
-  // be cleared from This Week. Weekly+day rows are excluded from This Week
-  // so they don't appear in both sections at once.
-  const thisWeekTodos = topLevel.filter(
+  // surface a once-a-week task in the daily view) and scheduled rows whose
+  // current occurrence is open. Pinned-to-week takes precedence over a daily
+  // recurrence on legacy rows so the pin can still be cleared from This Week.
+  // Weekly+day rows are excluded from This Week so they don't appear in both
+  // sections at once.
+  const thisWeekTodos = topLevelVisible.filter(
     (t) =>
       isDoTodo(t) &&
       isActiveSlot(t) &&
       t.pinnedTo !== "day" &&
       (t.recurrence === "weekly" || t.pinnedTo === "week")
   );
-  const todayTodos = topLevel.filter(
+  const todayTodos = topLevelVisible.filter(
     (t) =>
       isDoTodo(t) &&
       isActiveSlot(t) &&
       t.pinnedTo !== "week" &&
-      (t.recurrence === "daily" || t.pinnedTo === "day")
+      (t.recurrence === "daily" ||
+        t.pinnedTo === "day" ||
+        isScheduledRecurrence(t.recurrence))
   );
-  const regularActive = topLevel.filter(
+  const regularActive = topLevelVisible.filter(
     (t) =>
       isDoTodo(t) &&
       isActiveSlot(t) &&
@@ -653,8 +680,9 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
   // from the list at the next local midnight — same visibility window as
   // non-recurring cleanup. The row stays completed in storage so the streak
   // event isn't lost; we just hide it from the UI until the weekly reset
-  // surfaces it again in "This Week" as open.
-  const completedTodos = topLevel.filter(
+  // surfaces it again in "This Week" as open. Scheduled rows are already
+  // hidden once completed by the topLevelVisible filter above.
+  const completedTodos = topLevelVisible.filter(
     (t) =>
       isDoTodo(t) &&
       t.completed &&
@@ -733,11 +761,14 @@ export default function TodoListView({ scope }: { scope: TodoScope }) {
           subtaskDone={subtaskDone}
           onToggle={() => handleToggle(todo)}
           onTogglePin={
-            // Hide the pin control on daily-recurring todos when there's
-            // nothing to clear — recurrence already places them in Today, so
-            // a pin would be redundant. Weekly-recurring rows always show
-            // the control so the user can pin them to Today.
-            todo.recurrence === "daily" && todo.pinnedTo === null
+            // Hide the pin control on daily-recurring and scheduled todos
+            // when there's nothing to clear — recurrence already places them
+            // in Today on their active dates, so a pin would be redundant.
+            // Weekly-recurring rows always show the control so the user can
+            // pin them to Today.
+            (todo.recurrence === "daily" ||
+              isScheduledRecurrence(todo.recurrence)) &&
+            todo.pinnedTo === null
               ? undefined
               : () => handleTogglePin(todo)
           }
@@ -1385,9 +1416,9 @@ function pinAriaLabel(pinnedTo: PinnedTo, recurrence: Recurrence): string {
       ? "Pinned to Today — tap to unpin"
       : "Pin to Today";
   }
-  if (recurrence === "daily") {
-    // Daily recurrence already lives in Today; the only inline action is to
-    // clear a legacy pin.
+  if (recurrence === "daily" || isScheduledRecurrence(recurrence)) {
+    // Daily and scheduled recurrences already place the row in Today on
+    // their active dates; the only inline action is to clear a legacy pin.
     return pinnedTo === null
       ? "Pin to This Week"
       : "Pinned — tap to unpin";
@@ -1916,6 +1947,24 @@ function AddSubtaskForm({ onAdd }: { onAdd: (title: string) => void | Promise<vo
   );
 }
 
+const WEEKDAY_LABELS: ReadonlyArray<{ value: number; label: string }> = [
+  { value: 1, label: "Monday" },
+  { value: 2, label: "Tuesday" },
+  { value: 3, label: "Wednesday" },
+  { value: 4, label: "Thursday" },
+  { value: 5, label: "Friday" },
+  { value: 6, label: "Saturday" },
+  { value: 0, label: "Sunday" },
+];
+
+const ORDINAL_LABELS: ReadonlyArray<{ value: Exclude<RecurrenceOrdinal, null>; label: string }> = [
+  { value: "first", label: "First" },
+  { value: "second", label: "Second" },
+  { value: "third", label: "Third" },
+  { value: "fourth", label: "Fourth" },
+  { value: "last", label: "Last" },
+];
+
 function EditTodoModal({
   todo,
   onCancel,
@@ -1928,6 +1977,9 @@ function EditTodoModal({
     title: string;
     description: string | null;
     recurrence: Recurrence;
+    recurrenceWeekday: number | null;
+    recurrenceDayOfMonth: number | null;
+    recurrenceOrdinal: RecurrenceOrdinal;
     pinnedTo: PinnedTo;
     kind: TodoKind;
     limitCount: number | null;
@@ -1939,6 +1991,19 @@ function EditTodoModal({
   const [title, setTitle] = useState(todo.title);
   const [description, setDescription] = useState(todo.description ?? "");
   const [recurrence, setRecurrence] = useState<Recurrence>(todo.recurrence);
+  // Anchor inputs default to sensible values when the user picks a scheduled
+  // recurrence on a row that doesn't have anchors yet (creation-style flow).
+  // Today's weekday/date give a "today is the day" default the user can adjust.
+  const todayDate = new Date();
+  const [weekdayInput, setWeekdayInput] = useState<number>(
+    todo.recurrenceWeekday ?? todayDate.getDay()
+  );
+  const [dayOfMonthInput, setDayOfMonthInput] = useState<number>(
+    todo.recurrenceDayOfMonth ?? todayDate.getDate()
+  );
+  const [ordinalInput, setOrdinalInput] = useState<Exclude<RecurrenceOrdinal, null>>(
+    todo.recurrenceOrdinal ?? "first"
+  );
   const [pinnedTo, setPinnedTo] = useState<PinnedTo>(todo.pinnedTo);
   const [kind, setKind] = useState<TodoKind>(todo.kind);
   const [limitCountInput, setLimitCountInput] = useState<string>(
@@ -1951,14 +2016,19 @@ function EditTodoModal({
   const [saving, setSaving] = useState(false);
 
   const isAvoid = kind === "avoid";
+  const isScheduled =
+    recurrence === "weekday" ||
+    recurrence === "monthly_day" ||
+    recurrence === "monthly_weekday";
   // Pinning rules:
   // - Avoid todos: never pinnable.
   // - Daily recurring: pin is redundant (already in Today).
   // - Weekly recurring: only pin to Today is meaningful (surfaces it in
   //   the daily section). Pin to This Week would be redundant.
+  // - Scheduled recurring: pin is redundant (auto-place on the scheduled day).
   // - Non-recurring "do": both pin options allowed.
-  const pinDisabled = recurrence === "daily" || isAvoid;
-  const allowPinDay = !isAvoid && recurrence !== "daily";
+  const pinDisabled = recurrence === "daily" || isScheduled || isAvoid;
+  const allowPinDay = !isAvoid && recurrence !== "daily" && !isScheduled;
   const allowPinWeek = !isAvoid && recurrence === null;
   const recurrenceDisabled = isAvoid;
   // For pinDisabled rows we still surface the persisted pin value so a legacy
@@ -1984,10 +2054,21 @@ function EditTodoModal({
       return;
     }
     setSaving(true);
+    // Only emit the anchor field that matches the chosen recurrence; the
+    // others go null so the server doesn't keep stale anchors after a type
+    // switch (e.g., monthly_day → daily). Mirrors the server PATCH handler's
+    // anchor-clearing logic.
+    const isWeekday = effectiveRecurrence === "weekday";
+    const isMonthlyDay = effectiveRecurrence === "monthly_day";
+    const isMonthlyWeekday = effectiveRecurrence === "monthly_weekday";
     await onSave({
       title: title.trim(),
       description: description.trim() ? description.trim() : null,
       recurrence: effectiveRecurrence,
+      recurrenceWeekday:
+        isWeekday || isMonthlyWeekday ? weekdayInput : null,
+      recurrenceDayOfMonth: isMonthlyDay ? dayOfMonthInput : null,
+      recurrenceOrdinal: isMonthlyWeekday ? ordinalInput : null,
       pinnedTo: effectivePinned,
       kind,
       limitCount: isAvoid ? parsedLimit : null,
@@ -2108,6 +2189,15 @@ function EditTodoModal({
                 <option value="">No repeat</option>
                 <option value="daily">Daily — resets at local midnight</option>
                 <option value="weekly">Weekly — tracked weekly, resets at local midnight</option>
+                <option value="weekday">
+                  Weekly on a specific day — only appears that day
+                </option>
+                <option value="monthly_day">
+                  Monthly on a specific date — only appears that date
+                </option>
+                <option value="monthly_weekday">
+                  Monthly on a specific weekday — e.g. last Friday
+                </option>
               </select>
               {recurrenceDisabled && (
                 <span className="mt-1 block text-xs text-text-muted">
@@ -2115,7 +2205,104 @@ function EditTodoModal({
                   so you can log slips.
                 </span>
               )}
+              {effectiveRecurrence === "weekday" && (
+                <span className="mt-1 block text-xs text-text-muted">
+                  Hidden until that weekday rolls around. Persists from then on
+                  until you complete it.
+                </span>
+              )}
+              {(effectiveRecurrence === "monthly_day" ||
+                effectiveRecurrence === "monthly_weekday") && (
+                <span className="mt-1 block text-xs text-text-muted">
+                  Hidden until that date arrives. Persists from then on until
+                  you complete it.
+                </span>
+              )}
             </label>
+
+            {effectiveRecurrence === "weekday" && (
+              <label className="mb-4 block">
+                <span className="mb-1 block text-sm text-text-muted">
+                  Day of the week
+                </span>
+                <select
+                  value={String(weekdayInput)}
+                  onChange={(e) => setWeekdayInput(Number(e.target.value))}
+                  className="w-full rounded-lg border border-border bg-input px-3 py-2 text-input-text focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+                >
+                  {WEEKDAY_LABELS.map((d) => (
+                    <option key={d.value} value={d.value}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            {effectiveRecurrence === "monthly_day" && (
+              <label className="mb-4 block">
+                <span className="mb-1 block text-sm text-text-muted">
+                  Day of the month
+                </span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={31}
+                  value={String(dayOfMonthInput)}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (Number.isInteger(n) && n >= 1 && n <= 31) {
+                      setDayOfMonthInput(n);
+                    } else if (e.target.value === "") {
+                      setDayOfMonthInput(1);
+                    }
+                  }}
+                  className="w-24 rounded-lg border border-border bg-input px-3 py-2 text-input-text focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+                />
+                <span className="mt-1 block text-xs text-text-muted">
+                  In months with fewer days (e.g. February for the 30th), the
+                  occurrence falls on the last day of that month instead.
+                </span>
+              </label>
+            )}
+
+            {effectiveRecurrence === "monthly_weekday" && (
+              <div className="mb-4 grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="mb-1 block text-sm text-text-muted">Which</span>
+                  <select
+                    value={ordinalInput}
+                    onChange={(e) =>
+                      setOrdinalInput(
+                        e.target.value as Exclude<RecurrenceOrdinal, null>
+                      )
+                    }
+                    className="w-full rounded-lg border border-border bg-input px-3 py-2 text-input-text focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+                  >
+                    {ORDINAL_LABELS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-sm text-text-muted">Weekday</span>
+                  <select
+                    value={String(weekdayInput)}
+                    onChange={(e) => setWeekdayInput(Number(e.target.value))}
+                    className="w-full rounded-lg border border-border bg-input px-3 py-2 text-input-text focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+                  >
+                    {WEEKDAY_LABELS.map((d) => (
+                      <option key={d.value} value={d.value}>
+                        {d.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
 
             {isAvoid && (
               <fieldset className="mb-4">
