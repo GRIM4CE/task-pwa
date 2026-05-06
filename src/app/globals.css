@@ -9,19 +9,23 @@
  *
  *   Pale Slate        #B8B8D1  → text-muted
  *   Dusty Grape       #5B5F97  → select; basis for page-bg / input shades
- *   Sunflower Gold    #FFC145  → focus + tag-personal (Personal-visibility
- *                                badge — focus is a 2px ring, the badge is
- *                                a filled pill, so the contexts don't clash)
+ *                     +70%     → tag-personal (Personal-visibility badge)
+ *   Sunflower Gold    #FFC145  → focus
  *   Porcelain         #FFFFFB  → on-surface, input-text, text
- *   Grapefruit Pink   #FF6B6C  → tag-joined (Joined-visibility badge)
+ *   Grapefruit Pink   #FF6B6C  → unused (reserved)
  *   Flag Red          #C1292E  → danger
  *   Black             #020100  → unused (reserved)
  *   Midnight Violet   #32161F  → surface (and hover-shade basis)
  *   Magenta Bloom     #E83F6F  → primary
  *   Sea Green         #32936F  → success
+ *                     +70%     → tag-joined (Joined-visibility badge)
  *   Amber             #E89C2A  → warning (intentionally distinct from
  *                                Sunflower Gold so warning vs focus stay
  *                                separable side-by-side)
+ *
+ * The warm brand colors (Magenta Bloom, Flag Red, Sunflower Gold, Amber)
+ * are reserved for actions, focus, and status. Visibility tags pull from
+ * the cool side of the palette so they never read as an action.
  */
 :root {
   color-scheme: dark;
@@ -32,6 +36,7 @@
   --c-grape-700: #5b5f97;     /* Dusty Grape */
   --c-grape-400: #6e6f9a;     /* Muted slate — input borders */
   --c-grape-200: #b8b8d1;     /* Pale Slate */
+  --c-grape-100: #cccee1;     /* Dusty Grape +70% — tag tint */
   --c-porcelain: #fffffb;     /* Porcelain */
   --c-magenta-700: #e83f6f;   /* Magenta Bloom */
   --c-magenta-800: #d4194e;   /* Magenta Bloom -20% */
@@ -39,6 +44,7 @@
   --c-flag-red: #c1292e;      /* Flag Red */
   --c-black: #020100;         /* Black — reserved */
   --c-sea-green: #32936f;     /* Sea Green */
+  --c-sea-green-100: #b9e7d6; /* Sea Green +70% — tag tint */
   --c-sunflower: #ffc145;     /* Sunflower Gold */
   --c-amber: #e89c2a;          /* Warning — distinct from focus's brighter sunflower */
 }
@@ -69,13 +75,13 @@
   --color-select: var(--c-grape-700);
   /*
    * Visibility-tag tones. Reserved exclusively for the Personal/Joined
-   * badges so a tag never visually echoes another control. Personal reuses
-   * Sunflower Gold (the focus ring) intentionally — focus appears as a
-   * thin outline on interaction, while the badge is a filled pill, so the
-   * two contexts read as distinct.
+   * badges so a tag never visually echoes another control. Both are cool
+   * +70% tints (Dusty Grape and Sea Green) — the warm brand colors are
+   * already in use for actions (primary/danger/warning/focus), so the
+   * tags pull from the cool side of the palette to stay distinct.
    */
-  --color-tag-personal: var(--c-sunflower);
-  --color-tag-joined: var(--c-grapefruit-pink);
+  --color-tag-personal: var(--c-grape-100);
+  --color-tag-joined: var(--c-sea-green-100);
   --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
