@@ -957,7 +957,7 @@ export default function TodoListView() {
 
       {/* Visibility filter */}
       <div
-        role="tablist"
+        role="radiogroup"
         aria-label="Visibility filter"
         className="mb-4 flex gap-1 rounded-lg border border-border-on-surface bg-surface p-1"
       >
@@ -969,8 +969,8 @@ export default function TodoListView() {
             <button
               key={value}
               type="button"
-              role="tab"
-              aria-selected={isActive}
+              role="radio"
+              aria-checked={isActive}
               onClick={() => setVisibilityFilter(value)}
               className={`flex-1 rounded-md px-3 py-1.5 text-center text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-surface ${
                 isActive
