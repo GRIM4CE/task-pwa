@@ -1,4 +1,4 @@
-import { mkdirSync } from "fs";
+import { mkdirSync, readFileSync } from "fs";
 import { dirname } from "path";
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
@@ -84,6 +84,20 @@ async function assertAllMigrationsApplied() {
   const missing = expected.filter((m) => !appliedHashes.has(m.hash));
   if (missing.length === 0) return;
 
+  // The MigrationMeta returned by readMigrationFiles doesn't include the tag
+  // (e.g. `0011_glamorous_terrax`). Read the journal directly so the error
+  // points at the file the user has to edit, not just an opaque hash.
+  let tagByWhen = new Map<number, string>();
+  try {
+    const journal = JSON.parse(
+      readFileSync("./drizzle/meta/_journal.json", "utf8")
+    ) as { entries: Array<{ when: number; tag: string }> };
+    tagByWhen = new Map(journal.entries.map((e) => [e.when, e.tag]));
+  } catch {
+    // Best-effort: if the journal can't be read for some reason, fall back to
+    // hash-only output below.
+  }
+
   console.error(
     "Some folder migrations are NOT recorded in __drizzle_migrations on " +
       "the target DB. drizzle-orm's libsql migrator silently skips a " +
@@ -93,42 +107,54 @@ async function assertAllMigrationsApplied() {
       "the max already-applied 'created_at', then redeploy."
   );
   for (const m of missing) {
+    const tag = tagByWhen.get(m.folderMillis) ?? "(unknown tag)";
     console.error(
-      `  - hash=${m.hash} (when=${m.folderMillis} / ` +
-        `${new Date(m.folderMillis).toISOString()})`
+      `  - ${tag} (when=${m.folderMillis} / ` +
+        `${new Date(m.folderMillis).toISOString()}, hash=${m.hash})`
     );
   }
-  process.exit(1);
+  // Throw rather than process.exit(1) so the existing main().catch handler
+  // runs after the await chain settles and the libsql client is closed in
+  // the finally block — process.exit can truncate stderr buffering and
+  // skip cleanup.
+  throw new Error(
+    `${missing.length} folder migration(s) not recorded on the target DB`
+  );
 }
 
 async function main() {
-  // Tag the log with the target DB so a silent fall-back to
-  // file:./data/local.db (i.e. TURSO_DATABASE_URL not exposed to this
-  // subprocess) is obvious in the build output instead of looking like a
-  // successful Turso migration.
-  const target = url.startsWith("file:") ? `local file (${url})` : "Turso";
-  console.log(`Running migrations against ${target}...`);
-  await migrate(db, { migrationsFolder: "./drizzle" });
-  console.log("Migrations complete.");
-  // Sanity check: print the final applied-migration tag from
-  // __drizzle_migrations so we can verify which migration the target DB is
-  // actually on, independent of the migrations folder.
   try {
-    const last = await db.all<{ hash: string; created_at: number }>(
-      sql`SELECT hash, created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 1`
-    );
-    if (last[0]) {
-      console.log(
-        `Latest applied migration hash on target: ${last[0].hash} ` +
-        `(at ${new Date(Number(last[0].created_at)).toISOString()})`
+    // Tag the log with the target DB so a silent fall-back to
+    // file:./data/local.db (i.e. TURSO_DATABASE_URL not exposed to this
+    // subprocess) is obvious in the build output instead of looking like a
+    // successful Turso migration.
+    const target = url.startsWith("file:") ? `local file (${url})` : "Turso";
+    console.log(`Running migrations against ${target}...`);
+    await migrate(db, { migrationsFolder: "./drizzle" });
+    console.log("Migrations complete.");
+    // Sanity check: print the final applied-migration tag from
+    // __drizzle_migrations so we can verify which migration the target DB is
+    // actually on, independent of the migrations folder.
+    try {
+      const last = await db.all<{ hash: string; created_at: number }>(
+        sql`SELECT hash, created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 1`
       );
+      if (last[0]) {
+        console.log(
+          `Latest applied migration hash on target: ${last[0].hash} ` +
+          `(at ${new Date(Number(last[0].created_at)).toISOString()})`
+        );
+      }
+    } catch (err) {
+      console.warn("Could not read __drizzle_migrations:", err);
     }
-  } catch (err) {
-    console.warn("Could not read __drizzle_migrations:", err);
+    await assertAllMigrationsApplied();
+    await backfillRecoveryCodes();
+  } finally {
+    // Close the client even if the assertion above threw, so the libsql
+    // socket is released before the process exits.
+    client.close();
   }
-  await assertAllMigrationsApplied();
-  await backfillRecoveryCodes();
-  client.close();
 }
 
 main().catch((err) => {
