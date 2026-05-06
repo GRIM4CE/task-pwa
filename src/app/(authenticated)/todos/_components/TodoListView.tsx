@@ -1654,7 +1654,7 @@ function TodoRow({
       </button>
 
       <div className="flex-1 min-w-0">
-        <span className={`block break-words leading-snug ${done ? "text-on-surface/50 line-through" : "text-on-surface"}`}>
+        <span className={`block break-words leading-tight ${done ? "text-on-surface/50 line-through" : "text-on-surface"}`}>
           {todo.title}
           {showBadge && (
             <span
