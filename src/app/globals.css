@@ -111,6 +111,14 @@
   --color-warning: #c98a2b;
   --color-focus: #8e7dbe;
   --color-select: #e0b0d5;
+  /*
+   * Tag tints in juliette: the dark theme uses +70% pale tints which
+   * would wash out against the light surface. Drop down to the original
+   * brand hexes (Dusty Grape and Sea Green) for enough contrast — these
+   * aren't used by other juliette tokens so the tags stay distinct.
+   */
+  --color-tag-personal: #5b5f97;
+  --color-tag-joined: #32936f;
 }
 
 /* PWA standalone mode - safe area insets for notch devices */
