@@ -1,9 +1,25 @@
 @import "tailwindcss";
 
 /*
- * Base palette — raw colors. Edit a value here and it propagates everywhere
- * via the semantic tokens below. Do NOT use --c-* directly in components;
- * always reach through a semantic token.
+ * Brand palette — the named colors of the design system. These are the only
+ * source colors components should ever reach for, and even then never
+ * directly: edit a value here and it propagates everywhere via the
+ * semantic tokens in the @theme block below. Do NOT use --c-* directly in
+ * components; always pick (or add) a semantic token.
+ *
+ *   Pale Slate        #B8B8D1  → text-muted
+ *   Dusty Grape       #5B5F97  → select; basis for page-bg / input shades
+ *   Sunflower Gold    #FFC145  → focus
+ *   Porcelain         #FFFFFB  → on-surface, input-text, text
+ *   Grapefruit Pink   #FF6B6C  → unused (reserved)
+ *   Flag Red          #C1292E  → danger
+ *   Black             #020100  → unused (reserved)
+ *   Midnight Violet   #32161F  → surface (and hover-shade basis)
+ *   Magenta Bloom     #E83F6F  → primary (Personal-visibility badge)
+ *   Sea Green         #32936F  → success (Joined-visibility badge)
+ *   Amber             #E89C2A  → warning (intentionally distinct from
+ *                                Sunflower Gold so warning vs focus stay
+ *                                separable side-by-side)
  */
 :root {
   color-scheme: dark;
@@ -14,12 +30,14 @@
   --c-grape-700: #5b5f97;     /* Dusty Grape */
   --c-grape-400: #6e6f9a;     /* Muted slate — input borders */
   --c-grape-200: #b8b8d1;     /* Pale Slate */
-  --c-porcelain: #fffffb;
+  --c-porcelain: #fffffb;     /* Porcelain */
   --c-magenta-700: #e83f6f;   /* Magenta Bloom */
   --c-magenta-800: #d4194e;   /* Magenta Bloom -20% */
-  --c-flag-red: #c1292e;
-  --c-sea-green: #32936f;
-  --c-sunflower: #ffc145;
+  --c-grapefruit-pink: #ff6b6c; /* Grapefruit Pink — reserved */
+  --c-flag-red: #c1292e;      /* Flag Red */
+  --c-black: #020100;         /* Black — reserved */
+  --c-sea-green: #32936f;     /* Sea Green */
+  --c-sunflower: #ffc145;     /* Sunflower Gold */
   --c-amber: #e89c2a;          /* Warning — distinct from focus's brighter sunflower */
 }
 
