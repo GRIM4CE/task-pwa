@@ -431,11 +431,13 @@ export async function PATCH(
 
     // isPersonal cascades to subtasks: every child inherits the parent's
     // visibility so the "subtask.isPersonal === parent.isPersonal" invariant
-    // (used by the reparent guard and access checks) still holds.
-    if (
-      body.isPersonal !== undefined &&
-      body.isPersonal !== existing[0].isPersonal
-    ) {
+    // (used by the reparent guard and access checks) still holds. Cascade
+    // whenever the patch carries the field rather than diffing against the
+    // pre-transaction read — under concurrent writes, the diff against
+    // `existing` can be stale and skip a cascade that is actually needed.
+    // Cascading unconditionally makes the children match the parent's
+    // post-write value, which is the invariant we care about.
+    if (body.isPersonal !== undefined) {
       await tx
         .update(schema.todos)
         .set({ isPersonal: body.isPersonal, updatedAt: now })

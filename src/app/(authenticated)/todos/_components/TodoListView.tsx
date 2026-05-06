@@ -28,6 +28,8 @@ import {
   sortTodos,
 } from "@/lib/todos/domain";
 import { useTodoRepository } from "@/lib/todos/use-todo-repository";
+import { GUEST_USERNAME } from "@/lib/todos/local-repository";
+import { isGuestMode } from "@/lib/guest-mode";
 
 type Todo = TodoDTO;
 
@@ -62,13 +64,44 @@ function formatRelativeDate(timestamp: number): string {
   return `${dd}/${mm}/${yy}`;
 }
 
+// Drafts share the Todo shape so the edit modal can render them without
+// branching on a separate type. The empty id is the sentinel that flips the
+// save handler into "create" mode (POST instead of PATCH); the draft is never
+// persisted to the todos list before the user saves.
+const DRAFT_ID = "";
+function makeDraftTodo(title: string): Todo {
+  const now = Date.now();
+  return {
+    id: DRAFT_ID,
+    parentId: null,
+    title,
+    description: null,
+    completed: false,
+    isPersonal: false,
+    sortOrder: 0,
+    recurrence: null,
+    recurrenceWeekday: null,
+    recurrenceDayOfMonth: null,
+    recurrenceOrdinal: null,
+    pinnedTo: null,
+    kind: "do",
+    limitCount: null,
+    limitPeriod: null,
+    oncePerDay: false,
+    recentSlips: [],
+    lastCompletedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    createdBy: "",
+  };
+}
+
 export default function TodoListView() {
   const repo = useTodoRepository();
   const [todos, setTodos] = useState<Todo[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [newTitle, setNewTitle] = useState("");
   const [loading, setLoading] = useState(true);
-  const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Todo | null>(null);
   // The visibility selector in the edit modal needs to know if the current
   // user created the todo — only the creator can flip joined ↔ personal,
@@ -206,6 +239,16 @@ export default function TodoListView() {
   useEffect(() => {
     // Fetched once at mount: username doesn't change for the lifetime of a
     // session and the auth status endpoint is already cached by the layout.
+    // Guest mode never authenticates, so short-circuit to GUEST_USERNAME so
+    // the visibility selector stays editable on locally-stored guest todos.
+    if (isGuestMode()) {
+      // Guest mode is read from localStorage so it's only known after mount;
+      // settling currentUsername here is the one and only commit, so the
+      // cascading-render concern this rule guards against doesn't apply.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCurrentUsername(GUEST_USERNAME);
+      return;
+    }
     let cancelled = false;
     api.auth.status().then(({ data }) => {
       if (cancelled) return;
@@ -237,25 +280,16 @@ export default function TodoListView() {
     return () => window.clearInterval(id);
   }, []);
 
-  async function handleAdd(e: React.FormEvent) {
+  function handleAdd(e: React.FormEvent) {
     e.preventDefault();
-    if (!newTitle.trim()) return;
-    setAdding(true);
-
-    // New tasks default to joined; the modal opens immediately so the user
-    // can flip to personal, set recurrence, etc. before the task settles
-    // into the list.
-    const { data } = await repo.create({
-      title: newTitle.trim(),
-      isPersonal: false,
-      recurrence: null,
-    });
-    if (data) {
-      setTodos((prev) => [...prev, data]);
-      setNewTitle("");
-      setEditing(data);
-    }
-    setAdding(false);
+    const trimmed = newTitle.trim();
+    if (!trimmed) return;
+    // Stash a draft and open the modal — the actual create only happens when
+    // the user picks visibility and saves. Posting first would briefly expose
+    // a fresh todo (defaulted to joined) to the other user before the user
+    // had a chance to mark it personal.
+    setNewTitle("");
+    setEditing(makeDraftTodo(trimmed));
   }
 
   // Drives the row-completion animation: keep the just-tapped row in its
@@ -530,6 +564,30 @@ export default function TodoListView() {
       oncePerDay: boolean;
     }
   ) {
+    if (id === DRAFT_ID) {
+      // First save of a draft → create. The server picks the canonical
+      // sortOrder, createdAt, createdBy, etc. so we just hand it the user's
+      // choices and append the returned row.
+      const { data } = await repo.create({
+        title: patch.title,
+        description: patch.description ?? undefined,
+        isPersonal: patch.isPersonal,
+        recurrence: patch.recurrence,
+        recurrenceWeekday: patch.recurrenceWeekday,
+        recurrenceDayOfMonth: patch.recurrenceDayOfMonth,
+        recurrenceOrdinal: patch.recurrenceOrdinal,
+        pinnedTo: patch.pinnedTo,
+        kind: patch.kind,
+        limitCount: patch.limitCount,
+        limitPeriod: patch.limitPeriod,
+        oncePerDay: patch.oncePerDay,
+      });
+      if (data) {
+        setTodos((prev) => [...prev, data]);
+        setEditing(null);
+      }
+      return;
+    }
     const { data } = await repo.update(id, patch);
     if (data) {
       setTodos((prev) =>
@@ -899,10 +957,10 @@ export default function TodoListView() {
         />
         <button
           type="submit"
-          disabled={adding || !newTitle.trim()}
+          disabled={!newTitle.trim()}
           className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {adding ? "..." : "Add"}
+          Add
         </button>
       </form>
 
@@ -1045,10 +1103,16 @@ export default function TodoListView() {
       {editing && editing.parentId === null && (
         <EditTodoModal
           todo={editing}
+          isNew={editing.id === DRAFT_ID}
           canEditVisibility={
-            currentUsername === null
-              ? false
-              : editing.createdBy === currentUsername
+            // The user is the creator of any draft they're saving for the
+            // first time, so the visibility selector stays editable in the
+            // create flow even before currentUsername resolves.
+            editing.id === DRAFT_ID
+              ? true
+              : currentUsername === null
+                ? false
+                : editing.createdBy === currentUsername
           }
           onCancel={() => setEditing(null)}
           onDelete={() => handleDelete(editing.id)}
@@ -2033,12 +2097,14 @@ const ORDINAL_LABELS: ReadonlyArray<{ value: Exclude<RecurrenceOrdinal, null>; l
 
 function EditTodoModal({
   todo,
+  isNew,
   canEditVisibility,
   onCancel,
   onSave,
   onDelete,
 }: {
   todo: Todo;
+  isNew: boolean;
   canEditVisibility: boolean;
   onCancel: () => void;
   onSave: (patch: {
@@ -2168,13 +2234,15 @@ function EditTodoModal({
           >
             Cancel
           </button>
-          <h3 className="text-base font-semibold text-text">Edit todo</h3>
+          <h3 className="text-base font-semibold text-text">
+            {isNew ? "New todo" : "Edit todo"}
+          </h3>
           <button
             type="submit"
             disabled={saving || !title.trim()}
             className="rounded px-2 py-1 text-sm font-medium text-primary hover:bg-primary/10 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary"
           >
-            {saving ? "Saving..." : "Save"}
+            {saving ? (isNew ? "Creating..." : "Saving...") : isNew ? "Create" : "Save"}
           </button>
         </div>
 
@@ -2522,17 +2590,19 @@ function EditTodoModal({
           </div>
         </div>
 
-        <div className="border-t border-border px-4 py-3">
-          <div className="mx-auto flex max-w-2xl justify-start">
-            <button
-              type="button"
-              onClick={onDelete}
-              className="rounded-lg border border-danger/40 bg-danger/10 px-4 py-2 text-sm font-medium text-danger hover:bg-danger hover:text-white focus:outline-none focus:ring-2 focus:ring-danger"
-            >
-              Delete
-            </button>
+        {!isNew && (
+          <div className="border-t border-border px-4 py-3">
+            <div className="mx-auto flex max-w-2xl justify-start">
+              <button
+                type="button"
+                onClick={onDelete}
+                className="rounded-lg border border-danger/40 bg-danger/10 px-4 py-2 text-sm font-medium text-danger hover:bg-danger hover:text-white focus:outline-none focus:ring-2 focus:ring-danger"
+              >
+                Delete
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </form>
     </div>
   );

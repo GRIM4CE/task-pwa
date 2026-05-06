@@ -442,11 +442,9 @@ export const localTodoRepository: TodoRepository = {
     }
 
     // Mirror the server-side cascade for visibility flips so subtasks keep
-    // matching their parent's isPersonal value.
-    if (
-      parsed.data.isPersonal !== undefined &&
-      parsed.data.isPersonal !== previous.isPersonal
-    ) {
+    // matching their parent's isPersonal value. Cascade whenever the patch
+    // carries the field — see the matching comment in the API PATCH route.
+    if (parsed.data.isPersonal !== undefined) {
       const flippedTo = parsed.data.isPersonal;
       next = next.map((t) =>
         t.parentId === id ? { ...t, isPersonal: flippedTo, updatedAt: Date.now() } : t
