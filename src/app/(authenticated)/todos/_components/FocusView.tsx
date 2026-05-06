@@ -119,7 +119,13 @@ export default function FocusView() {
   const pendingToggleRef = useRef<Set<string>>(new Set());
   const recentlyToggledRef = useRef(false);
   const todayKey = localDayKey(nowMs);
-  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  // Lazy-initialize from localStorage so previously-dismissed suggestions
+  // don't flash on first paint after a reload. The effect below still picks
+  // up the day rolling over (e.g. the once-a-minute nowMs tick crossing
+  // midnight) so a stale set from yesterday gets replaced.
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(() =>
+    readDismissed(localDayKey(Date.now()))
+  );
 
   useEffect(() => {
     setDismissedIds(readDismissed(todayKey));
@@ -222,13 +228,18 @@ export default function FocusView() {
   }, []);
 
   async function handlePinSuggestion(todo: Todo) {
-    const previous = todos;
+    const originalPin = todo.pinnedTo;
     setTodos((prev) =>
       prev.map((t) => (t.id === todo.id ? { ...t, pinnedTo: "day" } : t))
     );
     const { data, error } = await repo.update(todo.id, { pinnedTo: "day" });
     if (error) {
-      setTodos(previous);
+      // Roll back only this row's pin — a snapshot of the full list would
+      // clobber any unrelated state changes (toggle, refetch, another pin)
+      // that landed while this request was in flight.
+      setTodos((prev) =>
+        prev.map((t) => (t.id === todo.id ? { ...t, pinnedTo: originalPin } : t))
+      );
       return;
     }
     if (data) {
@@ -329,8 +340,15 @@ export default function FocusView() {
   // be expressed as done / eligible. lastCompletedAt is the source of truth
   // for "completed today" — guards against a row whose midnight reset hasn't
   // run yet on first load.
+  // Mirrors the Focus visible filter's `pinnedTo !== "week"` exclusion so the
+  // tier doesn't claim routine work remaining for a legacy daily-pinned-to-
+  // week row that Focus itself isn't surfacing.
   const dailyEligible = todos.filter(
-    (t) => t.parentId === null && t.kind === "do" && isOnTodaysRoutine(t, nowMs)
+    (t) =>
+      t.parentId === null &&
+      t.kind === "do" &&
+      t.pinnedTo !== "week" &&
+      isOnTodaysRoutine(t, nowMs)
   );
   const dailyDone = dailyEligible.filter((t) => isCompletedToday(t, nowMs))
     .length;
