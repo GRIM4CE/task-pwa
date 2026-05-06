@@ -1701,7 +1701,7 @@ function TodoRow({
             {todo.description}
           </span>
         )}
-        <span className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs ${done ? "text-on-surface/40" : "text-on-surface/60"}`}>
+        <span className={`mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs ${done ? "text-on-surface/40" : "text-on-surface/60"}`}>
           <VisibilityBadge isPersonal={todo.isPersonal} dim={done} />
           <span>
             {todo.createdBy} &middot; {formatRelativeDate(todo.createdAt)}
