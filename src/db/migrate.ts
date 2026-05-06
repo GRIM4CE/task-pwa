@@ -3,6 +3,7 @@ import { dirname } from "path";
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 import { sql } from "drizzle-orm";
 import { assertTursoConfiguredInHostedBuild } from "./build-env";
 
@@ -63,6 +64,43 @@ async function backfillRecoveryCodes() {
   }
 }
 
+// Belt-and-suspenders for drizzle-orm's libsql migrator: it decides what's
+// pending by comparing each folder migration's `when` against the latest
+// `created_at` row in `__drizzle_migrations`, which means a migration whose
+// `when` happens to be ≤ the latest applied row (e.g., because an earlier
+// migration was committed with a future-dated `when`) is silently skipped
+// — no error, no warning, and prod stays on the prior schema. This is
+// exactly how migration 0011 hid from Turso for a release cycle.
+//
+// After migrate() returns, walk every migration in the folder and confirm
+// its hash is in `__drizzle_migrations`. Any miss is a silent skip; abort
+// the build with the offending tags so the issue can't reach prod.
+async function assertAllMigrationsApplied() {
+  const expected = readMigrationFiles({ migrationsFolder: "./drizzle" });
+  const applied = await db.all<{ hash: string }>(
+    sql`SELECT hash FROM __drizzle_migrations`
+  );
+  const appliedHashes = new Set(applied.map((r) => r.hash));
+  const missing = expected.filter((m) => !appliedHashes.has(m.hash));
+  if (missing.length === 0) return;
+
+  console.error(
+    "Some folder migrations are NOT recorded in __drizzle_migrations on " +
+      "the target DB. drizzle-orm's libsql migrator silently skips a " +
+      "migration whose 'when' is ≤ the latest applied 'created_at', so " +
+      "this usually means a journal timestamp is out of order. Bump the " +
+      "offending migration's 'when' in drizzle/meta/_journal.json above " +
+      "the max already-applied 'created_at', then redeploy."
+  );
+  for (const m of missing) {
+    console.error(
+      `  - hash=${m.hash} (when=${m.folderMillis} / ` +
+        `${new Date(m.folderMillis).toISOString()})`
+    );
+  }
+  process.exit(1);
+}
+
 async function main() {
   // Tag the log with the target DB so a silent fall-back to
   // file:./data/local.db (i.e. TURSO_DATABASE_URL not exposed to this
@@ -88,6 +126,7 @@ async function main() {
   } catch (err) {
     console.warn("Could not read __drizzle_migrations:", err);
   }
+  await assertAllMigrationsApplied();
   await backfillRecoveryCodes();
   client.close();
 }
