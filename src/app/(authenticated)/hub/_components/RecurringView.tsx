@@ -6,7 +6,7 @@ import {
   type RecurrenceOrdinal,
   type TodoDTO,
 } from "@/lib/api-client";
-import { mostRecentScheduledDate } from "@/lib/recurrence";
+import { nextScheduledDate } from "@/lib/recurrence";
 import { useTodoRepository } from "@/lib/todos/use-todo-repository";
 
 type EditableRecurrence = Exclude<Recurrence, null>;
@@ -93,26 +93,8 @@ function formatDate(d: Date): string {
 }
 
 function nextOccurrenceLabel(todo: TodoDTO): string | null {
-  const mostRecent = mostRecentScheduledDate(todo);
-  if (!mostRecent) return null;
-  // Project the next occurrence one step into the future from the most recent
-  // one. Cheap because the cadence repeats deterministically.
-  const next = new Date(mostRecent);
-  if (todo.recurrence === "weekday") {
-    next.setDate(next.getDate() + 7);
-  } else if (
-    todo.recurrence === "monthly_day" ||
-    todo.recurrence === "monthly_weekday"
-  ) {
-    next.setMonth(next.getMonth() + 1);
-    // For monthly_weekday we re-derive the actual day in the new month, since
-    // the weekday/ordinal anchor doesn't translate by adding 28-31 days.
-    if (todo.recurrence === "monthly_weekday") {
-      const projected = mostRecentScheduledDate(todo, next.getTime() + 24 * 60 * 60 * 1000);
-      if (projected) return formatDate(projected);
-    }
-  }
-  return formatDate(next);
+  const next = nextScheduledDate(todo);
+  return next ? formatDate(next) : null;
 }
 
 export default function RecurringView() {
@@ -202,42 +184,45 @@ export default function RecurringView() {
                 </h3>
                 <p className="mb-2 text-xs text-text-muted">{group.hint}</p>
                 <ul className="space-y-2">
-                  {group.items.map((todo) => (
-                    <li key={todo.id}>
-                      {editingId === todo.id ? (
-                        <RecurringEditor
-                          todo={todo}
-                          onCancel={() => setEditingId(null)}
-                          onSaved={handleSaved}
-                          onDeleted={handleDeleted}
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setEditingId(todo.id)}
-                          className="flex w-full items-start justify-between gap-3 rounded-lg border border-border-on-surface bg-surface px-4 py-3 text-left hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-primary"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-on-surface">
-                              {todo.title}
-                            </p>
-                            <p className="mt-0.5 text-xs text-on-surface/60">
-                              {cadenceSummary(todo)}
-                              {todo.isPersonal ? " · Personal" : " · Joined"}
-                            </p>
-                            {nextOccurrenceLabel(todo) && (
-                              <p className="mt-0.5 text-xs text-on-surface/50">
-                                Next: {nextOccurrenceLabel(todo)}
+                  {group.items.map((todo) => {
+                    const next = nextOccurrenceLabel(todo);
+                    return (
+                      <li key={todo.id}>
+                        {editingId === todo.id ? (
+                          <RecurringEditor
+                            todo={todo}
+                            onCancel={() => setEditingId(null)}
+                            onSaved={handleSaved}
+                            onDeleted={handleDeleted}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setEditingId(todo.id)}
+                            className="flex w-full items-start justify-between gap-3 rounded-lg border border-border-on-surface bg-surface px-4 py-3 text-left hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-primary"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-on-surface">
+                                {todo.title}
                               </p>
-                            )}
-                          </div>
-                          <span className="shrink-0 text-xs text-on-surface/40">
-                            Edit
-                          </span>
-                        </button>
-                      )}
-                    </li>
-                  ))}
+                              <p className="mt-0.5 text-xs text-on-surface/60">
+                                {cadenceSummary(todo)}
+                                {todo.isPersonal ? " · Personal" : " · Joined"}
+                              </p>
+                              {next && (
+                                <p className="mt-0.5 text-xs text-on-surface/50">
+                                  Next: {next}
+                                </p>
+                              )}
+                            </div>
+                            <span className="shrink-0 text-xs text-on-surface/40">
+                              Edit
+                            </span>
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </section>
             )
