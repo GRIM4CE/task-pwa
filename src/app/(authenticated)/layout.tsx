@@ -54,10 +54,7 @@ export default function AuthenticatedLayout({
   }
 
   const focusActive = pathname?.startsWith("/todos/focus");
-  const joinedActive =
-    !focusActive &&
-    (pathname === "/todos" || pathname?.startsWith("/todos/joined"));
-  const personalActive = pathname?.startsWith("/todos/personal");
+  const todosActive = !focusActive && pathname?.startsWith("/todos");
   const hubActive = pathname?.startsWith("/hub");
 
   return (
@@ -71,7 +68,7 @@ export default function AuthenticatedLayout({
       >
         <div className="mx-auto flex max-w-2xl items-center gap-3 px-4 pb-3">
           <Link
-            href="/todos/joined"
+            href="/todos"
             className="shrink-0 text-lg font-semibold text-on-surface hover:text-primary"
           >
             Todo
@@ -89,26 +86,15 @@ export default function AuthenticatedLayout({
               Focus
             </Link>
             <Link
-              href="/todos/joined"
-              aria-current={joinedActive ? "page" : undefined}
+              href="/todos"
+              aria-current={todosActive ? "page" : undefined}
               className={`px-2 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
-                joinedActive
+                todosActive
                   ? "font-medium text-on-surface underline decoration-primary decoration-2 underline-offset-4"
                   : "text-on-surface/60 hover:text-on-surface hover:underline hover:underline-offset-4"
               }`}
             >
-              Joined
-            </Link>
-            <Link
-              href="/todos/personal"
-              aria-current={personalActive ? "page" : undefined}
-              className={`px-2 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
-                personalActive
-                  ? "font-medium text-on-surface underline decoration-primary decoration-2 underline-offset-4"
-                  : "text-on-surface/60 hover:text-on-surface hover:underline hover:underline-offset-4"
-              }`}
-            >
-              Personal
+              Todos
             </Link>
             <ThemeSwitcher />
             <Link

@@ -19,6 +19,7 @@ export async function PATCH(
     title?: string;
     description?: string | null;
     completed?: boolean;
+    isPersonal?: boolean;
     sortOrder?: number;
     recurrence?:
       | "daily"
@@ -61,6 +62,27 @@ export async function PATCH(
   // non-owners, so surface a 404 rather than a 403 to avoid leaking existence.
   if (existing[0].isPersonal && existing[0].userId !== session.user.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // Only the creator can flip a row between personal and joined. Joined rows
+  // are editable by both users for normal fields, but visibility is the
+  // creator's call — a non-creator switching it would either lock the creator
+  // out (joined → personal, owner becomes the actor not the original creator)
+  // or expose a personal row they were never meant to see.
+  if (
+    body.isPersonal !== undefined &&
+    body.isPersonal !== existing[0].isPersonal &&
+    existing[0].userId !== session.user.id
+  ) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  // Subtasks inherit isPersonal from their parent — change it on the parent
+  // and the cascade below moves the children too.
+  if (body.isPersonal !== undefined && existing[0].parentId !== null) {
+    return NextResponse.json(
+      { error: "Subtask visibility follows the parent" },
+      { status: 400 }
+    );
   }
 
   // Reparenting requires extra validation: the only legal hierarchy is exactly
@@ -251,6 +273,7 @@ export async function PATCH(
   const updateData: Record<string, unknown> = { updatedAt: now };
   if (body.title !== undefined) updateData.title = body.title;
   if (body.description !== undefined) updateData.description = body.description;
+  if (body.isPersonal !== undefined) updateData.isPersonal = body.isPersonal;
   if (body.sortOrder !== undefined) updateData.sortOrder = body.sortOrder;
   if (body.recurrence !== undefined) {
     updateData.recurrence = body.recurrence;
@@ -404,6 +427,19 @@ export async function PATCH(
             eq(schema.todos.completed, false)
           )
         );
+    }
+
+    // isPersonal cascades to subtasks: every child inherits the parent's
+    // visibility so the "subtask.isPersonal === parent.isPersonal" invariant
+    // (used by the reparent guard and access checks) still holds.
+    if (
+      body.isPersonal !== undefined &&
+      body.isPersonal !== existing[0].isPersonal
+    ) {
+      await tx
+        .update(schema.todos)
+        .set({ isPersonal: body.isPersonal, updatedAt: now })
+        .where(eq(schema.todos.parentId, id));
     }
 
     // Avoid todos: each slip is recorded as a completion event so analytics

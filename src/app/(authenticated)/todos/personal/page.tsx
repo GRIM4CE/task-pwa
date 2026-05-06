@@ -1,5 +1,5 @@
-import TodoListView from "../_components/TodoListView";
+import { redirect } from "next/navigation";
 
 export default function PersonalTodosPage() {
-  return <TodoListView scope="personal" />;
+  redirect("/todos");
 }

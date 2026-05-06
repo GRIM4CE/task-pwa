@@ -85,6 +85,7 @@ export function applyUpdate(
   const next: TodoDTO = { ...todo, updatedAt: now };
   if (patch.title !== undefined) next.title = patch.title;
   if (patch.description !== undefined) next.description = patch.description;
+  if (patch.isPersonal !== undefined) next.isPersonal = patch.isPersonal;
   if (patch.sortOrder !== undefined) next.sortOrder = patch.sortOrder;
   if (patch.recurrence !== undefined) {
     next.recurrence = patch.recurrence;

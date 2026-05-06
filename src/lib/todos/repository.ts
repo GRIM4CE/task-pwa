@@ -32,6 +32,7 @@ export interface UpdateTodoPatch {
   title?: string;
   description?: string | null;
   completed?: boolean;
+  isPersonal?: boolean;
   sortOrder?: number;
   recurrence?: Recurrence;
   recurrenceWeekday?: number | null;
