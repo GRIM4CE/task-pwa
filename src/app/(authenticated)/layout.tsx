@@ -58,8 +58,7 @@ export default function AuthenticatedLayout({
     !focusActive &&
     (pathname === "/todos" || pathname?.startsWith("/todos/joined"));
   const personalActive = pathname?.startsWith("/todos/personal");
-  const statsActive = pathname?.startsWith("/stats");
-  const settingsActive = pathname?.startsWith("/settings");
+  const hubActive = pathname?.startsWith("/hub");
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -113,11 +112,11 @@ export default function AuthenticatedLayout({
             </Link>
             <ThemeSwitcher />
             <Link
-              href="/stats"
-              aria-label="Repeat task stats"
-              aria-current={statsActive ? "page" : undefined}
+              href="/hub"
+              aria-label="Hub"
+              aria-current={hubActive ? "page" : undefined}
               className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
-                statsActive
+                hubActive
                   ? "bg-surface-hover text-on-surface"
                   : "text-on-surface/60 hover:bg-surface-hover hover:text-on-surface"
               }`}
@@ -128,30 +127,7 @@ export default function AuthenticatedLayout({
                 viewBox="0 0 20 20"
                 fill="currentColor"
               >
-                <path d="M3 17a1 1 0 011-1h1V8a1 1 0 112 0v8h2V5a1 1 0 112 0v11h2v-6a1 1 0 112 0v6h1a1 1 0 110 2H4a1 1 0 01-1-1z" />
-              </svg>
-            </Link>
-            <Link
-              href="/settings"
-              aria-label="Settings"
-              aria-current={settingsActive ? "page" : undefined}
-              className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
-                settingsActive
-                  ? "bg-surface-hover text-on-surface"
-                  : "text-on-surface/60 hover:bg-surface-hover hover:text-on-surface"
-              }`}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
-                  clipRule="evenodd"
-                />
+                <path d="M3 4a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm8 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V4zM3 12a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H4a1 1 0 01-1-1v-4zm8 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
               </svg>
             </Link>
           </nav>

@@ -65,13 +65,13 @@ export default function SecurityPage() {
   }
 
   function handleDone() {
-    router.push("/settings");
+    router.push("/hub/settings");
   }
 
   return (
     <div className="mx-auto max-w-md px-4 py-6">
       <div className="mb-6">
-        <Link href="/settings" className="text-sm text-text-muted hover:text-text">
+        <Link href="/hub/settings" className="text-sm text-text-muted hover:text-text">
           ← Back to settings
         </Link>
         <h2 className="mt-2 text-xl font-semibold text-text">Reset authenticator</h2>

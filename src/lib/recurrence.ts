@@ -139,6 +139,73 @@ export function mostRecentScheduledDate(
   return new Date(prevYear, normMonth, prevMonthOcc);
 }
 
+// Next scheduled occurrence date (start-of-local-day) strictly after the
+// local-day floor of `now`. Returns null only for non-scheduled recurrences.
+// Mirrors the anchor logic in mostRecentScheduledDate, including day-of-month
+// clamping for short months and ordinal+weekday derivation per month — so
+// month-end edge cases (e.g. the 31st in February) and the weekday/ordinal
+// shape land on the right calendar date instead of drifting via naive
+// month arithmetic on a JS Date.
+export function nextScheduledDate(
+  todo: Pick<
+    RecurrenceTodo,
+    "recurrence" | "recurrenceWeekday" | "recurrenceDayOfMonth" | "recurrenceOrdinal"
+  >,
+  now: number = Date.now()
+): Date | null {
+  if (!isScheduledRecurrence(todo.recurrence)) return null;
+  const today = startOfLocalDay(new Date(now));
+
+  if (todo.recurrence === "weekday") {
+    const target = todo.recurrenceWeekday;
+    if (target === null) return null;
+    const offset = (target - today.getDay() + 7) % 7;
+    const days = offset === 0 ? 7 : offset;
+    return new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate() + days
+    );
+  }
+
+  if (todo.recurrence === "monthly_day") {
+    const target = todo.recurrenceDayOfMonth;
+    if (target === null) return null;
+    const thisMonthDay = clampDayOfMonth(
+      today.getFullYear(),
+      today.getMonth(),
+      target
+    );
+    if (today.getDate() < thisMonthDay) {
+      return new Date(today.getFullYear(), today.getMonth(), thisMonthDay);
+    }
+    const rawMonth = today.getMonth() + 1;
+    const nextYear = rawMonth > 11 ? today.getFullYear() + 1 : today.getFullYear();
+    const nextMonth = rawMonth % 12;
+    const nextDay = clampDayOfMonth(nextYear, nextMonth, target);
+    return new Date(nextYear, nextMonth, nextDay);
+  }
+
+  // monthly_weekday
+  const wd = todo.recurrenceWeekday;
+  const ord = todo.recurrenceOrdinal;
+  if (wd === null || ord === null) return null;
+  const thisMonthOcc = ordinalWeekdayOfMonth(
+    today.getFullYear(),
+    today.getMonth(),
+    wd,
+    ord
+  );
+  if (today.getDate() < thisMonthOcc) {
+    return new Date(today.getFullYear(), today.getMonth(), thisMonthOcc);
+  }
+  const rawMonth = today.getMonth() + 1;
+  const nextYear = rawMonth > 11 ? today.getFullYear() + 1 : today.getFullYear();
+  const nextMonth = rawMonth % 12;
+  const nextOcc = ordinalWeekdayOfMonth(nextYear, nextMonth, wd, ord);
+  return new Date(nextYear, nextMonth, nextOcc);
+}
+
 // True when a "scheduled" todo's current occurrence is open and should appear
 // in the active list. Hidden the rest of the time. For non-scheduled rows
 // (daily/weekly/null) this returns true — those are visibility-filtered

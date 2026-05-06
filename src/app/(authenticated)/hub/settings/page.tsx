@@ -74,7 +74,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-6">
+    <>
       <div className="mb-6">
         <h2 className="text-xl font-semibold text-text">Settings</h2>
         <p className="text-sm text-text-muted">Manage your account</p>
@@ -151,6 +151,6 @@ export default function SettingsPage() {
           {loggingOut ? "Signing out..." : "Sign Out"}
         </button>
       </section>
-    </div>
+    </>
   );
 }
