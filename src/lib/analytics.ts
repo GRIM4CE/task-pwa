@@ -237,26 +237,19 @@ function completedWeekSet(completions: number[]): Set<number> {
 // 120-day completions window.
 function dailyStreak(
   completions: number[],
-  skips: number[],
   todayStart: Date,
   vacations: VacationPeriod[],
   now: number
 ): number {
   if (completions.length === 0) return 0;
   const days = completedDaySet(completions);
-  const skipDays = completedDaySet(skips);
   const isVacationDay = (d: Date): boolean =>
     dayOnVacation(d.getTime(), addDays(d, 1).getTime(), vacations, now);
-  // Skip days behave like vacation days for the streak: a skipped day in the
-  // chain neither extends the count nor breaks it. Same one-line rule as
-  // vacation so the cursor walks past it transparently.
-  const isSkipDay = (d: Date): boolean => skipDays.has(d.getTime());
 
   let cursorDate: Date;
   if (days.has(todayStart.getTime())) cursorDate = todayStart;
-  else if (isVacationDay(todayStart) || isSkipDay(todayStart)) {
-    cursorDate = addDays(todayStart, -1);
-  } else if (days.has(addDays(todayStart, -1).getTime())) {
+  else if (isVacationDay(todayStart)) cursorDate = addDays(todayStart, -1);
+  else if (days.has(addDays(todayStart, -1).getTime())) {
     cursorDate = addDays(todayStart, -1);
   } else return 0;
 
@@ -268,7 +261,7 @@ function dailyStreak(
       cursorDate = addDays(cursorDate, -1);
       continue;
     }
-    if (isVacationDay(cursorDate) || isSkipDay(cursorDate)) {
+    if (isVacationDay(cursorDate)) {
       cursorDate = addDays(cursorDate, -1);
       continue;
     }
@@ -439,7 +432,7 @@ function dailyForTodo(
     completedCount,
     totalDays: DAYS_IN_WEEK,
     days,
-    streak: dailyStreak(todo.completions, todo.skips, todayStart, vacations, now),
+    streak: dailyStreak(todo.completions, todayStart, vacations, now),
     bestStreak: longestDailyRun(todo.completions),
     heatmap: dailyHeatmap(todo.completions, todo.skips, todayStart, vacations, now),
   };
@@ -510,7 +503,6 @@ function elapsedDailyStats(
   for (const t of dailyTodos) {
     const habitDayStart = startOfDay(new Date(t.createdAt)).getTime();
     const completedSet = completedDaySet(t.completions);
-    const skipSet = completedDaySet(t.skips);
     let cursor = new Date(windowStart);
     while (cursor.getTime() < endMs) {
       const ms = cursor.getTime();
@@ -518,11 +510,7 @@ function elapsedDailyStats(
         const wasCompleted = completedSet.has(ms);
         const dayEndMs = addDays(cursor, 1).getTime();
         const onVacation = dayOnVacation(ms, dayEndMs, vacations, now);
-        // Drop both vacation-misses and skip-misses from the denominator —
-        // both are intentional opt-outs, not failures. A same-day completion
-        // still counts the day as eligible-and-completed.
-        const wasSkipped = !wasCompleted && skipSet.has(ms);
-        if (!(onVacation && !wasCompleted) && !wasSkipped) {
+        if (!(onVacation && !wasCompleted)) {
           eligible++;
           if (wasCompleted) completed++;
         }
@@ -647,7 +635,6 @@ function weekdayConsistency(
     return buckets.map(() => ({ rate: null, samples: 0 }));
   }
   const sets = dailyTodos.map((t) => completedDaySet(t.completions));
-  const skipSets = dailyTodos.map((t) => completedDaySet(t.skips));
   // Walk the past 30 days, skipping today (still in progress).
   for (let i = 1; i <= HEATMAP_DAYS; i++) {
     const day = addDays(todayStart, -i);
@@ -663,10 +650,6 @@ function weekdayConsistency(
       // On vacation: only count completions, never count misses against
       // the bucket. Without this, a quiet vacation tanks the day's rate.
       if (onVacation && !wasCompleted) continue;
-      // Skip days are neutral the same way — counting a skipped-and-not-
-      // completed day as a miss would penalize intentional rest. A skip
-      // followed by a same-day completion still counts as a completion.
-      if (!wasCompleted && skipSets[j].has(dayMs)) continue;
       eligible++;
       if (wasCompleted) completed++;
     }
