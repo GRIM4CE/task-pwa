@@ -378,7 +378,12 @@ export default function FocusView() {
     if (pendingSkipRef.current.has(todo.id)) return;
     pendingSkipRef.current.add(todo.id);
     const isRecurring = todo.recurrence !== null;
-    const previous = todos;
+    // Snapshot just the fields this patch will mutate so an error rolls back
+    // only this row — restoring the full `todos` snapshot would clobber any
+    // unrelated state changes (toggle, reset, suggestion pin) that landed
+    // while the request was in flight. Same pattern as handlePinSuggestion.
+    const originalSkipStamp = todo.lastFocusSkippedAt;
+    const originalPin = todo.pinnedTo;
     setTodos((prev) =>
       prev.map((t) =>
         t.id === todo.id
@@ -392,7 +397,15 @@ export default function FocusView() {
     const { data, error } = await repo.update(todo.id, patch);
     pendingSkipRef.current.delete(todo.id);
     if (error) {
-      setTodos(previous);
+      setTodos((prev) =>
+        prev.map((t) =>
+          t.id === todo.id
+            ? isRecurring
+              ? { ...t, lastFocusSkippedAt: originalSkipStamp }
+              : { ...t, pinnedTo: originalPin }
+            : t
+        )
+      );
       return;
     }
     if (data) {
@@ -409,8 +422,13 @@ export default function FocusView() {
       pending.kind === "skip"
         ? { focusSkip: false }
         : { pinnedTo: "day" as const };
-    // Optimistic restore: clear the skip stamp / re-pin so the row pops back
-    // onto Focus before the round trip completes.
+    // Snapshot the row's current pre-undo values so we can revert if the
+    // request fails. Without this, a failed undo leaves the UI showing the
+    // restored row even though the server still has the skip stamped — the
+    // next refetch would silently flip it back and look like a regression.
+    const current = todos.find((t) => t.id === pending.id);
+    const originalSkipStamp = current?.lastFocusSkippedAt ?? null;
+    const originalPin = current?.pinnedTo ?? null;
     setTodos((prev) =>
       prev.map((t) =>
         t.id === pending.id
@@ -420,7 +438,19 @@ export default function FocusView() {
           : t
       )
     );
-    const { data } = await repo.update(pending.id, patch);
+    const { data, error } = await repo.update(pending.id, patch);
+    if (error) {
+      setTodos((prev) =>
+        prev.map((t) =>
+          t.id === pending.id
+            ? pending.kind === "skip"
+              ? { ...t, lastFocusSkippedAt: originalSkipStamp }
+              : { ...t, pinnedTo: originalPin }
+            : t
+        )
+      );
+      return;
+    }
     if (data) {
       setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
     }
