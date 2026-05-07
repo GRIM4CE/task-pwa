@@ -26,7 +26,7 @@ export default function SetupPage() {
     // If already set up, redirect
     api.auth.status().then(({ data }) => {
       if (data && !data.needsSetup) {
-        router.replace(data.isAuthenticated ? "/todos" : "/login");
+        router.replace(data.isAuthenticated ? "/todos/focus" : "/login");
       }
     });
   }, [router]);
@@ -85,7 +85,7 @@ export default function SetupPage() {
   }
 
   function handleComplete() {
-    router.push("/todos");
+    router.push("/todos/focus");
   }
 
   return (

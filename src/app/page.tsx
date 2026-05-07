@@ -9,7 +9,7 @@ export default function Home() {
 
   useEffect(() => {
     if (isGuestMode()) {
-      router.replace("/todos");
+      router.replace("/todos/focus");
       return;
     }
 
@@ -21,7 +21,7 @@ export default function Home() {
         if (data.needsSetup) {
           router.replace("/setup");
         } else if (data.isAuthenticated) {
-          router.replace("/todos");
+          router.replace("/todos/focus");
         } else {
           router.replace("/login");
         }

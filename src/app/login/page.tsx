@@ -18,7 +18,7 @@ export default function LoginPage() {
     // Redirect to setup if no user exists
     api.auth.status().then(({ data }) => {
       if (data?.needsSetup) router.replace("/setup");
-      if (data?.isAuthenticated) router.replace("/todos");
+      if (data?.isAuthenticated) router.replace("/todos/focus");
     });
   }, [router]);
 
@@ -37,13 +37,13 @@ export default function LoginPage() {
     }
 
     if (data?.success) {
-      router.push("/todos");
+      router.push("/todos/focus");
     }
   }
 
   function handleContinueAsGuest() {
     enterGuestMode();
-    router.push("/todos");
+    router.push("/todos/focus");
   }
 
   async function handleRecovery(e: React.FormEvent) {
@@ -64,7 +64,7 @@ export default function LoginPage() {
       if (data.remainingRecoveryCodes <= 2) {
         alert(`Warning: You only have ${data.remainingRecoveryCodes} recovery codes remaining. Consider setting up a new TOTP device.`);
       }
-      router.push("/todos");
+      router.push("/todos/focus");
     }
   }
 

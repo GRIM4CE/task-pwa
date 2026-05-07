@@ -110,6 +110,10 @@ export default function FocusView() {
   const repo = useTodoRepository();
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickAddTitle, setQuickAddTitle] = useState("");
+  const [quickAddSubmitting, setQuickAddSubmitting] = useState(false);
+  const quickAddInputRef = useRef<HTMLInputElement>(null);
   // Tracks "now" for visibility filters tied to local-day boundaries — same
   // pattern as TodoListView. Bumped on visibilitychange and once a minute so a
   // scheduled row's occurrence window flips without a manual refresh.
@@ -244,6 +248,20 @@ export default function FocusView() {
     }
     if (data) {
       setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
+    }
+  }
+
+  async function handleQuickAdd(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = quickAddTitle.trim();
+    if (!trimmed || quickAddSubmitting) return;
+    setQuickAddSubmitting(true);
+    const { data } = await repo.create({ title: trimmed, pinnedTo: "day" });
+    setQuickAddSubmitting(false);
+    if (data) {
+      setTodos((prev) => [...prev, data]);
+      setQuickAddTitle("");
+      setQuickAddOpen(false);
     }
   }
 
@@ -414,13 +432,80 @@ export default function FocusView() {
               : subtitle}
           </p>
         </div>
-        <Link
-          href="/todos"
-          className="shrink-0 rounded-lg border border-border-on-surface px-3 py-1.5 text-sm text-on-surface/70 hover:bg-surface-hover hover:text-on-surface"
-        >
-          Manage
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          <Link
+            href="/todos"
+            className="rounded-lg border border-border-on-surface px-3 py-1.5 text-sm text-on-surface/70 hover:bg-surface-hover hover:text-on-surface"
+          >
+            Manage
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              setQuickAddOpen((open) => {
+                const next = !open;
+                if (next) {
+                  window.setTimeout(() => quickAddInputRef.current?.focus(), 0);
+                }
+                return next;
+              });
+            }}
+            aria-label="Add a task to focus"
+            aria-expanded={quickAddOpen}
+            aria-controls="focus-quick-add-form"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border-on-surface text-on-surface/70 hover:bg-surface-hover hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-focus"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-4 w-4"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                fillRule="evenodd"
+                d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H5a1 1 0 110-2h4V5a1 1 0 011-1z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
+
+      {quickAddOpen && (
+        <form
+          id="focus-quick-add-form"
+          onSubmit={handleQuickAdd}
+          className="mb-4 flex gap-2"
+        >
+          <label htmlFor="focus-quick-add-input" className="sr-only">
+            Task title
+          </label>
+          <input
+            id="focus-quick-add-input"
+            ref={quickAddInputRef}
+            type="text"
+            value={quickAddTitle}
+            onChange={(e) => setQuickAddTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setQuickAddOpen(false);
+                setQuickAddTitle("");
+              }
+            }}
+            placeholder="Add a task to focus..."
+            maxLength={500}
+            className="flex-1 rounded-lg border border-border bg-input px-3 py-2 text-input-text placeholder-input-placeholder focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+          />
+          <button
+            type="submit"
+            disabled={!quickAddTitle.trim() || quickAddSubmitting}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Add
+          </button>
+        </form>
+      )}
 
       {total > 0 ? (
         <div className="space-y-2">
