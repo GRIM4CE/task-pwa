@@ -803,8 +803,15 @@ function avoidStatus(
   limit: number | null
 ): AvoidStatus {
   if (limit === null || limit <= 0) return "ok";
-  if (count >= limit) return "over";
-  if (count >= Math.ceil(limit * AVOID_WARN_RATIO)) return "warn";
+  // Strictly over the limit is a slip; being exactly at the limit is fine
+  // ("you've reached your cap, that's the deal").
+  if (count > limit) return "over";
+  // Warn only fires while still under the limit so the at-limit case stays
+  // neutral. For small limits (1–3) the warn band can be empty, which is
+  // intentional — the user gets either ok or over, no in-between.
+  if (count < limit && count >= Math.ceil(limit * AVOID_WARN_RATIO)) {
+    return "warn";
+  }
   return "ok";
 }
 

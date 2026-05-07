@@ -1987,7 +1987,7 @@ function AvoidRow({
           )}
           {status === "over" && (
             <span className="font-medium text-danger">
-              {wayOverLimit ? "Careful here" : "Over limit"}
+              {wayOverLimit ? "Careful here" : "Slipped"}
             </span>
           )}
         </div>
