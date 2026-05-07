@@ -43,6 +43,12 @@ export interface DayCell {
   // True when the user was on vacation at any point during the day.
   // Misses on vacation days are neutral (yellow) instead of failing.
   onVacation: boolean;
+  // True when the user tapped Skip on this todo on this day. Treated as a
+  // neutral day for streak math (mirrors onVacation), but rendered as a
+  // distinct tone so the user can tell deliberate skips apart from forgotten
+  // misses and from vacation. Ignored when `completed` is also true (a same-
+  // day completion supersedes the skip visually and for streak math).
+  skipped: boolean;
 }
 
 export interface DailyStat {
@@ -231,19 +237,26 @@ function completedWeekSet(completions: number[]): Set<number> {
 // 120-day completions window.
 function dailyStreak(
   completions: number[],
+  skips: number[],
   todayStart: Date,
   vacations: VacationPeriod[],
   now: number
 ): number {
   if (completions.length === 0) return 0;
   const days = completedDaySet(completions);
+  const skipDays = completedDaySet(skips);
   const isVacationDay = (d: Date): boolean =>
     dayOnVacation(d.getTime(), addDays(d, 1).getTime(), vacations, now);
+  // Skip days behave like vacation days for the streak: a skipped day in the
+  // chain neither extends the count nor breaks it. Same one-line rule as
+  // vacation so the cursor walks past it transparently.
+  const isSkipDay = (d: Date): boolean => skipDays.has(d.getTime());
 
   let cursorDate: Date;
   if (days.has(todayStart.getTime())) cursorDate = todayStart;
-  else if (isVacationDay(todayStart)) cursorDate = addDays(todayStart, -1);
-  else if (days.has(addDays(todayStart, -1).getTime())) {
+  else if (isVacationDay(todayStart) || isSkipDay(todayStart)) {
+    cursorDate = addDays(todayStart, -1);
+  } else if (days.has(addDays(todayStart, -1).getTime())) {
     cursorDate = addDays(todayStart, -1);
   } else return 0;
 
@@ -255,7 +268,7 @@ function dailyStreak(
       cursorDate = addDays(cursorDate, -1);
       continue;
     }
-    if (isVacationDay(cursorDate)) {
+    if (isVacationDay(cursorDate) || isSkipDay(cursorDate)) {
       cursorDate = addDays(cursorDate, -1);
       continue;
     }
@@ -363,22 +376,29 @@ function longestWeeklyRun(completions: number[]): number {
 
 function dailyHeatmap(
   completions: number[],
+  skips: number[],
   todayStart: Date,
   vacations: VacationPeriod[],
   now: number
 ): DayCell[] {
   const days = completedDaySet(completions);
+  const skipDays = completedDaySet(skips);
   const cells: DayCell[] = [];
   for (let i = HEATMAP_DAYS - 1; i >= 0; i--) {
     const dayStart = addDays(todayStart, -i);
     const startMs = dayStart.getTime();
     const endMs = addDays(dayStart, 1).getTime();
+    const completed = days.has(startMs);
     cells.push({
       date: startMs,
-      completed: days.has(startMs),
+      completed,
       isFuture: false,
       isToday: i === 0,
       onVacation: dayOnVacation(startMs, endMs, vacations, now),
+      // Same-day completion supersedes the skip — the row was completed
+      // after the skip, or the skip was undone and re-completed; either way
+      // the user got the win, so don't double-mark it as both.
+      skipped: !completed && skipDays.has(startMs),
     });
   }
   return cells;
@@ -402,12 +422,15 @@ function dailyForTodo(
       (c) => c >= startMs && c < endMs
     );
     if (completed) completedCount++;
+    const skipped = todo.skips.some((s) => s >= startMs && s < endMs);
     days.push({
       date: startMs,
       completed,
       isFuture: dayStart.getTime() > todayStart.getTime(),
       isToday: dayStart.getTime() === todayStart.getTime(),
       onVacation: dayOnVacation(startMs, endMs, vacations, now),
+      // Same-day completion wins over a skip stamp — see dailyHeatmap.
+      skipped: !completed && skipped,
     });
   }
   return {
@@ -416,9 +439,9 @@ function dailyForTodo(
     completedCount,
     totalDays: DAYS_IN_WEEK,
     days,
-    streak: dailyStreak(todo.completions, todayStart, vacations, now),
+    streak: dailyStreak(todo.completions, todo.skips, todayStart, vacations, now),
     bestStreak: longestDailyRun(todo.completions),
-    heatmap: dailyHeatmap(todo.completions, todayStart, vacations, now),
+    heatmap: dailyHeatmap(todo.completions, todo.skips, todayStart, vacations, now),
   };
 }
 
@@ -487,6 +510,7 @@ function elapsedDailyStats(
   for (const t of dailyTodos) {
     const habitDayStart = startOfDay(new Date(t.createdAt)).getTime();
     const completedSet = completedDaySet(t.completions);
+    const skipSet = completedDaySet(t.skips);
     let cursor = new Date(windowStart);
     while (cursor.getTime() < endMs) {
       const ms = cursor.getTime();
@@ -494,7 +518,11 @@ function elapsedDailyStats(
         const wasCompleted = completedSet.has(ms);
         const dayEndMs = addDays(cursor, 1).getTime();
         const onVacation = dayOnVacation(ms, dayEndMs, vacations, now);
-        if (!(onVacation && !wasCompleted)) {
+        // Drop both vacation-misses and skip-misses from the denominator —
+        // both are intentional opt-outs, not failures. A same-day completion
+        // still counts the day as eligible-and-completed.
+        const wasSkipped = !wasCompleted && skipSet.has(ms);
+        if (!(onVacation && !wasCompleted) && !wasSkipped) {
           eligible++;
           if (wasCompleted) completed++;
         }
@@ -619,6 +647,7 @@ function weekdayConsistency(
     return buckets.map(() => ({ rate: null, samples: 0 }));
   }
   const sets = dailyTodos.map((t) => completedDaySet(t.completions));
+  const skipSets = dailyTodos.map((t) => completedDaySet(t.skips));
   // Walk the past 30 days, skipping today (still in progress).
   for (let i = 1; i <= HEATMAP_DAYS; i++) {
     const day = addDays(todayStart, -i);
@@ -634,6 +663,10 @@ function weekdayConsistency(
       // On vacation: only count completions, never count misses against
       // the bucket. Without this, a quiet vacation tanks the day's rate.
       if (onVacation && !wasCompleted) continue;
+      // Skip days are neutral the same way — counting a skipped-and-not-
+      // completed day as a miss would penalize intentional rest. A skip
+      // followed by a same-day completion still counts as a completion.
+      if (!wasCompleted && skipSets[j].has(dayMs)) continue;
       eligible++;
       if (wasCompleted) completed++;
     }
