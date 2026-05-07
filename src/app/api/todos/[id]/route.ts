@@ -38,8 +38,8 @@ export async function PATCH(
     limitCount?: number | null;
     limitPeriod?: "week" | "month" | null;
     oncePerDay?: boolean;
-    recordSlip?: boolean;
-    undoLastSlip?: boolean;
+    recordTally?: boolean;
+    undoLastTally?: boolean;
   };
   try {
     const raw = await request.json();
@@ -233,18 +233,18 @@ export async function PATCH(
       { status: 400 }
     );
   }
-  // Slip operations require BOTH the persisted row and the post-patch shape
+  // Tally operations require BOTH the persisted row and the post-patch shape
   // to be avoid. The persisted check rules out `{ kind: "avoid",
-  // recordSlip: true }` on a do row (slip insert is gated on `current.kind`,
+  // recordTally: true }` on a do row (tally insert is gated on `current.kind`,
   // would silently no-op). The post-patch check rules out `{ kind: "do",
-  // recordSlip: true }` on an avoid row (slip would be inserted while the
+  // recordTally: true }` on an avoid row (tally would be inserted while the
   // row's kind is being flipped to do, leaving an orphaned event).
   if (
-    (body.recordSlip === true || body.undoLastSlip === true) &&
+    (body.recordTally === true || body.undoLastTally === true) &&
     (existing[0].kind !== "avoid" || effectiveKind !== "avoid")
   ) {
     return NextResponse.json(
-      { error: "Slip operations only apply to avoid todos" },
+      { error: "Tally operations only apply to avoid todos" },
       { status: 400 }
     );
   }
@@ -321,22 +321,22 @@ export async function PATCH(
     }
   }
   // Server-side oncePerDay enforcement: when the row carries oncePerDay, a
-  // recordSlip is suppressed if any slip exists in the prior 24h. The client's
+  // recordTally is suppressed if any tally exists in the prior 24h. The client's
   // disabled button uses local-calendar-day boundaries; we use a 24h rolling
   // window here because the server doesn't know the user's timezone. That's
   // strictly stricter — the only edge case is multi-device usage near a daily
-  // boundary, where a legitimate slip on a new calendar day might land within
+  // boundary, where a legitimate tally on a new calendar day might land within
   // 24h of the previous one and get suppressed. Acceptable for a single-user
   // app. The check happens before the transaction; any race with a concurrent
-  // insert is bounded to one extra slip, which the client can still undo.
-  let suppressSlipForOncePerDay = false;
+  // insert is bounded to one extra tally, which the client can still undo.
+  let suppressTallyForOncePerDay = false;
   if (
-    body.recordSlip === true &&
+    body.recordTally === true &&
     existing[0].kind === "avoid" &&
     existing[0].oncePerDay
   ) {
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const recentSlip = await db
+    const recentTally = await db
       .select({ id: schema.todoCompletions.id })
       .from(schema.todoCompletions)
       .where(
@@ -347,14 +347,14 @@ export async function PATCH(
         )
       )
       .limit(1);
-    if (recentSlip.length > 0) suppressSlipForOncePerDay = true;
+    if (recentTally.length > 0) suppressTallyForOncePerDay = true;
   }
 
-  // recordSlip touches lastCompletedAt for "days since last slip" but doesn't
-  // flip `completed` — avoid-todos stay in the active list so the next slip
-  // can be logged. Skip the bump when oncePerDay suppresses the slip so the
+  // recordTally touches lastCompletedAt for "days since last tally" but doesn't
+  // flip `completed` — avoid-todos stay in the active list so the next tally
+  // can be logged. Skip the bump when oncePerDay suppresses the tally so the
   // row's state stays in sync with the (unwritten) completion log.
-  if (body.recordSlip === true && !suppressSlipForOncePerDay) {
+  if (body.recordTally === true && !suppressTallyForOncePerDay) {
     updateData.lastCompletedAt = now;
   }
 
@@ -444,15 +444,15 @@ export async function PATCH(
         .where(eq(schema.todos.parentId, id));
     }
 
-    // Avoid todos: each slip is recorded as a completion event so analytics
-    // can compute calendar-window slip counts and streak gaps. The row's
+    // Avoid todos: each tally is recorded as a completion event so analytics
+    // can compute calendar-window tally counts and streak gaps. The row's
     // `completed` flag stays false — it's not a "done" event, just a tally.
-    // Suppressed for oncePerDay rows that already slipped in the last 24h,
+    // Suppressed for oncePerDay rows that already tallied in the last 24h,
     // see the pre-transaction comment above.
     if (
-      body.recordSlip === true &&
+      body.recordTally === true &&
       current.kind === "avoid" &&
-      !suppressSlipForOncePerDay
+      !suppressTallyForOncePerDay
     ) {
       await tx.insert(schema.todoCompletions).values({
         todoId: row.id,
@@ -461,11 +461,11 @@ export async function PATCH(
       });
     }
 
-    // Undo the most recent slip: drop the latest event for this todo+user
+    // Undo the most recent tally: drop the latest event for this todo+user
     // and rebase lastCompletedAt onto whatever the new latest event is (or
     // null if none remain). The lastCompletedAt rebase is what makes the
     // days-since badge return to the prior streak after an undo.
-    if (body.undoLastSlip === true && current.kind === "avoid") {
+    if (body.undoLastTally === true && current.kind === "avoid") {
       const latest = await tx
         .select({
           id: schema.todoCompletions.id,
@@ -503,7 +503,7 @@ export async function PATCH(
             updatedAt: now,
           })
           .where(eq(schema.todos.id, row.id));
-        // Reflect in the row we return so the response and the recentSlips
+        // Reflect in the row we return so the response and the recentTallies
         // refetch below both see the post-undo state.
         row.lastCompletedAt = nextLastCompletedAt;
       }
@@ -563,26 +563,26 @@ export async function PATCH(
     .where(eq(schema.users.id, updated.userId))
     .limit(1);
 
-  // Refetch the 35-day slip window so the client can recompute the card's
+  // Refetch the 35-day tally window so the client can recompute the card's
   // calendar-window warning state without a separate /api/todos round-trip
-  // after a slip is logged/undone (or after kind/limit fields change).
-  let recentSlips: number[] = [];
+  // after a tally is logged/undone (or after kind/limit fields change).
+  let recentTallies: number[] = [];
   if (updated.kind === "avoid") {
-    const slipCutoff = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000);
-    const slips = await db
+    const tallyCutoff = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000);
+    const tallies = await db
       .select({ completedAt: schema.todoCompletions.completedAt })
       .from(schema.todoCompletions)
       .where(
         and(
           eq(schema.todoCompletions.todoId, updated.id),
           eq(schema.todoCompletions.userId, session.user.id),
-          gte(schema.todoCompletions.completedAt, slipCutoff)
+          gte(schema.todoCompletions.completedAt, tallyCutoff)
         )
       )
       // Match the GET /api/todos ordering so clients see a consistent shape:
       // ascending by completedAt, latest at the end of the array.
       .orderBy(asc(schema.todoCompletions.completedAt));
-    recentSlips = slips.map((s) => s.completedAt.getTime());
+    recentTallies = tallies.map((s) => s.completedAt.getTime());
   }
 
   return NextResponse.json({
@@ -602,7 +602,7 @@ export async function PATCH(
     limitCount: updated.limitCount,
     limitPeriod: updated.limitPeriod,
     oncePerDay: updated.oncePerDay,
-    recentSlips,
+    recentTallies,
     lastCompletedAt: updated.lastCompletedAt ? updated.lastCompletedAt.getTime() : null,
     createdAt: updated.createdAt.getTime(),
     updatedAt: updated.updatedAt.getTime(),

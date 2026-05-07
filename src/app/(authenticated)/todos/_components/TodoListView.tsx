@@ -12,7 +12,7 @@ import {
 } from "@/lib/api-client";
 import {
   avoidStatusForTodo,
-  hasSlipToday,
+  hasTallyToday,
   type AvoidStatus,
 } from "@/lib/analytics";
 import {
@@ -88,7 +88,7 @@ function makeDraftTodo(title: string): Todo {
     limitCount: null,
     limitPeriod: null,
     oncePerDay: false,
-    recentSlips: [],
+    recentTallies: [],
     lastCompletedAt: null,
     createdAt: now,
     updatedAt: now,
@@ -116,9 +116,9 @@ export default function TodoListView() {
   // Bumped by an interval and on visibilitychange so the UI re-evaluates without
   // requiring a manual refresh, even with the app left open through midnight.
   const [nowMs, setNowMs] = useState(() => Date.now());
-  // After a slip is logged successfully, surface a transient undo toast so a
+  // After a tally is logged successfully, surface a transient undo toast so a
   // mis-tap can be reverted without diving into the edit modal. A single
-  // pending undo at a time is enough — a follow-up slip on a different todo
+  // pending undo at a time is enough — a follow-up tally on a different todo
   // dismisses the previous toast.
   const [pendingUndo, setPendingUndo] = useState<{ id: string; title: string } | null>(null);
   const undoTimerRef = useRef<number | null>(null);
@@ -410,7 +410,7 @@ export default function TodoListView() {
     setPendingUndo(null);
   }
 
-  async function handleRecordSlip(todo: Todo) {
+  async function handleRecordTally(todo: Todo) {
     if (todo.kind !== "avoid") return;
     if (pendingToggleRef.current.has(todo.id)) return;
     pendingToggleRef.current.add(todo.id);
@@ -422,13 +422,13 @@ export default function TodoListView() {
         const now = Date.now();
         return {
           ...t,
-          recentSlips: [...t.recentSlips, now],
+          recentTallies: [...t.recentTallies, now],
           lastCompletedAt: now,
         };
       })
     );
 
-    const { data, error } = await repo.update(todo.id, { recordSlip: true });
+    const { data, error } = await repo.update(todo.id, { recordTally: true });
     pendingToggleRef.current.delete(todo.id);
     if (error) {
       setTodos(previousTodos);
@@ -437,13 +437,13 @@ export default function TodoListView() {
     if (data) {
       setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
       showUndo(data.id, data.title);
-      // The slip touches the completion log, which feeds /stats. Notify so a
+      // The tally touches the completion log, which feeds /stats. Notify so a
       // mounted stats page picks it up without needing a visibility change.
       notifyStatsMayHaveChanged();
     }
   }
 
-  async function handleUndoSlip(id: string) {
+  async function handleUndoTally(id: string) {
     const target = todos.find((t) => t.id === id);
     if (!target || target.kind !== "avoid") return;
     dismissUndo();
@@ -454,33 +454,33 @@ export default function TodoListView() {
     setTodos((prev) =>
       prev.map((t) => {
         if (t.id !== id) return t;
-        // Optimistically drop the most recent slip by max-timestamp rather
+        // Optimistically drop the most recent tally by max-timestamp rather
         // than array position so the result is correct regardless of how
-        // recentSlips happens to be ordered. Rebase lastCompletedAt onto
+        // recentTallies happens to be ordered. Rebase lastCompletedAt onto
         // the new latest (or null); the server confirms the authoritative
         // state below.
-        if (t.recentSlips.length === 0) {
+        if (t.recentTallies.length === 0) {
           return { ...t, lastCompletedAt: null };
         }
         let maxIdx = 0;
-        for (let i = 1; i < t.recentSlips.length; i++) {
-          if (t.recentSlips[i] > t.recentSlips[maxIdx]) maxIdx = i;
+        for (let i = 1; i < t.recentTallies.length; i++) {
+          if (t.recentTallies[i] > t.recentTallies[maxIdx]) maxIdx = i;
         }
         const remaining = [
-          ...t.recentSlips.slice(0, maxIdx),
-          ...t.recentSlips.slice(maxIdx + 1),
+          ...t.recentTallies.slice(0, maxIdx),
+          ...t.recentTallies.slice(maxIdx + 1),
         ];
         const nextLast =
           remaining.length === 0 ? null : Math.max(...remaining);
         return {
           ...t,
-          recentSlips: remaining,
+          recentTallies: remaining,
           lastCompletedAt: nextLast,
         };
       })
     );
 
-    const { data, error } = await repo.update(id, { undoLastSlip: true });
+    const { data, error } = await repo.update(id, { undoLastTally: true });
     pendingToggleRef.current.delete(id);
     if (error) {
       setTodos(previousTodos);
@@ -668,7 +668,7 @@ export default function TodoListView() {
     if (todos.some((t) => t.parentId === dragged.id)) return;
     if (dragged.recurrence !== null) return;
     // Avoid todos can't be subtasks — they need their own card UI for the
-    // slip button and warning state.
+    // tally button and warning state.
     if (dragged.kind === "avoid" || target.kind === "avoid") return;
 
     const previous = todos;
@@ -743,7 +743,7 @@ export default function TodoListView() {
     return isScheduledOccurrenceOpen(t, nowMs);
   });
   // Avoid todos live in their own section and never appear in This Week /
-  // Daily / General — the slip button is conceptually different from a
+  // Daily / General — the tally button is conceptually different from a
   // checkbox, and mixing them muddies the visual language.
   const isDoTodo = (t: Todo) => t.kind === "do";
   const avoidTodos = topLevelVisible.filter((t) => t.kind === "avoid");
@@ -1083,13 +1083,13 @@ export default function TodoListView() {
 
       {/* Avoid (bad-habit trackers) */}
       {avoidTodos.length > 0 && (
-        <Section title="Avoid" hint="Tap +1 to log a slip">
+        <Section title="Avoid" hint="Tap +1 to log a tally">
           <div className="space-y-2">
             {sortTodos(avoidTodos).map((todo) => (
               <AvoidRow
                 key={todo.id}
                 todo={todo}
-                onSlip={() => handleRecordSlip(todo)}
+                onTally={() => handleRecordTally(todo)}
                 onOpen={() => setEditing(todo)}
               />
             ))}
@@ -1098,9 +1098,9 @@ export default function TodoListView() {
       )}
 
       {pendingUndo && (
-        <UndoSlipToast
+        <UndoTallyToast
           title={pendingUndo.title}
-          onUndo={() => handleUndoSlip(pendingUndo.id)}
+          onUndo={() => handleUndoTally(pendingUndo.id)}
           onDismiss={dismissUndo}
         />
       )}
@@ -1880,26 +1880,26 @@ function SubtaskRow({
 
 function AvoidRow({
   todo,
-  onSlip,
+  onTally,
   onOpen,
 }: {
   todo: Todo;
-  onSlip: () => void;
+  onTally: () => void;
   onOpen: () => void;
 }) {
   const { count, status, windowDays } = avoidStatusForTodo(
-    todo.recentSlips,
+    todo.recentTallies,
     todo.limitCount,
     todo.limitPeriod
   );
-  // Once-per-day mode: a slip already logged today disables the +1 button
+  // Once-per-day mode: a tally already logged today disables the +1 button
   // until midnight. Multi-tap mode (the default) leaves it always enabled.
-  const slippedToday = todo.oncePerDay && hasSlipToday(todo.recentSlips);
-  const buttonDisabled = slippedToday;
-  // Days since the last slip — null when there's never been one. Anchored to
-  // `lastCompletedAt` (which has no retention cap) rather than `recentSlips`
+  const talliedToday = todo.oncePerDay && hasTallyToday(todo.recentTallies);
+  const buttonDisabled = talliedToday;
+  // Days since the last tally — null when there's never been one. Anchored to
+  // `lastCompletedAt` (which has no retention cap) rather than `recentTallies`
   // (35-day window) so a 36+ day streak still renders the badge.
-  const daysSinceLastSlip = (() => {
+  const daysSinceLastTally = (() => {
     if (todo.lastCompletedAt === null) return null;
     const lastDay = new Date(todo.lastCompletedAt);
     const today = new Date();
@@ -1929,18 +1929,18 @@ function AvoidRow({
   const wayOverLimit =
     todo.limitCount !== null && count >= todo.limitCount * 2;
 
-  // Days-since-last-slip badge. Stays silent when the user is still under
-  // their limit so a slip in moderation doesn't read as guilt; surfaces
-  // "Slipped today" only once they've crossed the cap.
+  // Days-since-last-tally badge. Stays silent when the user is still under
+  // their limit so a tally in moderation doesn't read as guilt; surfaces
+  // "Tallied today" only once they've crossed the cap.
   let sinceLabel: string | null = null;
-  if (daysSinceLastSlip !== null) {
-    if (daysSinceLastSlip === 0 && status === "over") {
-      sinceLabel = "Slipped today";
-    } else if (daysSinceLastSlip > 0 && status !== "over") {
+  if (daysSinceLastTally !== null) {
+    if (daysSinceLastTally === 0 && status === "over") {
+      sinceLabel = "Tallied today";
+    } else if (daysSinceLastTally > 0 && status !== "over") {
       sinceLabel =
-        daysSinceLastSlip === 1
+        daysSinceLastTally === 1
           ? "1 day since"
-          : `${daysSinceLastSlip} days since`;
+          : `${daysSinceLastTally} days since`;
     }
   }
 
@@ -1951,12 +1951,12 @@ function AvoidRow({
       className={`flex items-center gap-3 rounded-lg border px-4 py-3 ${tone.row}`}
     >
       <button
-        onClick={onSlip}
+        onClick={onTally}
         disabled={buttonDisabled}
         className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-focus disabled:cursor-not-allowed disabled:opacity-50 ${tone.button}`}
-        aria-label={slippedToday ? "Already logged today" : "Record a slip"}
+        aria-label={talliedToday ? "Already logged today" : "Record a tally"}
       >
-        {slippedToday ? "✓" : "+1"}
+        {talliedToday ? "✓" : "+1"}
       </button>
       <div className="min-w-0 flex-1">
         <span className="block break-words text-on-surface">{todo.title}</span>
@@ -1973,7 +1973,7 @@ function AvoidRow({
             </span>
           ) : (
             <span className="text-on-surface/60">
-              {count} slip{count === 1 ? "" : "s"} {periodLabel}
+              {count} {count === 1 ? "tally" : "tallies"} {periodLabel}
             </span>
           )}
           {sinceLabel && (
@@ -2010,7 +2010,7 @@ function AvoidRow({
   );
 }
 
-function UndoSlipToast({
+function UndoTallyToast({
   title,
   onUndo,
   onDismiss,
@@ -2027,7 +2027,7 @@ function UndoSlipToast({
       style={{ marginBottom: "env(safe-area-inset-bottom)" }}
     >
       <span className="min-w-0 flex-1 truncate text-sm text-on-surface">
-        Slip logged for {title}
+        Tally logged for {title}
       </span>
       <button
         type="button"
@@ -2403,7 +2403,7 @@ function EditTodoModal({
               </div>
               <p className="mt-1 text-xs text-text-muted">
                 {isAvoid
-                  ? "Tap +1 to log a slip; analytics tracks slip count and time since last slip."
+                  ? "Tap +1 to log a tally; analytics tracks tally count and time since last tally."
                   : "Standard checkbox todo."}
               </p>
             </fieldset>
@@ -2432,7 +2432,7 @@ function EditTodoModal({
               {recurrenceDisabled && (
                 <span className="mt-1 block text-xs text-text-muted">
                   Avoid todos don&apos;t use recurrence — they always stay visible
-                  so you can log slips.
+                  so you can log tallies.
                 </span>
               )}
               {effectiveRecurrence === "weekday" && (
@@ -2537,7 +2537,7 @@ function EditTodoModal({
             {isAvoid && (
               <fieldset className="mb-4">
                 <legend className="mb-1 block text-sm text-text-muted">
-                  Warn me if I slip more than
+                  Warn me if I tally more than
                 </legend>
                 <div className="flex items-center gap-2">
                   <input
@@ -2579,7 +2579,7 @@ function EditTodoModal({
                 />
                 <span className="text-sm text-text">Limit to once per day</span>
                 <span className="text-xs text-text-muted">
-                  (button disables until midnight after each slip)
+                  (button disables until midnight after each tally)
                 </span>
               </label>
             )}

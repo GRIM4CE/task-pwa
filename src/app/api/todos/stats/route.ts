@@ -36,7 +36,7 @@ export async function GET() {
     .where(
       and(
         // Top-level only — current validation rejects avoid/recurring on
-        // subtasks, but legacy rows could still slip through and pollute stats.
+        // subtasks, but legacy rows could still leak through and pollute stats.
         isNull(schema.todos.parentId),
         or(
           isNotNull(schema.todos.recurrence),

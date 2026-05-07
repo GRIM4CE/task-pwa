@@ -16,7 +16,7 @@ export async function GET() {
   // Subtasks (any parent) are always returned regardless of completion age so
   // they remain visible under the parent — only their position in the
   // "Complete" section is governed by a 24h cutoff, applied client-side.
-  // Avoid todos never have completed=true (slips are logged separately) so
+  // Avoid todos never have completed=true (tallies are logged separately) so
   // they pass through this filter naturally.
   const recentCompletedCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
@@ -65,16 +65,16 @@ export async function GET() {
     )
     .orderBy(asc(schema.todos.sortOrder), desc(schema.todos.createdAt));
 
-  // Avoid-todos need a 35-day slip history so the card can compute its
+  // Avoid-todos need a 35-day tally history so the card can compute its
   // calendar-window warning state locally without a /stats round-trip — long
   // enough to cover a 31-day month plus a small buffer.
   const avoidIds = todoList
     .filter((t) => t.kind === "avoid")
     .map((t) => t.id);
-  const slipsByTodo = new Map<string, number[]>();
+  const talliesByTodo = new Map<string, number[]>();
   if (avoidIds.length > 0) {
-    const slipCutoff = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000);
-    const slips = await db
+    const tallyCutoff = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000);
+    const tallies = await db
       .select({
         todoId: schema.todoCompletions.todoId,
         completedAt: schema.todoCompletions.completedAt,
@@ -84,17 +84,17 @@ export async function GET() {
         and(
           eq(schema.todoCompletions.userId, session.user.id),
           inArray(schema.todoCompletions.todoId, avoidIds),
-          gte(schema.todoCompletions.completedAt, slipCutoff)
+          gte(schema.todoCompletions.completedAt, tallyCutoff)
         )
       )
-      // Ascending so the latest slip is always at the end of each todo's
+      // Ascending so the latest tally is always at the end of each todo's
       // array. Lets clients identify "the most recent" by index without
       // re-sorting on every render.
       .orderBy(asc(schema.todoCompletions.completedAt));
-    for (const s of slips) {
-      const list = slipsByTodo.get(s.todoId) ?? [];
+    for (const s of tallies) {
+      const list = talliesByTodo.get(s.todoId) ?? [];
       list.push(s.completedAt.getTime());
-      slipsByTodo.set(s.todoId, list);
+      talliesByTodo.set(s.todoId, list);
     }
   }
 
@@ -116,8 +116,8 @@ export async function GET() {
       limitCount: t.limitCount,
       limitPeriod: t.limitPeriod,
       oncePerDay: t.oncePerDay,
-      recentSlips:
-        t.kind === "avoid" ? slipsByTodo.get(t.id) ?? [] : [],
+      recentTallies:
+        t.kind === "avoid" ? talliesByTodo.get(t.id) ?? [] : [],
       lastCompletedAt: t.lastCompletedAt ? t.lastCompletedAt.getTime() : null,
       createdAt: t.createdAt.getTime(),
       updatedAt: t.updatedAt.getTime(),
@@ -253,7 +253,7 @@ export async function POST(request: NextRequest) {
       limitCount: todo.limitCount,
       limitPeriod: todo.limitPeriod,
       oncePerDay: todo.oncePerDay,
-      recentSlips: [],
+      recentTallies: [],
       lastCompletedAt: todo.lastCompletedAt ? todo.lastCompletedAt.getTime() : null,
       createdAt: todo.createdAt.getTime(),
       updatedAt: todo.updatedAt.getTime(),

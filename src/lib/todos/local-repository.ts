@@ -5,7 +5,7 @@ import type {
   VacationDTO,
   VacationPeriod,
 } from "@/lib/api-client";
-import { hasSlipToday } from "@/lib/analytics";
+import { hasTallyToday } from "@/lib/analytics";
 import {
   createTodoSchema,
   reorderTodosSchema,
@@ -44,22 +44,22 @@ function err<T>(error: string): RepoResult<T> {
   return { data: null, error };
 }
 
-const SLIP_WINDOW_MS = 35 * 24 * 60 * 60 * 1000;
+const TALLY_WINDOW_MS = 35 * 24 * 60 * 60 * 1000;
 
 // Filter the persisted completion log down to the last 35 days for a given
 // todo (long enough to cover a 31-day calendar month plus buffer). Mirrors
-// the avoid-todo `recentSlips` field the server returns on the
+// the avoid-todo `recentTallies` field the server returns on the
 // list/POST/PATCH responses.
-function recentSlipsFor(todoId: string, events: CompletionEvent[]): number[] {
-  const cutoff = Date.now() - SLIP_WINDOW_MS;
+function recentTalliesFor(todoId: string, events: CompletionEvent[]): number[] {
+  const cutoff = Date.now() - TALLY_WINDOW_MS;
   return events
     .filter((e) => e.todoId === todoId && e.completedAt >= cutoff)
     .map((e) => e.completedAt);
 }
 
-function withRecentSlips(todo: TodoDTO, events: CompletionEvent[]): TodoDTO {
-  if (todo.kind !== "avoid") return { ...todo, recentSlips: [] };
-  return { ...todo, recentSlips: recentSlipsFor(todo.id, events) };
+function withRecentTallies(todo: TodoDTO, events: CompletionEvent[]): TodoDTO {
+  if (todo.kind !== "avoid") return { ...todo, recentTallies: [] };
+  return { ...todo, recentTallies: recentTalliesFor(todo.id, events) };
 }
 
 function readAll(): TodoDTO[] {
@@ -82,7 +82,7 @@ function readAll(): TodoDTO[] {
           limitCount: t.limitCount ?? null,
           limitPeriod: t.limitPeriod ?? null,
           oncePerDay: t.oncePerDay ?? false,
-          recentSlips: t.recentSlips ?? [],
+          recentTallies: t.recentTallies ?? [],
           // Backfill anchor fields for guest data written before scheduled
           // recurrences shipped.
           recurrenceWeekday: t.recurrenceWeekday ?? null,
@@ -189,7 +189,7 @@ export const localTodoRepository: TodoRepository = {
     const all = readAll();
     const events = readCompletions();
     return ok(
-      sortTodos(filterMainList(all)).map((t) => withRecentSlips(t, events))
+      sortTodos(filterMainList(all)).map((t) => withRecentTallies(t, events))
     );
   },
 
@@ -293,7 +293,7 @@ export const localTodoRepository: TodoRepository = {
       limitCount: kind === "avoid" ? parsed.data.limitCount ?? null : null,
       limitPeriod: kind === "avoid" ? parsed.data.limitPeriod ?? null : null,
       oncePerDay: kind === "avoid" ? parsed.data.oncePerDay ?? false : false,
-      recentSlips: [],
+      recentTallies: [],
       lastCompletedAt: null,
       createdAt: now,
       updatedAt: now,
@@ -412,10 +412,10 @@ export const localTodoRepository: TodoRepository = {
     // Require the persisted row to already be avoid — see the matching guard
     // in /api/todos/[id]/route.ts for why a same-patch kind switch is rejected.
     if (
-      (parsed.data.recordSlip === true || parsed.data.undoLastSlip === true) &&
+      (parsed.data.recordTally === true || parsed.data.undoLastTally === true) &&
       previous.kind !== "avoid"
     ) {
-      return err("Slip operations only apply to avoid todos");
+      return err("Tally operations only apply to avoid todos");
     }
     if (effectiveKind !== "avoid") {
       if (
@@ -452,37 +452,37 @@ export const localTodoRepository: TodoRepository = {
     }
     writeAll(next);
 
-    // Avoid todos: each slip is logged as a completion event without
-    // flipping `completed`. Mirror the server's recordSlip handling.
-    if (parsed.data.recordSlip === true && previous.kind === "avoid") {
+    // Avoid todos: each tally is logged as a completion event without
+    // flipping `completed`. Mirror the server's recordTally handling.
+    if (parsed.data.recordTally === true && previous.kind === "avoid") {
       // Local repo can use the precise local-calendar-day check (vs. the
       // server's 24h rolling fallback) since we have the user's timezone
-      // available client-side. Idempotent: a duplicate slip on the same
+      // available client-side. Idempotent: a duplicate tally on the same
       // local day is a no-op rather than an error so the optimistic UI
       // doesn't roll back.
       if (previous.oncePerDay) {
         const existingEvents = readCompletions();
-        const todaySlip = existingEvents.some(
-          (e) => e.todoId === id && hasSlipToday([e.completedAt])
+        const todayTally = existingEvents.some(
+          (e) => e.todoId === id && hasTallyToday([e.completedAt])
         );
-        if (todaySlip) {
-          return ok(withRecentSlips(updated, existingEvents));
+        if (todayTally) {
+          return ok(withRecentTallies(updated, existingEvents));
         }
       }
-      const slipAt = Date.now();
-      next[index] = { ...updated, lastCompletedAt: slipAt };
+      const talliedAt = Date.now();
+      next[index] = { ...updated, lastCompletedAt: talliedAt };
       writeAll(next);
       const events = [
         ...readCompletions(),
-        { todoId: id, completedAt: slipAt },
+        { todoId: id, completedAt: talliedAt },
       ];
       writeCompletions(events);
-      return ok(withRecentSlips(next[index], events));
+      return ok(withRecentTallies(next[index], events));
     }
 
-    // Undo the most recent slip. Mirrors the server transaction: drop the
+    // Undo the most recent tally. Mirrors the server transaction: drop the
     // latest event and rebase lastCompletedAt onto the new latest (or null).
-    if (parsed.data.undoLastSlip === true && previous.kind === "avoid") {
+    if (parsed.data.undoLastTally === true && previous.kind === "avoid") {
       const events = readCompletions();
       let latestIdx = -1;
       let latestAt = -Infinity;
@@ -493,9 +493,9 @@ export const localTodoRepository: TodoRepository = {
         }
       }
       if (latestIdx === -1) {
-        // No slip to undo — return the row as-is.
+        // No tally to undo — return the row as-is.
         writeAll(next);
-        return ok(withRecentSlips(updated, events));
+        return ok(withRecentTallies(updated, events));
       }
       const remaining = [
         ...events.slice(0, latestIdx),
@@ -513,7 +513,7 @@ export const localTodoRepository: TodoRepository = {
       }
       next[index] = { ...updated, lastCompletedAt: nextLastCompletedAt };
       writeAll(next);
-      return ok(withRecentSlips(next[index], remaining));
+      return ok(withRecentTallies(next[index], remaining));
     }
 
     if (
@@ -551,7 +551,7 @@ export const localTodoRepository: TodoRepository = {
         ]);
       }
     }
-    return ok(withRecentSlips(updated, readCompletions()));
+    return ok(withRecentTallies(updated, readCompletions()));
   },
 
   async delete(id: string) {
