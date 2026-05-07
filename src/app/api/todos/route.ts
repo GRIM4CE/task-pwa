@@ -40,6 +40,7 @@ export async function GET() {
       limitPeriod: schema.todos.limitPeriod,
       oncePerDay: schema.todos.oncePerDay,
       lastCompletedAt: schema.todos.lastCompletedAt,
+      lastFocusSkippedAt: schema.todos.lastFocusSkippedAt,
       createdAt: schema.todos.createdAt,
       updatedAt: schema.todos.updatedAt,
       createdBy: schema.users.username,
@@ -119,6 +120,9 @@ export async function GET() {
       recentTallies:
         t.kind === "avoid" ? talliesByTodo.get(t.id) ?? [] : [],
       lastCompletedAt: t.lastCompletedAt ? t.lastCompletedAt.getTime() : null,
+      lastFocusSkippedAt: t.lastFocusSkippedAt
+        ? t.lastFocusSkippedAt.getTime()
+        : null,
       createdAt: t.createdAt.getTime(),
       updatedAt: t.updatedAt.getTime(),
       createdBy: t.createdBy,
@@ -255,6 +259,9 @@ export async function POST(request: NextRequest) {
       oncePerDay: todo.oncePerDay,
       recentTallies: [],
       lastCompletedAt: todo.lastCompletedAt ? todo.lastCompletedAt.getTime() : null,
+      lastFocusSkippedAt: todo.lastFocusSkippedAt
+        ? todo.lastFocusSkippedAt.getTime()
+        : null,
       createdAt: todo.createdAt.getTime(),
       updatedAt: todo.updatedAt.getTime(),
       createdBy: session.user.username,

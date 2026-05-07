@@ -1,0 +1,1 @@
+ALTER TABLE `todos` ADD `last_focus_skipped_at` integer;

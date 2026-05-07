@@ -65,6 +65,18 @@ function isCompletedToday(t: Todo, nowMs: number): boolean {
   );
 }
 
+// True when the row was skipped from Focus today. Skipping defers the row to
+// the next local day regardless of recurrence cadence — daily, weekly, and
+// scheduled rows all reappear tomorrow rather than waiting for the next
+// natural occurrence. Yesterday's skip stamp falls out of this check on the
+// midnight rollover (nowMs ticks forward) so the row surfaces again.
+function isFocusSkippedToday(t: Todo, nowMs: number): boolean {
+  return (
+    t.lastFocusSkippedAt !== null &&
+    isSameLocalDay(t.lastFocusSkippedAt, nowMs)
+  );
+}
+
 function readDismissed(dayKey: string): Set<string> {
   if (typeof window === "undefined") return new Set();
   // Sweep stale per-day entries from prior sessions before reading today's,
@@ -122,6 +134,14 @@ export default function FocusView() {
   const expiringRef = useRef<Set<string>>(new Set());
   const pendingToggleRef = useRef<Set<string>>(new Set());
   const recentlyToggledRef = useRef(false);
+  // Skip undo: surface a 5s toast after a successful skip so an accidental tap
+  // can be reverted. `kind` lets the undo handler send the right inverse patch
+  // — recurring rows reset lastFocusSkippedAt, unpinned rows get re-pinned.
+  const [pendingSkipUndo, setPendingSkipUndo] = useState<
+    | { id: string; title: string; kind: "skip" | "unpin" }
+    | null
+  >(null);
+  const skipUndoTimerRef = useRef<number | null>(null);
   const todayKey = localDayKey(nowMs);
   // Lazy-initialize from localStorage so previously-dismissed suggestions
   // don't flash on first paint after a reload. The effect below still picks
@@ -315,6 +335,89 @@ export default function FocusView() {
     }
   }
 
+  function clearSkipUndoTimer() {
+    if (skipUndoTimerRef.current !== null) {
+      window.clearTimeout(skipUndoTimerRef.current);
+      skipUndoTimerRef.current = null;
+    }
+  }
+
+  function showSkipUndo(id: string, title: string, kind: "skip" | "unpin") {
+    clearSkipUndoTimer();
+    setPendingSkipUndo({ id, title, kind });
+    skipUndoTimerRef.current = window.setTimeout(() => {
+      skipUndoTimerRef.current = null;
+      setPendingSkipUndo((prev) => (prev?.id === id ? null : prev));
+    }, 5000);
+  }
+
+  function dismissSkipUndo() {
+    clearSkipUndoTimer();
+    setPendingSkipUndo(null);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (skipUndoTimerRef.current !== null) {
+        window.clearTimeout(skipUndoTimerRef.current);
+        skipUndoTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Skip the row from today's Focus. Recurring rows get a lastFocusSkippedAt
+  // stamp so they reappear tomorrow regardless of recurrence cadence; non-
+  // recurring rows just clear `pinnedTo` (the user's pin to today is what put
+  // them on Focus in the first place). Both kinds show a 5s undo toast.
+  async function handleSkip(todo: Todo) {
+    const isRecurring = todo.recurrence !== null;
+    const previous = todos;
+    setTodos((prev) =>
+      prev.map((t) =>
+        t.id === todo.id
+          ? isRecurring
+            ? { ...t, lastFocusSkippedAt: Date.now() }
+            : { ...t, pinnedTo: null }
+          : t
+      )
+    );
+    const patch = isRecurring ? { focusSkip: true } : { pinnedTo: null };
+    const { data, error } = await repo.update(todo.id, patch);
+    if (error) {
+      setTodos(previous);
+      return;
+    }
+    if (data) {
+      setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
+    }
+    showSkipUndo(todo.id, todo.title, isRecurring ? "skip" : "unpin");
+  }
+
+  async function handleUndoSkip() {
+    const pending = pendingSkipUndo;
+    if (!pending) return;
+    dismissSkipUndo();
+    const patch =
+      pending.kind === "skip"
+        ? { focusSkip: false }
+        : { pinnedTo: "day" as const };
+    // Optimistic restore: clear the skip stamp / re-pin so the row pops back
+    // onto Focus before the round trip completes.
+    setTodos((prev) =>
+      prev.map((t) =>
+        t.id === pending.id
+          ? pending.kind === "skip"
+            ? { ...t, lastFocusSkippedAt: null }
+            : { ...t, pinnedTo: "day" }
+          : t
+      )
+    );
+    const { data } = await repo.update(pending.id, patch);
+    if (data) {
+      setTodos((prev) => prev.map((t) => (t.id === data.id ? data : t)));
+    }
+  }
+
   // Today: daily-recurring "do" rows + anything pinned to the day + scheduled
   // rows whose current occurrence is open (e.g. an "every Wednesday" todo on
   // a Wednesday it hasn't been completed yet). Across both scopes. Pinned-
@@ -327,6 +430,7 @@ export default function FocusView() {
         t.kind === "do" &&
         !t.completed &&
         t.pinnedTo !== "week" &&
+        !isFocusSkippedToday(t, nowMs) &&
         (t.recurrence === "daily" ||
           t.pinnedTo === "day" ||
           (isScheduledRecurrence(t.recurrence) &&
@@ -338,7 +442,8 @@ export default function FocusView() {
       (t) =>
         t.parentId !== null &&
         !t.completed &&
-        t.pinnedTo === "day"
+        t.pinnedTo === "day" &&
+        !isFocusSkippedToday(t, nowMs)
     )
   );
 
@@ -366,6 +471,7 @@ export default function FocusView() {
       t.parentId === null &&
       t.kind === "do" &&
       t.pinnedTo !== "week" &&
+      !isFocusSkippedToday(t, nowMs) &&
       isOnTodaysRoutine(t, nowMs)
   );
   const dailyDone = dailyEligible.filter((t) => isCompletedToday(t, nowMs))
@@ -375,7 +481,9 @@ export default function FocusView() {
 
   const extrasEligible = todos.filter(
     (t) =>
-      isExtraOnToday(t) && (t.parentId !== null || t.kind === "do")
+      isExtraOnToday(t) &&
+      (t.parentId !== null || t.kind === "do") &&
+      !isFocusSkippedToday(t, nowMs)
   );
   const extrasDone = extrasEligible.filter((t) =>
     isCompletedToday(t, nowMs)
@@ -510,7 +618,12 @@ export default function FocusView() {
       {total > 0 ? (
         <div className="space-y-2">
           {topLevelToday.map((todo) => (
-            <FocusRow key={todo.id} todo={todo} onToggle={() => handleToggle(todo)} />
+            <FocusRow
+              key={todo.id}
+              todo={todo}
+              onToggle={() => handleToggle(todo)}
+              onSkip={() => handleSkip(todo)}
+            />
           ))}
           {subtasksToday.map((s) => (
             <FocusRow
@@ -522,6 +635,7 @@ export default function FocusView() {
                   : null
               }
               onToggle={() => handleToggle(s)}
+              onSkip={() => handleSkip(s)}
             />
           ))}
         </div>
@@ -554,6 +668,69 @@ export default function FocusView() {
           .
         </div>
       )}
+
+      {pendingSkipUndo && (
+        <SkipUndoToast
+          title={pendingSkipUndo.title}
+          kind={pendingSkipUndo.kind}
+          onUndo={handleUndoSkip}
+          onDismiss={dismissSkipUndo}
+        />
+      )}
+    </div>
+  );
+}
+
+function SkipUndoToast({
+  title,
+  kind,
+  onUndo,
+  onDismiss,
+}: {
+  title: string;
+  kind: "skip" | "unpin";
+  onUndo: () => void;
+  onDismiss: () => void;
+}) {
+  const message =
+    kind === "skip" ? `Skipped ${title} for today` : `Unpinned ${title}`;
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed inset-x-0 bottom-4 z-40 mx-auto flex max-w-sm items-center gap-3 rounded-lg border border-border-on-surface bg-surface px-4 py-3 shadow-lg shadow-black/40"
+      style={{ marginBottom: "env(safe-area-inset-bottom)" }}
+    >
+      <span className="min-w-0 flex-1 truncate text-sm text-on-surface">
+        {message}
+      </span>
+      <button
+        type="button"
+        onClick={onUndo}
+        className="shrink-0 rounded px-2 py-1 text-sm font-medium text-primary hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary"
+      >
+        Undo
+      </button>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        className="shrink-0 rounded p-1 text-on-surface/60 hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-focus"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className="h-4 w-4"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path
+            fillRule="evenodd"
+            d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+            clipRule="evenodd"
+          />
+        </svg>
+      </button>
     </div>
   );
 }
@@ -593,12 +770,17 @@ function FocusRow({
   todo,
   parentTitle,
   onToggle,
+  onSkip,
 }: {
   todo: Todo;
   parentTitle?: string | null;
   onToggle: () => void;
+  onSkip: () => void;
 }) {
   const done = todo.completed;
+  // Recurring rows skip (defer to tomorrow); non-recurring rows just unpin.
+  // Surface the wording so the user knows which one this tap will do.
+  const skipLabel = todo.recurrence !== null ? "Skip" : "Unpin";
   return (
     <div className="flex items-center gap-3 rounded-lg border border-border-on-surface bg-surface px-4 py-3">
       <button
@@ -635,6 +817,16 @@ function FocusRow({
           <span className="block text-xs text-text-muted">in {parentTitle}</span>
         )}
       </div>
+      {!done && (
+        <button
+          type="button"
+          onClick={onSkip}
+          className="shrink-0 rounded-md border border-border-on-surface px-2.5 py-1 text-xs text-on-surface/70 hover:bg-surface-hover hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-focus"
+          aria-label={`${skipLabel} ${todo.title}`}
+        >
+          {skipLabel}
+        </button>
+      )}
     </div>
   );
 }

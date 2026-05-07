@@ -134,6 +134,8 @@ export function applyUpdate(
     // ticks, and clearing the pin would force a re-pin after every reset.
     if (patch.completed && next.recurrence === null) next.pinnedTo = null;
   }
+  if (patch.focusSkip === true) next.lastFocusSkippedAt = now;
+  else if (patch.focusSkip === false) next.lastFocusSkippedAt = null;
   return next;
 }
 
