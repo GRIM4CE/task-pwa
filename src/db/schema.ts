@@ -266,10 +266,12 @@ export const todoCompletions = sqliteTable(
 );
 
 // Per-event Skip log. Each row records that a recurring todo was skipped from
-// Focus on a given day. Distinct from todoCompletions so analytics can render
-// skipped days separately (yellow vs green) without polluting completion
-// streak math. `lastFocusSkippedAt` on `todos` still drives the per-day "hide
-// from Focus" filter; this table is the historical log.
+// Focus on a given day. Distinct from todoCompletions so the two events stay
+// queryable separately even though skip days currently count as misses for
+// streak math (same gray cell as a no-show; the heatmap tooltip is the only
+// surfaced differentiation today). `lastFocusSkippedAt` on `todos` still
+// drives the per-day "hide from Focus" filter; this table is the historical
+// log that future analytics surfaces can read.
 export const todoSkips = sqliteTable(
   "todo_skips",
   {

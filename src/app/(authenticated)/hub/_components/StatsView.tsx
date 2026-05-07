@@ -489,10 +489,13 @@ function HeatCell({
       : onVacation
         ? " — on vacation"
         : "";
+  const label = `${title}${suffix}`;
   return (
     <div
       className={`h-3 rounded-sm ${tone}${ring}`}
-      title={`${title}${suffix}`}
+      role="img"
+      aria-label={label}
+      title={label}
     />
   );
 }
