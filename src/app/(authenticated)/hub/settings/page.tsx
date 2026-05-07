@@ -88,7 +88,7 @@ export default function SettingsPage() {
       <section className="mb-6 rounded-lg border border-border-on-surface bg-surface p-4">
         <h3 className="mb-1 text-sm font-medium text-on-surface/60">Vacation</h3>
         <p className="mb-3 text-sm text-on-surface/70">
-          Pause habit tracking. Missed recurring days and slips on avoid todos
+          Pause habit tracking. Missed recurring days and tallies on avoid todos
           count as neutral instead of broken streaks. Completions still count
           normally.
         </p>

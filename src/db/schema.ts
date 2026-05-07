@@ -170,16 +170,16 @@ export const todos = sqliteTable(
     }),
     pinnedTo: text("pinned_to", { enum: ["day", "week"] }),
     // "do" = normal todo (default). "avoid" = bad-habit tracker: each tap
-    // logs a slip into todoCompletions instead of flipping completed, and the
-    // row never archives — it stays visible so future slips can be logged.
+    // logs a tally into todoCompletions instead of flipping completed, and the
+    // row never archives — it stays visible so future tallies can be logged.
     kind: text("kind", { enum: ["do", "avoid"] }).notNull().default("do"),
-    // Optional warning threshold for avoid-todos. limitCount slips inside
+    // Optional warning threshold for avoid-todos. limitCount tallies inside
     // the current calendar limitPeriod (Mon–Sun week, or 1st–end-of-month)
     // trips an at/over-limit warning on the card.
     limitCount: integer("limit_count"),
     limitPeriod: text("limit_period", { enum: ["week", "month"] }),
     // Avoid-only: when true, the +1 button disables for the rest of the
-    // local day after one slip. Each calendar day still counts at most once
+    // local day after one tally. Each calendar day still counts at most once
     // toward the limit window, regardless of taps.
     oncePerDay: integer("once_per_day", { mode: "boolean" }).notNull().default(false),
     lastCompletedAt: integer("last_completed_at", { mode: "timestamp" }),
@@ -197,7 +197,7 @@ export const todos = sqliteTable(
 );
 
 // Vacation periods. While a row's [startsAt, endsAt) interval covers a
-// given day, recurring "do" misses and avoid slips on that day count as
+// given day, recurring "do" misses and avoid tallies on that day count as
 // neutral in analytics rather than as failures. endsAt is null while a
 // vacation is currently active. Only days *after* a vacation row's
 // startsAt are affected — toggling on does not retroactively neutralize

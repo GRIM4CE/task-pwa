@@ -157,13 +157,13 @@ export const updateTodoSchema = z
     limitCount: limitCountSchema.optional(),
     limitPeriod: limitPeriodSchema.optional(),
     oncePerDay: z.boolean().optional(),
-    // For avoid todos: log a slip into todoCompletions without flipping
+    // For avoid todos: log a tally into todoCompletions without flipping
     // `completed`. Mutually exclusive with `completed` in the same patch.
-    recordSlip: z.boolean().optional(),
-    // For avoid todos: delete the most recent slip event for this todo
+    recordTally: z.boolean().optional(),
+    // For avoid todos: delete the most recent tally event for this todo
     // (and reset lastCompletedAt to the new latest, or null). Powers the
-    // post-slip Undo toast. Mutually exclusive with recordSlip and completed.
-    undoLastSlip: z.boolean().optional(),
+    // post-tally Undo toast. Mutually exclusive with recordTally and completed.
+    undoLastTally: z.boolean().optional(),
   })
   // The recurrence/pin combo check lives in the PATCH route, not here:
   // the modal always sends both fields, so a no-op patch on a legacy
@@ -198,17 +198,17 @@ export const updateTodoSchema = z
     message: "Avoid todos cannot be pinned",
     path: ["pinnedTo"],
   })
-  .refine((v) => !(v.recordSlip === true && v.completed !== undefined), {
-    message: "Cannot record slip and toggle completion in the same request",
-    path: ["recordSlip"],
+  .refine((v) => !(v.recordTally === true && v.completed !== undefined), {
+    message: "Cannot record tally and toggle completion in the same request",
+    path: ["recordTally"],
   })
-  .refine((v) => !(v.undoLastSlip === true && v.recordSlip === true), {
-    message: "Cannot record and undo a slip in the same request",
-    path: ["undoLastSlip"],
+  .refine((v) => !(v.undoLastTally === true && v.recordTally === true), {
+    message: "Cannot record and undo a tally in the same request",
+    path: ["undoLastTally"],
   })
-  .refine((v) => !(v.undoLastSlip === true && v.completed !== undefined), {
-    message: "Cannot undo slip and toggle completion in the same request",
-    path: ["undoLastSlip"],
+  .refine((v) => !(v.undoLastTally === true && v.completed !== undefined), {
+    message: "Cannot undo tally and toggle completion in the same request",
+    path: ["undoLastTally"],
   })
   .refine((v) => (v.limitCount == null) === (v.limitPeriod == null), {
     message: "Set both limit count and period, or neither",

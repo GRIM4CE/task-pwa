@@ -141,7 +141,7 @@ function dayOnVacation(
   return false;
 }
 
-// True when the timestamp falls inside any vacation period — used for slip
+// True when the timestamp falls inside any vacation period — used for tally
 // classification. Open-ended periods extend to `now`.
 function timestampOnVacation(
   ts: number,
@@ -156,9 +156,9 @@ function timestampOnVacation(
 }
 
 // Walks the same gap-anchored longest-streak math but treats vacation
-// slips as if they didn't happen — they neither reset the streak nor count
-// against the streak tally.
-function filterNonVacationSlips(
+// tallies as if they didn't happen — they neither reset the streak nor count
+// against the streak count.
+function filterNonVacationTallies(
   completions: number[],
   vacations: VacationPeriod[],
   now: number
@@ -172,29 +172,29 @@ export interface AvoidStat {
   title: string;
   limitCount: number | null;
   limitPeriod: LimitPeriod;
-  // Slips inside the rolling window (last 7 / last 30 days). For unlimited
+  // Tallies inside the rolling window (last 7 / last 30 days). For unlimited
   // avoid-todos we still report a 30-day count for context.
-  windowSlipCount: number;
+  windowTallyCount: number;
   windowDays: number;
-  // Slips ever recorded (within the API's 120-day retention).
-  totalSlips: number;
+  // Tallies ever recorded (within the API's 120-day retention).
+  totalTallies: number;
   status: AvoidStatus;
-  // Days since the most recent slip — null when there's never been one.
-  daysSinceLastSlip: number | null;
+  // Days since the most recent tally — null when there's never been one.
+  daysSinceLastTally: number | null;
   bestStreakDays: number;
-  // Last 30 days of slips for a sparkline-style heatmap.
+  // Last 30 days of tallies for a sparkline-style heatmap.
   heatmap: AvoidHeatCell[];
-  // Milestone hit by `daysSinceLastSlip` (e.g. 7, 14, 30, 60, 90), or null
+  // Milestone hit by `daysSinceLastTally` (e.g. 7, 14, 30, 60, 90), or null
   // when none has been reached yet.
   milestone: number | null;
 }
 
 export interface AvoidHeatCell {
   date: number;
-  slips: number;
+  tallies: number;
   isToday: boolean;
   // True when the day was at any point covered by a vacation period.
-  // Slips on those days are rendered yellow regardless of count.
+  // Tallies on those days are rendered yellow regardless of count.
   onVacation: boolean;
 }
 
@@ -791,7 +791,7 @@ export function avoidWindowDays(period: LimitPeriod, now: Date): number {
   return AVOID_HEATMAP_DAYS;
 }
 
-function countSlipsInWindow(
+function countTalliesInWindow(
   completions: number[],
   windowStart: number
 ): number {
@@ -803,12 +803,19 @@ function avoidStatus(
   limit: number | null
 ): AvoidStatus {
   if (limit === null || limit <= 0) return "ok";
-  if (count >= limit) return "over";
-  if (count >= Math.ceil(limit * AVOID_WARN_RATIO)) return "warn";
+  // Strictly over the limit is a slip; being exactly at the limit is fine
+  // ("you've reached your cap, that's the deal").
+  if (count > limit) return "over";
+  // Warn only fires while still under the limit so the at-limit case stays
+  // neutral. For small limits (1–3) the warn band can be empty, which is
+  // intentional — the user gets either ok or over, no in-between.
+  if (count < limit && count >= Math.ceil(limit * AVOID_WARN_RATIO)) {
+    return "warn";
+  }
   return "ok";
 }
 
-function daysSinceLastSlip(
+function daysSinceLastTally(
   completions: number[],
   todayStart: Date
 ): number | null {
@@ -821,7 +828,7 @@ function daysSinceLastSlip(
   );
 }
 
-// Best streak = longest run of consecutive whole days with no slip recorded,
+// Best streak = longest run of consecutive whole days with no tally recorded,
 // looking back through the available completion history (capped by the API's
 // 120-day window). The most recent gap is included so an in-progress streak
 // can become the new best.
@@ -832,7 +839,7 @@ function longestStreak(
 ): number {
   const dayMs = 24 * 60 * 60 * 1000;
   const sorted = [...completions].sort((a, b) => a - b);
-  // Anchors: the todo's creation (no slips before it could exist) and the
+  // Anchors: the todo's creation (no tallies before it could exist) and the
   // current moment (so the in-progress gap counts).
   const anchors = [todoCreatedAt, ...sorted, now];
   let best = 0;
@@ -849,7 +856,7 @@ function avoidHeatmap(
   vacations: VacationPeriod[],
   now: number
 ): AvoidHeatCell[] {
-  // Bucket slips by start-of-day so a day with multiple slips renders darker.
+  // Bucket tallies by start-of-day so a day with multiple tallies renders darker.
   const bucket = new Map<number, number>();
   for (const ts of completions) {
     const day = startOfDay(new Date(ts)).getTime();
@@ -862,7 +869,7 @@ function avoidHeatmap(
     const endMs = addDays(day, 1).getTime();
     cells.push({
       date: startMs,
-      slips: bucket.get(startMs) ?? 0,
+      tallies: bucket.get(startMs) ?? 0,
       isToday: i === 0,
       onVacation: dayOnVacation(startMs, endMs, vacations, now),
     });
@@ -886,18 +893,18 @@ function avoidForTodo(
 ): AvoidStat {
   const windowStart = avoidWindowStart(todo.limitPeriod, now).getTime();
   const windowDays = avoidWindowDays(todo.limitPeriod, now);
-  // Vacation slips are excluded from the limit count and from streak math
-  // so a logged-but-on-vacation slip stays neutral. They still appear in
-  // `totalSlips` and on the heatmap, just rendered yellow.
-  const effective = filterNonVacationSlips(
+  // Vacation tallies are excluded from the limit count and from streak math
+  // so a logged-but-on-vacation tally stays neutral. They still appear in
+  // `totalTallies` and on the heatmap, just rendered yellow.
+  const effective = filterNonVacationTallies(
     todo.completions,
     vacations,
     now.getTime()
   );
-  const windowSlipCount = countSlipsInWindow(effective, windowStart);
-  const totalSlips = todo.completions.length;
-  const status = avoidStatus(windowSlipCount, todo.limitCount);
-  const sinceLastSlip = daysSinceLastSlip(effective, todayStart);
+  const windowTallyCount = countTalliesInWindow(effective, windowStart);
+  const totalTallies = todo.completions.length;
+  const status = avoidStatus(windowTallyCount, todo.limitCount);
+  const sinceLastTally = daysSinceLastTally(effective, todayStart);
   const bestStreakDays = longestStreak(
     effective,
     todo.createdAt,
@@ -908,20 +915,20 @@ function avoidForTodo(
     title: todo.title,
     limitCount: todo.limitCount,
     limitPeriod: todo.limitPeriod,
-    windowSlipCount,
+    windowTallyCount,
     windowDays,
-    totalSlips,
+    totalTallies,
     status,
-    daysSinceLastSlip: sinceLastSlip,
+    daysSinceLastTally: sinceLastTally,
     bestStreakDays,
     heatmap: avoidHeatmap(todo.completions, todayStart, vacations, now.getTime()),
-    milestone: milestoneFor(sinceLastSlip),
+    milestone: milestoneFor(sinceLastTally),
   };
 }
 
 // Public so the todo card can compute the same status without redoing the
 // arithmetic. Only needs the per-todo info available in the list view.
-// `vacations` is optional — when supplied, slips that fell inside any
+// `vacations` is optional — when supplied, tallies that fell inside any
 // vacation period are excluded from the count so the card chip matches the
 // stats page.
 export function avoidStatusForTodo(
@@ -934,17 +941,17 @@ export function avoidStatusForTodo(
   const nowDate = new Date(now);
   const windowStart = avoidWindowStart(limitPeriod, nowDate).getTime();
   const windowDays = avoidWindowDays(limitPeriod, nowDate);
-  const effective = filterNonVacationSlips(completions, vacations, now);
-  const count = countSlipsInWindow(effective, windowStart);
+  const effective = filterNonVacationTallies(completions, vacations, now);
+  const count = countTalliesInWindow(effective, windowStart);
   return { count, status: avoidStatus(count, limitCount), windowDays };
 }
 
-// Whether the given completion list contains a slip on today's local
+// Whether the given completion list contains a tally on today's local
 // calendar day. Used by the once-per-day card mode to decide whether the
 // +1 button should be disabled. Uses date arithmetic (addDays) for the
 // next-day boundary so DST transitions — where the next local midnight is
 // 23 or 25 hours away — don't shift the window.
-export function hasSlipToday(
+export function hasTallyToday(
   completions: number[],
   now: number = Date.now()
 ): boolean {

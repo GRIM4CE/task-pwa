@@ -45,8 +45,8 @@ export interface UpdateTodoPatch {
   limitCount?: number | null;
   limitPeriod?: LimitPeriod;
   oncePerDay?: boolean;
-  recordSlip?: boolean;
-  undoLastSlip?: boolean;
+  recordTally?: boolean;
+  undoLastTally?: boolean;
 }
 
 export interface TodoRepository {

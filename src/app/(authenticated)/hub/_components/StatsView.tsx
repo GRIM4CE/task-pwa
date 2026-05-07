@@ -117,7 +117,7 @@ export default function StatsView() {
         <div className="mb-4 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-on-surface">
           <span className="font-medium">On vacation.</span>{" "}
           <span className="text-on-surface/80">
-            Missed days and slips count as neutral until you end vacation in
+            Missed days and tallies count as neutral until you end vacation in
             settings.
           </span>
         </div>
@@ -160,7 +160,7 @@ export default function StatsView() {
             </Section>
           )}
           {stats && stats.avoid.length > 0 && (
-            <Section title="Avoid" hint="Slips &amp; streaks">
+            <Section title="Avoid" hint="Tallies &amp; streaks">
               <div className="space-y-2">
                 {stats.avoid.map((a) => (
                   <AvoidStatRow key={a.id} stat={a} />
@@ -595,13 +595,13 @@ function AvoidStatRow({ stat }: { stat: AvoidStat }) {
         ? "border-warning/50"
         : "border-border-on-surface";
   const sinceLabel =
-    stat.daysSinceLastSlip === null
-      ? "No slips logged yet"
-      : stat.daysSinceLastSlip === 0
-        ? "Slipped today"
-        : stat.daysSinceLastSlip === 1
+    stat.daysSinceLastTally === null
+      ? "No tallies logged yet"
+      : stat.daysSinceLastTally === 0
+        ? "Tallied today"
+        : stat.daysSinceLastTally === 1
           ? "1 day since"
-          : `${stat.daysSinceLastSlip} days since`;
+          : `${stat.daysSinceLastTally} days since`;
 
   return (
     <div className={`rounded-lg border bg-surface px-4 py-3 ${tone}`}>
@@ -619,8 +619,8 @@ function AvoidStatRow({ stat }: { stat: AvoidStat }) {
           }`}
         >
           {stat.limitCount !== null
-            ? `${stat.windowSlipCount} / ${stat.limitCount} ${periodLabel}`
-            : `${stat.windowSlipCount} ${periodLabel}`}
+            ? `${stat.windowTallyCount} / ${stat.limitCount} ${periodLabel}`
+            : `${stat.windowTallyCount} ${periodLabel}`}
         </span>
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-on-surface/60">
@@ -628,8 +628,8 @@ function AvoidStatRow({ stat }: { stat: AvoidStat }) {
         {stat.bestStreakDays > 0 && (
           <span>Best: {stat.bestStreakDays}d</span>
         )}
-        {stat.totalSlips > 0 && (
-          <span>{stat.totalSlips} total slips</span>
+        {stat.totalTallies > 0 && (
+          <span>{stat.totalTallies} total tallies</span>
         )}
       </div>
       {stat.milestone !== null && (
@@ -642,12 +642,12 @@ function AvoidStatRow({ stat }: { stat: AvoidStat }) {
         style={{
           gridTemplateColumns: `repeat(${stat.heatmap.length}, minmax(0, 1fr))`,
         }}
-        aria-label="Last 30 days of slips"
+        aria-label="Last 30 days of tallies"
       >
         {stat.heatmap.map((d) => (
-          <SlipHeatCell
+          <TallyHeatCell
             key={d.date}
-            slips={d.slips}
+            tallies={d.tallies}
             isToday={d.isToday}
             date={d.date}
             onVacation={d.onVacation}
@@ -662,28 +662,28 @@ function AvoidStatRow({ stat }: { stat: AvoidStat }) {
   );
 }
 
-function SlipHeatCell({
-  slips,
+function TallyHeatCell({
+  tallies,
   isToday,
   date,
   onVacation,
 }: {
-  slips: number;
+  tallies: number;
   isToday: boolean;
   date: number;
   onVacation: boolean;
 }) {
-  // Multiple slips on the same day deepen the tone so a binge stands out.
-  // Vacation slips stay yellow regardless of count: the user already opted
+  // Multiple tallies on the same day deepen the tone so a binge stands out.
+  // Vacation tallies stay yellow regardless of count: the user already opted
   // out of the day counting against them.
   const tone =
-    slips === 0
+    tallies === 0
       ? onVacation
         ? "bg-warning/20"
         : "bg-surface-hover"
       : onVacation
         ? "bg-warning/60"
-        : slips === 1
+        : tallies === 1
           ? "bg-warning/60"
           : "bg-danger/80";
   const ring = isToday ? " ring-1 ring-focus" : "";
@@ -692,10 +692,12 @@ function SlipHeatCell({
     month: "short",
     day: "numeric",
   });
-  const slipText =
-    slips > 0 ? ` — ${slips} slip${slips === 1 ? "" : "s"}` : " — no slips";
+  const tallyText =
+    tallies > 0
+      ? ` — ${tallies} ${tallies === 1 ? "tally" : "tallies"}`
+      : " — no tallies";
   const vacationText = onVacation ? " (on vacation)" : "";
-  const label = `${dateLabel}${slipText}${vacationText}`;
+  const label = `${dateLabel}${tallyText}${vacationText}`;
   return (
     <div
       className={`h-3 rounded-sm ${tone}${ring}`}
