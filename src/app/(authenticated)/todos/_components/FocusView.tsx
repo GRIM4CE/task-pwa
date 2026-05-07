@@ -134,6 +134,11 @@ export default function FocusView() {
   const expiringRef = useRef<Set<string>>(new Set());
   const pendingToggleRef = useRef<Set<string>>(new Set());
   const recentlyToggledRef = useRef(false);
+  // Per-id in-flight guard for the Skip action. Without it, a double-tap fires
+  // two PATCHes and the second request's rollback snapshot already contains
+  // the optimistic skip — a server error then leaves the row in a half-applied
+  // state. Mirrors pendingToggleRef.
+  const pendingSkipRef = useRef<Set<string>>(new Set());
   // Skip undo: surface a 5s toast after a successful skip so an accidental tap
   // can be reverted. `kind` lets the undo handler send the right inverse patch
   // — recurring rows reset lastFocusSkippedAt, unpinned rows get re-pinned.
@@ -370,6 +375,8 @@ export default function FocusView() {
   // recurring rows just clear `pinnedTo` (the user's pin to today is what put
   // them on Focus in the first place). Both kinds show a 5s undo toast.
   async function handleSkip(todo: Todo) {
+    if (pendingSkipRef.current.has(todo.id)) return;
+    pendingSkipRef.current.add(todo.id);
     const isRecurring = todo.recurrence !== null;
     const previous = todos;
     setTodos((prev) =>
@@ -383,6 +390,7 @@ export default function FocusView() {
     );
     const patch = isRecurring ? { focusSkip: true } : { pinnedTo: null };
     const { data, error } = await repo.update(todo.id, patch);
+    pendingSkipRef.current.delete(todo.id);
     if (error) {
       setTodos(previous);
       return;
