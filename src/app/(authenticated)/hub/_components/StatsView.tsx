@@ -408,6 +408,7 @@ function DailyRow({ stat }: { stat: DailyStat }) {
             isFuture={d.isFuture}
             isToday={d.isToday}
             onVacation={d.onVacation}
+            skipped={d.skipped}
           />
         ))}
       </div>
@@ -423,6 +424,7 @@ function DailyRow({ stat }: { stat: DailyStat }) {
             isToday={d.isToday}
             date={d.date}
             onVacation={d.onVacation}
+            skipped={d.skipped}
           />
         ))}
       </div>
@@ -459,19 +461,26 @@ function HeatCell({
   isToday,
   date,
   onVacation,
+  skipped,
 }: {
   completed: boolean;
   isToday: boolean;
   date: number;
   onVacation: boolean;
+  skipped: boolean;
 }) {
-  // Vacation + missed = yellow (neutral). Vacation + completed still goes
-  // green so the user sees their effort. Plain misses stay grey.
+  // Tone priority: completed > skipped > vacation > miss. Same-day completion
+  // already takes precedence in analytics (`!completed && skipped`), so the
+  // ordering here just makes vacation lose to skip when both happen on a day
+  // with no completion — a deliberate skip is more informative than the
+  // ambient "you were on vacation that day" state.
   const tone = completed
     ? "bg-success/80"
-    : onVacation
-      ? "bg-warning/40"
-      : "bg-surface-hover";
+    : skipped
+      ? "bg-select/60"
+      : onVacation
+        ? "bg-warning/40"
+        : "bg-surface-hover";
   const ring = isToday ? " ring-1 ring-focus" : "";
   const title = new Date(date).toLocaleDateString(undefined, {
     weekday: "short",
@@ -480,9 +489,11 @@ function HeatCell({
   });
   const suffix = completed
     ? " — completed"
-    : onVacation
-      ? " — on vacation"
-      : "";
+    : skipped
+      ? " — skipped"
+      : onVacation
+        ? " — on vacation"
+        : "";
   return (
     <div
       className={`h-3 rounded-sm ${tone}${ring}`}
@@ -497,12 +508,14 @@ function DayPill({
   isFuture,
   isToday,
   onVacation,
+  skipped,
 }: {
   label: string;
   completed: boolean;
   isFuture: boolean;
   isToday: boolean;
   onVacation: boolean;
+  skipped: boolean;
 }) {
   const base =
     "flex h-7 items-center justify-center rounded text-[10px] font-medium";
@@ -510,9 +523,11 @@ function DayPill({
     ? "bg-success/80 text-white"
     : isFuture
       ? "bg-surface-hover text-on-surface/40"
-      : onVacation
-        ? "bg-warning/40 text-on-surface/80"
-        : "bg-surface-hover text-on-surface/60";
+      : skipped
+        ? "bg-select/60 text-on-surface/80"
+        : onVacation
+          ? "bg-warning/40 text-on-surface/80"
+          : "bg-surface-hover text-on-surface/60";
   const ring = isToday ? " ring-1 ring-focus" : "";
   return <div className={`${base} ${tone}${ring}`}>{label}</div>;
 }
