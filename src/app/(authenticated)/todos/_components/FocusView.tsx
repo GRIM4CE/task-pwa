@@ -452,6 +452,7 @@ export default function FocusView() {
             }}
             aria-label="Add a task to focus"
             aria-expanded={quickAddOpen}
+            aria-controls="focus-quick-add-form"
             className="flex h-9 w-9 items-center justify-center rounded-lg border border-border-on-surface text-on-surface/70 hover:bg-surface-hover hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-focus"
           >
             <svg
@@ -472,8 +473,16 @@ export default function FocusView() {
       </div>
 
       {quickAddOpen && (
-        <form onSubmit={handleQuickAdd} className="mb-4 flex gap-2">
+        <form
+          id="focus-quick-add-form"
+          onSubmit={handleQuickAdd}
+          className="mb-4 flex gap-2"
+        >
+          <label htmlFor="focus-quick-add-input" className="sr-only">
+            Task title
+          </label>
           <input
+            id="focus-quick-add-input"
             ref={quickAddInputRef}
             type="text"
             value={quickAddTitle}
