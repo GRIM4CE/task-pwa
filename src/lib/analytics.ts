@@ -43,11 +43,12 @@ export interface DayCell {
   // True when the user was on vacation at any point during the day.
   // Misses on vacation days are neutral (yellow) instead of failing.
   onVacation: boolean;
-  // True when the user tapped Skip on this todo on this day. Treated as a
-  // neutral day for streak math (mirrors onVacation), but rendered as a
-  // distinct tone so the user can tell deliberate skips apart from forgotten
-  // misses and from vacation. Ignored when `completed` is also true (a same-
-  // day completion supersedes the skip visually and for streak math).
+  // True when the user tapped Skip on this todo on this day. A skipped day
+  // counts the same as a forgotten miss for streak / eligibility math — the
+  // flag is retained only so the heatmap tooltip can differentiate "skipped"
+  // from a silent miss and so future analytics surfaces can query the data
+  // separately. Ignored when `completed` is also true (a same-day completion
+  // supersedes the skip).
   skipped: boolean;
 }
 
