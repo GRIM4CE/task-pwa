@@ -93,6 +93,10 @@ export interface RecurringTodoStats {
   isPersonal: boolean;
   createdAt: number;
   completions: number[];
+  // Per-event skip log over the same trailing 120-day window. Each timestamp
+  // marks a Focus-page Skip for this todo by the requesting user. Drives the
+  // distinct heatmap rendering and the streak math's neutral-day handling.
+  skips: number[];
 }
 
 export interface AvoidTodoStats {

@@ -75,6 +75,30 @@ export async function GET() {
     byTodo.set(c.todoId, list);
   }
 
+  // Skip log over the same trailing 120-day window. Joined with completions
+  // by todoId so the per-todo response can return both arrays in one pass.
+  // Avoid todos can't be skipped from Focus, so their skips array is always
+  // empty — no separate query needed.
+  const skips = await db
+    .select({
+      todoId: schema.todoSkips.todoId,
+      skippedAt: schema.todoSkips.skippedAt,
+    })
+    .from(schema.todoSkips)
+    .where(
+      and(
+        eq(schema.todoSkips.userId, session.user.id),
+        gte(schema.todoSkips.skippedAt, cutoff)
+      )
+    )
+    .orderBy(asc(schema.todoSkips.skippedAt));
+  const skipsByTodo = new Map<string, number[]>();
+  for (const s of skips) {
+    const list = skipsByTodo.get(s.todoId) ?? [];
+    list.push(s.skippedAt.getTime());
+    skipsByTodo.set(s.todoId, list);
+  }
+
   const recurring = trackedTodos.filter((t) => t.recurrence !== null);
   const avoid = trackedTodos.filter((t) => t.kind === "avoid");
 
@@ -115,6 +139,7 @@ export async function GET() {
       isPersonal: t.isPersonal,
       createdAt: t.createdAt.getTime(),
       completions: byTodo.get(t.id) ?? [],
+      skips: skipsByTodo.get(t.id) ?? [],
     })),
     avoid: avoid.map((t) => ({
       id: t.id,
