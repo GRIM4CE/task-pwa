@@ -40,6 +40,7 @@ export async function PATCH(
     oncePerDay?: boolean;
     recordTally?: boolean;
     undoLastTally?: boolean;
+    focusSkip?: boolean;
   };
   try {
     const raw = await request.json();
@@ -358,6 +359,16 @@ export async function PATCH(
     updateData.lastCompletedAt = now;
   }
 
+  // Focus-page skip: stamping (or clearing for undo) is independent of
+  // completion. The validator already blocks combining focusSkip with
+  // completed/tally ops, so this can't collide with the lastCompletedAt logic
+  // above.
+  if (body.focusSkip === true) {
+    updateData.lastFocusSkippedAt = now;
+  } else if (body.focusSkip === false) {
+    updateData.lastFocusSkippedAt = null;
+  }
+
   if (reparentTo !== undefined) {
     updateData.parentId = reparentTo === null ? null : reparentTo.id;
     // Demoting to a subtask drops recurrence + anchors so the row's shape
@@ -604,6 +615,9 @@ export async function PATCH(
     oncePerDay: updated.oncePerDay,
     recentTallies,
     lastCompletedAt: updated.lastCompletedAt ? updated.lastCompletedAt.getTime() : null,
+    lastFocusSkippedAt: updated.lastFocusSkippedAt
+      ? updated.lastFocusSkippedAt.getTime()
+      : null,
     createdAt: updated.createdAt.getTime(),
     updatedAt: updated.updatedAt.getTime(),
     createdBy: creator[0]?.username ?? "unknown",

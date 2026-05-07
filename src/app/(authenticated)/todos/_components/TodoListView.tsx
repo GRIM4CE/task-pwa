@@ -90,6 +90,7 @@ function makeDraftTodo(title: string): Todo {
     oncePerDay: false,
     recentTallies: [],
     lastCompletedAt: null,
+    lastFocusSkippedAt: null,
     createdAt: now,
     updatedAt: now,
     createdBy: "",

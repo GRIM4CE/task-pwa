@@ -69,6 +69,11 @@ export interface TodoDTO {
   // /api/todos/stats. Empty for non-avoid rows.
   recentTallies: number[];
   lastCompletedAt: number | null;
+  // Set by the Focus page's Skip action. When this is "today" (local time)
+  // the row is hidden from Focus, then reappears tomorrow regardless of
+  // recurrence cadence. Distinct from lastCompletedAt so analytics never
+  // mistake a skip for a completion.
+  lastFocusSkippedAt: number | null;
   createdAt: number;
   updatedAt: number;
   createdBy: string;
@@ -143,7 +148,7 @@ export const api = {
     stats: () => apiRequest<StatsDTO>("/api/todos/stats"),
     create: (body: { title: string; description?: string; isPersonal?: boolean; recurrence?: Recurrence; recurrenceWeekday?: number | null; recurrenceDayOfMonth?: number | null; recurrenceOrdinal?: RecurrenceOrdinal; pinnedTo?: PinnedTo; parentId?: string | null; kind?: TodoKind; limitCount?: number | null; limitPeriod?: LimitPeriod; oncePerDay?: boolean }) =>
       apiRequest<TodoDTO>("/api/todos", { method: "POST", body: JSON.stringify(body) }),
-    update: (id: string, body: { title?: string; description?: string | null; completed?: boolean; isPersonal?: boolean; sortOrder?: number; recurrence?: Recurrence; recurrenceWeekday?: number | null; recurrenceDayOfMonth?: number | null; recurrenceOrdinal?: RecurrenceOrdinal; pinnedTo?: PinnedTo; parentId?: string | null; autoReset?: boolean; kind?: TodoKind; limitCount?: number | null; limitPeriod?: LimitPeriod; oncePerDay?: boolean; recordTally?: boolean; undoLastTally?: boolean }) =>
+    update: (id: string, body: { title?: string; description?: string | null; completed?: boolean; isPersonal?: boolean; sortOrder?: number; recurrence?: Recurrence; recurrenceWeekday?: number | null; recurrenceDayOfMonth?: number | null; recurrenceOrdinal?: RecurrenceOrdinal; pinnedTo?: PinnedTo; parentId?: string | null; autoReset?: boolean; kind?: TodoKind; limitCount?: number | null; limitPeriod?: LimitPeriod; oncePerDay?: boolean; recordTally?: boolean; undoLastTally?: boolean; focusSkip?: boolean }) =>
       apiRequest<TodoDTO>(`/api/todos/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     reorder: (ids: string[], parentId?: string | null) =>
       apiRequest<{ success: boolean }>("/api/todos/reorder", { method: "POST", body: JSON.stringify({ ids, parentId: parentId ?? null }) }),

@@ -183,6 +183,11 @@ export const todos = sqliteTable(
     // toward the limit window, regardless of taps.
     oncePerDay: integer("once_per_day", { mode: "boolean" }).notNull().default(false),
     lastCompletedAt: integer("last_completed_at", { mode: "timestamp" }),
+    // Set by the Focus page's Skip action: marks the row as deferred to the
+    // next local day so it drops off Focus today and reappears tomorrow.
+    // Distinct from lastCompletedAt so analytics (which read todoCompletions)
+    // never count a skip as a completion.
+    lastFocusSkippedAt: integer("last_focus_skipped_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),

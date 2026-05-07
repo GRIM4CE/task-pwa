@@ -88,6 +88,9 @@ function readAll(): TodoDTO[] {
           recurrenceWeekday: t.recurrenceWeekday ?? null,
           recurrenceDayOfMonth: t.recurrenceDayOfMonth ?? null,
           recurrenceOrdinal: t.recurrenceOrdinal ?? null,
+          // Backfill for guest data written before the Focus skip feature
+          // shipped — null means "never skipped".
+          lastFocusSkippedAt: t.lastFocusSkippedAt ?? null,
         }));
       }
     } catch {
@@ -112,6 +115,7 @@ function readAll(): TodoDTO[] {
             recurrenceOrdinal: null,
             parentId: s.parentId,
             pinnedTo: s.pinnedTo ?? (s.pinnedToWeek ? "week" : null),
+            lastFocusSkippedAt: s.lastFocusSkippedAt ?? null,
           }));
         if (migrated.length > 0) {
           todos = [...todos, ...migrated];
@@ -295,6 +299,7 @@ export const localTodoRepository: TodoRepository = {
       oncePerDay: kind === "avoid" ? parsed.data.oncePerDay ?? false : false,
       recentTallies: [],
       lastCompletedAt: null,
+      lastFocusSkippedAt: null,
       createdAt: now,
       updatedAt: now,
       createdBy: GUEST_USERNAME,

@@ -164,6 +164,11 @@ export const updateTodoSchema = z
     // (and reset lastCompletedAt to the new latest, or null). Powers the
     // post-tally Undo toast. Mutually exclusive with recordTally and completed.
     undoLastTally: z.boolean().optional(),
+    // Focus-page Skip action. true: stamp lastFocusSkippedAt = now so the row
+    // drops off today's Focus and reappears tomorrow. false: clear the stamp
+    // (powers the undo toast). Doesn't touch completed or todoCompletions, so
+    // analytics never see a skip as a completion.
+    focusSkip: z.boolean().optional(),
   })
   // The recurrence/pin combo check lives in the PATCH route, not here:
   // the modal always sends both fields, so a no-op patch on a legacy
@@ -210,6 +215,20 @@ export const updateTodoSchema = z
     message: "Cannot undo tally and toggle completion in the same request",
     path: ["undoLastTally"],
   })
+  .refine(
+    (v) =>
+      !(
+        v.focusSkip !== undefined &&
+        (v.completed !== undefined ||
+          v.recordTally === true ||
+          v.undoLastTally === true)
+      ),
+    {
+      message:
+        "focusSkip cannot be combined with completion or tally operations",
+      path: ["focusSkip"],
+    }
+  )
   .refine((v) => (v.limitCount == null) === (v.limitPeriod == null), {
     message: "Set both limit count and period, or neither",
     path: ["limitCount"],

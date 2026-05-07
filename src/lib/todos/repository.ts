@@ -47,6 +47,7 @@ export interface UpdateTodoPatch {
   oncePerDay?: boolean;
   recordTally?: boolean;
   undoLastTally?: boolean;
+  focusSkip?: boolean;
 }
 
 export interface TodoRepository {
