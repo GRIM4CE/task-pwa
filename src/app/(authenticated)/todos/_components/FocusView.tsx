@@ -710,7 +710,6 @@ export default function FocusView() {
       {pendingSkipUndo && (
         <SkipUndoToast
           title={pendingSkipUndo.title}
-          kind={pendingSkipUndo.kind}
           onUndo={handleUndoSkip}
           onDismiss={dismissSkipUndo}
         />
@@ -721,17 +720,14 @@ export default function FocusView() {
 
 function SkipUndoToast({
   title,
-  kind,
   onUndo,
   onDismiss,
 }: {
   title: string;
-  kind: "skip" | "unpin";
   onUndo: () => void;
   onDismiss: () => void;
 }) {
-  const message =
-    kind === "skip" ? `Skipped ${title} for today` : `Unpinned ${title}`;
+  const message = `Skipped ${title} for today`;
   return (
     <div
       role="status"
@@ -816,9 +812,6 @@ function FocusRow({
   onSkip: () => void;
 }) {
   const done = todo.completed;
-  // Recurring rows skip (defer to tomorrow); non-recurring rows just unpin.
-  // Surface the wording so the user knows which one this tap will do.
-  const skipLabel = todo.recurrence !== null ? "Skip" : "Unpin";
   return (
     <div className="flex items-center gap-3 rounded-lg border border-border-on-surface bg-surface px-4 py-3">
       <button
@@ -860,9 +853,9 @@ function FocusRow({
           type="button"
           onClick={onSkip}
           className="shrink-0 rounded-md border border-border-on-surface px-2.5 py-1 text-xs text-on-surface/70 hover:bg-surface-hover hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-focus"
-          aria-label={`${skipLabel} ${todo.title}`}
+          aria-label={`Skip ${todo.title}`}
         >
-          {skipLabel}
+          Skip
         </button>
       )}
     </div>
