@@ -64,6 +64,54 @@ async function backfillRecoveryCodes() {
   }
 }
 
+// Pre-#118, every Skip from Focus only updated todos.last_focus_skipped_at —
+// there was no per-event log. Now that todoSkips drives the stats UI, recover
+// the most recent skip per recurring todo so the historical data isn't a hole
+// in the new heatmap and the per-todo skip counter. We can only recover one
+// row per todo (the latest), since lastFocusSkippedAt held just that point;
+// older skips were never recorded. Idempotent: the per-row existence check
+// makes any post-#118 todo (whose skip was already logged at the same instant)
+// a no-op.
+async function backfillTodoSkips() {
+  const candidates = await db.all<{
+    id: string;
+    user_id: string;
+    last_focus_skipped_at: number;
+  }>(sql`
+    SELECT id, user_id, last_focus_skipped_at
+    FROM todos
+    WHERE last_focus_skipped_at IS NOT NULL
+      AND recurrence IS NOT NULL
+  `);
+  if (candidates.length === 0) return;
+
+  let inserted = 0;
+  for (const todo of candidates) {
+    const existing = await db.all<{ count: number }>(sql`
+      SELECT COUNT(*) AS count FROM todo_skips
+      WHERE todo_id = ${todo.id}
+        AND skipped_at = ${todo.last_focus_skipped_at}
+    `);
+    if ((existing[0]?.count ?? 0) > 0) continue;
+
+    await db.run(sql`
+      INSERT INTO todo_skips (id, todo_id, user_id, skipped_at)
+      VALUES (
+        ${crypto.randomUUID()},
+        ${todo.id},
+        ${todo.user_id},
+        ${todo.last_focus_skipped_at}
+      )
+    `);
+    inserted++;
+  }
+  if (inserted > 0) {
+    console.log(
+      `Backfilled ${inserted} todo_skips row(s) from lastFocusSkippedAt`
+    );
+  }
+}
+
 // Belt-and-suspenders for drizzle-orm's libsql migrator: it decides what's
 // pending by comparing each folder migration's `when` against the latest
 // `created_at` row in `__drizzle_migrations`, which means a migration whose
@@ -150,6 +198,7 @@ async function main() {
     }
     await assertAllMigrationsApplied();
     await backfillRecoveryCodes();
+    await backfillTodoSkips();
   } finally {
     // Close the client even if the assertion above threw, so the libsql
     // socket is released before the process exits.
