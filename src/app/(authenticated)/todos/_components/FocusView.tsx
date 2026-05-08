@@ -161,6 +161,13 @@ export default function FocusView() {
     setDismissedIds(readDismissed(todayKey));
   }, [todayKey]);
 
+  // Reset the weekly disclosure to its collapsed default on day rollover so an
+  // "expanded" choice from yesterday doesn't carry through midnight against the
+  // intended collapsed-by-default UX.
+  useEffect(() => {
+    setWeeklyExpanded(false);
+  }, [todayKey]);
+
   const expireCompleted = useCallback(
     async (list: Todo[]) => {
       const now = Date.now();
@@ -551,23 +558,26 @@ export default function FocusView() {
   const showKickBack = total === 0 && totalDone > 0 && extrasDone >= 3;
 
   // Weekly suggestions surface alongside today's rows as a collapsed
-  // disclosure — capped at 3, dismissals (per local day) drop them out, and
-  // pinning a row promotes it into today's list. Includes weekly-recurring
+  // disclosure. Dismissals (per local day) drop rows from the eligible pool
+  // and pinning a row promotes it into today's list. Includes weekly-recurring
   // rows not yet pinned to the day plus legacy non-recurring rows pinned to
-  // the week so the user has a uniform "this week's open work" view.
-  const weeklySuggestions = sortTodos(
-    todos.filter(
-      (t) =>
-        t.parentId === null &&
-        t.kind === "do" &&
-        !t.completed &&
-        t.pinnedTo !== "day" &&
-        !dismissedIds.has(t.id) &&
-        (t.recurrence === "weekly" ||
-          (t.recurrence === null && t.pinnedTo === "week"))
-    )
-  ).slice(0, 3);
-  const showWeeklySection = weeklySuggestions.length > 0 && !showKickBack;
+  // the week so the user has a uniform "this week's open work" view. The
+  // header shows the full eligible count so the user knows how much is queued
+  // even though only the first three are rendered at a time — dismissing the
+  // visible rows reveals the next batch on the next render.
+  const eligibleWeekly = todos.filter(
+    (t) =>
+      t.parentId === null &&
+      t.kind === "do" &&
+      !t.completed &&
+      t.pinnedTo !== "day" &&
+      !dismissedIds.has(t.id) &&
+      (t.recurrence === "weekly" ||
+        (t.recurrence === null && t.pinnedTo === "week"))
+  );
+  const weeklySuggestions = sortTodos(eligibleWeekly).slice(0, 3);
+  const weeklyEligibleCount = eligibleWeekly.length;
+  const showWeeklySection = weeklyEligibleCount > 0 && !showKickBack;
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
@@ -703,7 +713,7 @@ export default function FocusView() {
             className="flex w-full items-center justify-between rounded-lg border border-border-on-surface bg-surface px-4 py-2 text-sm text-on-surface/80 hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-focus"
           >
             <span>
-              Weekly · {weeklySuggestions.length} to pin
+              Weekly · {weeklyEligibleCount} to pin
             </span>
             <svg
               xmlns="http://www.w3.org/2000/svg"
