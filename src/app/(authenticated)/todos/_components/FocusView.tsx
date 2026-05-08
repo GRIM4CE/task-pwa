@@ -243,7 +243,6 @@ export default function FocusView() {
   }, [repo, resetDueRecurring, expireCompleted]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadTodos();
   }, [loadTodos]);
 
