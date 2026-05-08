@@ -380,6 +380,10 @@ function Tile({
 }
 
 function DailyRow({ stat }: { stat: DailyStat }) {
+  const skippedRecent = stat.heatmap.reduce(
+    (n, d) => (d.skipped ? n + 1 : n),
+    0
+  );
   return (
     <div className="rounded-lg border border-border-on-surface bg-surface px-4 py-3">
       <div className="flex items-baseline justify-between gap-3">
@@ -389,6 +393,7 @@ function DailyRow({ stat }: { stat: DailyStat }) {
             current={stat.streak}
             best={stat.bestStreak}
             unit="day"
+            skipped={skippedRecent}
           />
         </div>
         <span className="shrink-0 text-sm font-medium text-on-surface/70">
@@ -439,15 +444,18 @@ function StreakLine({
   current,
   best,
   unit,
+  skipped = 0,
 }: {
   current: number;
   best: number;
   unit: "day" | "week";
+  skipped?: number;
 }) {
-  if (current === 0 && best === 0) return null;
+  if (current === 0 && best === 0 && skipped === 0) return null;
   const parts: string[] = [];
   if (current > 0) parts.push(`${current}-${unit} streak`);
   if (best > current) parts.push(`best ${best}`);
+  if (skipped > 0) parts.push(`${skipped} skipped`);
   return (
     <span className="mt-0.5 inline-block text-xs text-on-surface/60">
       {parts.join(" · ")}
