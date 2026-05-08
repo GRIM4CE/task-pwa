@@ -561,6 +561,36 @@ export async function PATCH(
       }
     }
 
+    // Skip log: each focusSkip flips emits a row in todoSkips so analytics can
+    // render skipped days distinct from completed days. Only recurring todos
+    // surface in stats, mirroring the completion-log gate. focusSkip:false is
+    // the undo path — drop the most recent skip so the 5s undo doesn't leave a
+    // ghost entry in the user's history.
+    if (body.focusSkip === true && current.recurrence !== null) {
+      await tx.insert(schema.todoSkips).values({
+        todoId: row.id,
+        userId: session.user.id,
+        skippedAt: now,
+      });
+    } else if (body.focusSkip === false && current.recurrence !== null) {
+      const latest = await tx
+        .select({ id: schema.todoSkips.id })
+        .from(schema.todoSkips)
+        .where(
+          and(
+            eq(schema.todoSkips.todoId, row.id),
+            eq(schema.todoSkips.userId, session.user.id)
+          )
+        )
+        .orderBy(desc(schema.todoSkips.skippedAt))
+        .limit(1);
+      if (latest[0]) {
+        await tx
+          .delete(schema.todoSkips)
+          .where(eq(schema.todoSkips.id, latest[0].id));
+      }
+    }
+
     return row;
   });
 

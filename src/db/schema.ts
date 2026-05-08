@@ -265,3 +265,32 @@ export const todoCompletions = sqliteTable(
   ]
 );
 
+// Per-event Skip log. Each row records that a recurring todo was skipped from
+// Focus on a given day. Distinct from todoCompletions so the two events stay
+// queryable separately even though skip days currently count as misses for
+// streak math (same gray cell as a no-show; the heatmap tooltip is the only
+// surfaced differentiation today). `lastFocusSkippedAt` on `todos` still
+// drives the per-day "hide from Focus" filter; this table is the historical
+// log that future analytics surfaces can read.
+export const todoSkips = sqliteTable(
+  "todo_skips",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    todoId: text("todo_id")
+      .notNull()
+      .references(() => todos.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    skippedAt: integer("skipped_at", { mode: "timestamp" }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    index("idx_todo_skips_todo_skipped").on(table.todoId, table.skippedAt),
+    index("idx_todo_skips_user_skipped").on(table.userId, table.skippedAt),
+  ]
+);

@@ -43,6 +43,13 @@ export interface DayCell {
   // True when the user was on vacation at any point during the day.
   // Misses on vacation days are neutral (yellow) instead of failing.
   onVacation: boolean;
+  // True when the user tapped Skip on this todo on this day. A skipped day
+  // counts the same as a forgotten miss for streak / eligibility math — the
+  // flag is retained only so the heatmap tooltip can differentiate "skipped"
+  // from a silent miss and so future analytics surfaces can query the data
+  // separately. Ignored when `completed` is also true (a same-day completion
+  // supersedes the skip).
+  skipped: boolean;
 }
 
 export interface DailyStat {
@@ -363,22 +370,29 @@ function longestWeeklyRun(completions: number[]): number {
 
 function dailyHeatmap(
   completions: number[],
+  skips: number[],
   todayStart: Date,
   vacations: VacationPeriod[],
   now: number
 ): DayCell[] {
   const days = completedDaySet(completions);
+  const skipDays = completedDaySet(skips);
   const cells: DayCell[] = [];
   for (let i = HEATMAP_DAYS - 1; i >= 0; i--) {
     const dayStart = addDays(todayStart, -i);
     const startMs = dayStart.getTime();
     const endMs = addDays(dayStart, 1).getTime();
+    const completed = days.has(startMs);
     cells.push({
       date: startMs,
-      completed: days.has(startMs),
+      completed,
       isFuture: false,
       isToday: i === 0,
       onVacation: dayOnVacation(startMs, endMs, vacations, now),
+      // Same-day completion supersedes the skip — the row was completed
+      // after the skip, or the skip was undone and re-completed; either way
+      // the user got the win, so don't double-mark it as both.
+      skipped: !completed && skipDays.has(startMs),
     });
   }
   return cells;
@@ -402,12 +416,15 @@ function dailyForTodo(
       (c) => c >= startMs && c < endMs
     );
     if (completed) completedCount++;
+    const skipped = todo.skips.some((s) => s >= startMs && s < endMs);
     days.push({
       date: startMs,
       completed,
       isFuture: dayStart.getTime() > todayStart.getTime(),
       isToday: dayStart.getTime() === todayStart.getTime(),
       onVacation: dayOnVacation(startMs, endMs, vacations, now),
+      // Same-day completion wins over a skip stamp — see dailyHeatmap.
+      skipped: !completed && skipped,
     });
   }
   return {
@@ -418,7 +435,7 @@ function dailyForTodo(
     days,
     streak: dailyStreak(todo.completions, todayStart, vacations, now),
     bestStreak: longestDailyRun(todo.completions),
-    heatmap: dailyHeatmap(todo.completions, todayStart, vacations, now),
+    heatmap: dailyHeatmap(todo.completions, todo.skips, todayStart, vacations, now),
   };
 }
 

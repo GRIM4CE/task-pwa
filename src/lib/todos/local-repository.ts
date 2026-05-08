@@ -30,11 +30,13 @@ import type {
 const STORAGE_KEY = "todo-pwa:guest:todos";
 const LEGACY_SUBTASKS_KEY = "todo-pwa:guest:subtasks";
 const COMPLETIONS_KEY = "todo-pwa:guest:completions";
+const SKIPS_KEY = "todo-pwa:guest:skips";
 const VACATIONS_KEY = "todo-pwa:guest:vacations";
 const COMPLETIONS_RETENTION_MS = 120 * 24 * 60 * 60 * 1000;
 export const GUEST_USERNAME = "Guest";
 
 type CompletionEvent = { todoId: string; completedAt: number };
+type SkipEvent = { todoId: string; skippedAt: number };
 
 function ok<T>(data: T): RepoResult<T> {
   return { data, error: null };
@@ -148,6 +150,25 @@ function readCompletions(): CompletionEvent[] {
   }
 }
 
+function readSkips(): SkipEvent[] {
+  if (typeof window === "undefined") return [];
+  const raw = window.localStorage.getItem(SKIPS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as SkipEvent[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSkips(events: SkipEvent[]): void {
+  if (typeof window === "undefined") return;
+  const cutoff = Date.now() - COMPLETIONS_RETENTION_MS;
+  const pruned = events.filter((e) => e.skippedAt >= cutoff);
+  window.localStorage.setItem(SKIPS_KEY, JSON.stringify(pruned));
+}
+
 function writeCompletions(events: CompletionEvent[]): void {
   if (typeof window === "undefined") return;
   // Prune on write so localStorage doesn't grow unbounded over time.
@@ -217,6 +238,13 @@ export const localTodoRepository: TodoRepository = {
       list.push(e.completedAt);
       byTodo.set(e.todoId, list);
     }
+    const skipEvents = readSkips().filter((e) => e.skippedAt >= cutoff);
+    const skipsByTodo = new Map<string, number[]>();
+    for (const e of skipEvents) {
+      const list = skipsByTodo.get(e.todoId) ?? [];
+      list.push(e.skippedAt);
+      skipsByTodo.set(e.todoId, list);
+    }
     const todos: StatsDTO["todos"] = all
       .filter((t) => t.recurrence !== null && t.parentId === null)
       .map((t) => ({
@@ -229,6 +257,7 @@ export const localTodoRepository: TodoRepository = {
         isPersonal: t.isPersonal,
         createdAt: t.createdAt,
         completions: (byTodo.get(t.id) ?? []).sort((a, b) => a - b),
+        skips: (skipsByTodo.get(t.id) ?? []).sort((a, b) => a - b),
       }));
     const avoid: StatsDTO["avoid"] = all
       .filter((t) => t.kind === "avoid" && t.parentId === null)
@@ -556,6 +585,36 @@ export const localTodoRepository: TodoRepository = {
         ]);
       }
     }
+
+    // Skip log mirror of the server's PATCH path: focusSkip:true appends, false
+    // (the 5s undo) drops the most recent skip for this todo. Same recurring-
+    // only gate as the completion log so analytics inputs match.
+    if (parsed.data.focusSkip === true && previous.recurrence !== null) {
+      writeSkips([
+        ...readSkips(),
+        { todoId: id, skippedAt: Date.now() },
+      ]);
+    } else if (
+      parsed.data.focusSkip === false &&
+      previous.recurrence !== null
+    ) {
+      const skipEvents = readSkips();
+      let latestIdx = -1;
+      let latestAt = -Infinity;
+      for (let i = 0; i < skipEvents.length; i++) {
+        if (skipEvents[i].todoId === id && skipEvents[i].skippedAt > latestAt) {
+          latestAt = skipEvents[i].skippedAt;
+          latestIdx = i;
+        }
+      }
+      if (latestIdx !== -1) {
+        writeSkips([
+          ...skipEvents.slice(0, latestIdx),
+          ...skipEvents.slice(latestIdx + 1),
+        ]);
+      }
+    }
+
     return ok(withRecentTallies(updated, readCompletions()));
   },
 
@@ -624,5 +683,6 @@ export function clearGuestTodos(): void {
   window.localStorage.removeItem(STORAGE_KEY);
   window.localStorage.removeItem(LEGACY_SUBTASKS_KEY);
   window.localStorage.removeItem(COMPLETIONS_KEY);
+  window.localStorage.removeItem(SKIPS_KEY);
   window.localStorage.removeItem(VACATIONS_KEY);
 }

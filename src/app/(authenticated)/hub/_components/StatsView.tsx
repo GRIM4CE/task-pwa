@@ -423,6 +423,7 @@ function DailyRow({ stat }: { stat: DailyStat }) {
             isToday={d.isToday}
             date={d.date}
             onVacation={d.onVacation}
+            skipped={d.skipped}
           />
         ))}
       </div>
@@ -459,14 +460,17 @@ function HeatCell({
   isToday,
   date,
   onVacation,
+  skipped,
 }: {
   completed: boolean;
   isToday: boolean;
   date: number;
   onVacation: boolean;
+  skipped: boolean;
 }) {
-  // Vacation + missed = yellow (neutral). Vacation + completed still goes
-  // green so the user sees their effort. Plain misses stay grey.
+  // Skip days render the same gray as a miss — both count against the streak.
+  // The tooltip still differentiates "— skipped" from a silent miss so the
+  // distinction is queryable on hover, matching the "logged separately" rule.
   const tone = completed
     ? "bg-success/80"
     : onVacation
@@ -480,13 +484,18 @@ function HeatCell({
   });
   const suffix = completed
     ? " — completed"
-    : onVacation
-      ? " — on vacation"
-      : "";
+    : skipped
+      ? " — skipped"
+      : onVacation
+        ? " — on vacation"
+        : "";
+  const label = `${title}${suffix}`;
   return (
     <div
       className={`h-3 rounded-sm ${tone}${ring}`}
-      title={`${title}${suffix}`}
+      role="img"
+      aria-label={label}
+      title={label}
     />
   );
 }
