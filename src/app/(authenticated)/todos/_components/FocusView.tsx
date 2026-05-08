@@ -155,6 +155,7 @@ export default function FocusView() {
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(() =>
     readDismissed(localDayKey(Date.now()))
   );
+  const [weeklyExpanded, setWeeklyExpanded] = useState(false);
 
   useEffect(() => {
     setDismissedIds(readDismissed(todayKey));
@@ -545,27 +546,28 @@ export default function FocusView() {
     subtitle = "Nice work — all caught up";
   }
 
-  // Empty-state branches when there's nothing left in focus today:
-  //   default     — nothing was ever on today's plate, or no progress at all
-  //   lookingAhead — wins logged today, still room for more (extrasDone <= 2):
-  //                  surface up to 3 weekly suggestions to pin
-  //   kickBack    — already 3+ extras done; no suggestions, just acknowledge
-  const showLookingAhead = total === 0 && totalDone > 0 && extrasDone < 3;
+  // Empty-state branch: 3+ extras already done, just acknowledge — no
+  // suggestions, no nudge to do more.
   const showKickBack = total === 0 && totalDone > 0 && extrasDone >= 3;
 
-  const suggestions = showLookingAhead
-    ? sortTodos(
-        todos.filter(
-          (t) =>
-            t.parentId === null &&
-            t.kind === "do" &&
-            !t.completed &&
-            !dismissedIds.has(t.id) &&
-            ((t.recurrence === "weekly" && t.pinnedTo !== "day") ||
-              (t.recurrence === null && t.pinnedTo === "week"))
-        )
-      ).slice(0, 3)
-    : [];
+  // Weekly suggestions surface alongside today's rows as a collapsed
+  // disclosure — capped at 3, dismissals (per local day) drop them out, and
+  // pinning a row promotes it into today's list. Includes weekly-recurring
+  // rows not yet pinned to the day plus legacy non-recurring rows pinned to
+  // the week so the user has a uniform "this week's open work" view.
+  const weeklySuggestions = sortTodos(
+    todos.filter(
+      (t) =>
+        t.parentId === null &&
+        t.kind === "do" &&
+        !t.completed &&
+        t.pinnedTo !== "day" &&
+        !dismissedIds.has(t.id) &&
+        (t.recurrence === "weekly" ||
+          (t.recurrence === null && t.pinnedTo === "week"))
+    )
+  ).slice(0, 3);
+  const showWeeklySection = weeklySuggestions.length > 0 && !showKickBack;
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
@@ -681,22 +683,6 @@ export default function FocusView() {
         <div className="rounded-lg border border-dashed border-border-on-surface px-4 py-12 text-center text-sm text-text-muted">
           You&rsquo;ve done plenty for today. Take a breather.
         </div>
-      ) : showLookingAhead && suggestions.length > 0 ? (
-        <div className="space-y-3">
-          <p className="text-sm text-text-muted">
-            Looking to get ahead? Pin one of these to today.
-          </p>
-          <div className="space-y-2">
-            {suggestions.map((s) => (
-              <SuggestionRow
-                key={s.id}
-                todo={s}
-                onPin={() => handlePinSuggestion(s)}
-                onDismiss={() => handleDismissSuggestion(s)}
-              />
-            ))}
-          </div>
-        </div>
       ) : (
         <div className="rounded-lg border border-dashed border-border-on-surface px-4 py-12 text-center text-sm text-text-muted">
           Nothing pinned to today. Add a daily todo or pin one to the day from{" "}
@@ -704,6 +690,47 @@ export default function FocusView() {
             Manage
           </Link>
           .
+        </div>
+      )}
+
+      {showWeeklySection && (
+        <div className="mt-6">
+          <button
+            type="button"
+            onClick={() => setWeeklyExpanded((v) => !v)}
+            aria-expanded={weeklyExpanded}
+            aria-controls="focus-weekly-section"
+            className="flex w-full items-center justify-between rounded-lg border border-border-on-surface bg-surface px-4 py-2 text-sm text-on-surface/80 hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-focus"
+          >
+            <span>
+              Weekly · {weeklySuggestions.length} to pin
+            </span>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className={`h-4 w-4 transition-transform ${weeklyExpanded ? "rotate-180" : ""}`}
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                fillRule="evenodd"
+                d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </button>
+          {weeklyExpanded && (
+            <div id="focus-weekly-section" className="mt-2 space-y-2">
+              {weeklySuggestions.map((s) => (
+                <SuggestionRow
+                  key={s.id}
+                  todo={s}
+                  onPin={() => handlePinSuggestion(s)}
+                  onDismiss={() => handleDismissSuggestion(s)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
