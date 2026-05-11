@@ -72,6 +72,14 @@ async function backfillRecoveryCodes() {
 // older skips were never recorded. Idempotent: the per-row existence check
 // makes any post-#118 todo (whose skip was already logged at the same instant)
 // a no-op.
+//
+// Joined (is_personal=false) todos are intentionally excluded: either user can
+// hit Skip on a joined todo (the live insert uses session.user.id as the
+// actor), but lastFocusSkippedAt doesn't record who. Attributing to
+// todos.user_id would misfile a creator-attributed row when the other user
+// actually skipped, and stats reads scope by userId — so we'd show wrong
+// per-user history. Personal todos have a single possible actor (the owner),
+// so the attribution is unambiguous.
 async function backfillTodoSkips() {
   const candidates = await db.all<{
     id: string;
@@ -82,6 +90,7 @@ async function backfillTodoSkips() {
     FROM todos
     WHERE last_focus_skipped_at IS NOT NULL
       AND recurrence IS NOT NULL
+      AND is_personal = 1
   `);
   if (candidates.length === 0) return;
 
@@ -90,6 +99,7 @@ async function backfillTodoSkips() {
     const existing = await db.all<{ count: number }>(sql`
       SELECT COUNT(*) AS count FROM todo_skips
       WHERE todo_id = ${todo.id}
+        AND user_id = ${todo.user_id}
         AND skipped_at = ${todo.last_focus_skipped_at}
     `);
     if ((existing[0]?.count ?? 0) > 0) continue;
