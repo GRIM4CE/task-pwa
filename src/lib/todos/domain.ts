@@ -129,10 +129,10 @@ export function applyUpdate(
   if (patch.completed !== undefined) {
     next.completed = patch.completed;
     next.lastCompletedAt = patch.completed ? now : null;
-    // Mirror the server: only clear `pinnedTo` on completion when the
-    // post-patch row is non-recurring. Recurring completions are per-period
-    // ticks, and clearing the pin would force a re-pin after every reset.
-    if (patch.completed && next.recurrence === null) next.pinnedTo = null;
+    // Mirror the server: clear `pinnedTo` on completion. For recurring rows
+    // this means the pin doesn't carry over into the next reset cycle — the
+    // user re-pins intentionally each period.
+    if (patch.completed) next.pinnedTo = null;
   }
   if (patch.focusSkip === true) next.lastFocusSkippedAt = now;
   else if (patch.focusSkip === false) next.lastFocusSkippedAt = null;
