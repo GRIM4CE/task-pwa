@@ -312,12 +312,9 @@ export async function PATCH(
     updateData.completed = body.completed;
     updateData.lastCompletedAt = body.completed ? now : null;
     // Pinning is meant for "open work this period"; clear it on completion so
-    // unchecking later doesn't resurrect the pin. Recurring rows are an
-    // exception — their completion is a per-period tick, not a final close,
-    // and clearing the pin would force the user to re-pin after every reset.
-    // Use the post-patch recurrence so a same-request weekly→null + complete
-    // still drops the now-meaningless pin.
-    if (body.completed && effectiveRecurrence === null) {
+    // the next period (after a recurring reset, or a manual uncheck) starts
+    // unpinned and the user re-pins intentionally.
+    if (body.completed) {
       updateData.pinnedTo = null;
     }
   }
